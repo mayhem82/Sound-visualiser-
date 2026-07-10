@@ -26,6 +26,20 @@ html, body {
   height: 100vh;
 }
 
+#blackout {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: 1;
+}
+
+#blackout.active {
+  opacity: 1;
+}
+
 #screenFlash {
   position: fixed;
   inset: 0;
@@ -35,7 +49,9 @@ html, body {
   z-index: 1;
   /* "screen" brightens what's underneath instead of just alpha-tinting it,
      so the flash reads clearly against the already-colourful, dark nebula
-     scene instead of blending into it. */
+     scene instead of blending into it. Same z-index as #blackout, but it
+     comes later in the DOM so it paints on top — the beat flash still
+     shows through even when blacked out. */
   mix-blend-mode: screen;
 }
 
@@ -77,6 +93,11 @@ html, body {
   line-height: 1.5;
   color: rgba(242, 242, 247, 0.75);
   font-size: 15px;
+}
+
+#panel p.hint {
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
 }
 
 #startBtn {

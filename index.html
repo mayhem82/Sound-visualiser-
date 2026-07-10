@@ -9,12 +9,14 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+<div id="blackout" aria-hidden="true"></div>
 <div id="screenFlash" aria-hidden="true"></div>
 
 <div id="overlay">
   <div id="panel">
     <h1>Sound Nebula</h1>
     <p>A live microphone visualiser. Bass, mids, and treble each drive their own swarm of glowing particles around a pulsing core — instead of the usual bars or waveform.</p>
+    <p class="hint">Once running: tap the screen to hide/show the menu. Double-tap to black out the screen (beat effects keep running underneath).</p>
     <button id="startBtn">Enable microphone &amp; start</button>
     <p id="status" class="status"></p>
   </div>

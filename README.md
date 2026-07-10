@@ -9,6 +9,11 @@ their own swarm of glowing particles orbiting a pulsing core.
 Open `index.html` in a browser (or serve the folder with any static server)
 and click **Enable microphone & start**. No build step, no dependencies.
 
+Once running, tap anywhere on the empty screen to hide/show the menu.
+Double-tap to black out the screen — beat detection and all effects
+(torch, vibrate, screen flash) keep running underneath; only the visuals
+are hidden. Double-tap again to bring it back.
+
 ## How it works
 
 - `script.js` uses the Web Audio API (`AnalyserNode`) to read frequency and

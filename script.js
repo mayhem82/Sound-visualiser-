@@ -21,6 +21,7 @@
   const freqHighSlider = document.getElementById("freqHighSlider");
   const freqRangeLabel = document.getElementById("freqRangeLabel");
   const freqAllBtn = document.getElementById("freqAllBtn");
+  const blackoutEl = document.getElementById("blackout");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -515,4 +516,40 @@
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");
+
+  // Tap the empty screen to hide/show the menu; double-tap to black out
+  // the screen. Beat detection and effects (torch/vibrate/screen flash)
+  // keep running underneath either way — only the visuals are hidden.
+  const DOUBLE_TAP_MS = 300;
+  let singleTapTimer = null;
+  let lastTapAt = 0;
+
+  function isMenuTarget(el) {
+    return !!(el && el.closest && el.closest("#hud, #overlay, .flash-status"));
+  }
+
+  function toggleHud() {
+    hud.classList.toggle("hide");
+  }
+
+  function toggleBlackout() {
+    blackoutEl.classList.toggle("active");
+  }
+
+  document.body.addEventListener("click", (e) => {
+    if (isMenuTarget(e.target)) return;
+    const now = Date.now();
+    if (now - lastTapAt < DOUBLE_TAP_MS) {
+      clearTimeout(singleTapTimer);
+      singleTapTimer = null;
+      lastTapAt = 0;
+      toggleBlackout();
+    } else {
+      lastTapAt = now;
+      singleTapTimer = setTimeout(() => {
+        toggleHud();
+        lastTapAt = 0;
+      }, DOUBLE_TAP_MS);
+    }
+  });
 })();
