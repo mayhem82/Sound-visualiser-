@@ -13,9 +13,12 @@ and click **Enable microphone & start**. No build step, no dependencies.
 
 - `script.js` uses the Web Audio API (`AnalyserNode`) to read frequency and
   time-domain data from the microphone every animation frame.
-- The frequency spectrum is split into three bands (bass / mid / treble);
-  each band's average energy drives the orbit radius, speed, and glow
-  intensity of its own particle swarm.
+- The frequency spectrum is split into three bands by real frequency (bass
+  20-150Hz, mid 150Hz-2kHz, treble 2-9kHz) rather than a fixed fraction of
+  FFT bins, so the bass band tracks kick/bass-drum energy specifically
+  instead of also picking up guitar fundamentals and harmonics that sit
+  well above 150Hz. Each band's average energy drives the orbit radius,
+  speed, and glow intensity of its own particle swarm.
 - Overall volume (RMS of the time-domain signal) drives a pulsing core at
   the center.
 - Particles are drawn with additive ("lighter") blending and soft radial

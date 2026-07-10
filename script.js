@@ -13,10 +13,15 @@
   const flashStatus = document.getElementById("flashStatus");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
 
+  // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
+  // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
+  // fundamentals/harmonics along with actual kick/bass content. `from`/`to`
+  // (fractions of the Nyquist frequency) are filled in once the real
+  // sample rate is known, in startAudio().
   const BANDS = [
-    { name: "bass", from: 0, to: 0.08, hue: 262, count: 90 },   // violet
-    { name: "mid", from: 0.08, to: 0.32, hue: 189, count: 90 }, // cyan
-    { name: "treble", from: 0.32, to: 0.85, hue: 330, count: 90 } // pink
+    { name: "bass", fromHz: 20, toHz: 150, hue: 262, count: 90 },   // violet — kick/bass only
+    { name: "mid", fromHz: 150, toHz: 2000, hue: 189, count: 90 }, // cyan — guitars, vocals, snare body
+    { name: "treble", fromHz: 2000, toHz: 9000, hue: 330, count: 90 } // pink — cymbals, presence
   ];
 
   let audioCtx, analyser, freqData, timeData, source, stream;
@@ -258,6 +263,12 @@
     analyser.smoothingTimeConstant = 0.15;
     freqData = new Uint8Array(analyser.frequencyBinCount);
     timeData = new Uint8Array(analyser.fftSize);
+
+    const nyquist = audioCtx.sampleRate / 2;
+    for (const band of BANDS) {
+      band.from = Math.min(1, band.fromHz / nyquist);
+      band.to = Math.min(1, band.toHz / nyquist);
+    }
 
     source = audioCtx.createMediaStreamSource(stream);
     source.connect(analyser);
