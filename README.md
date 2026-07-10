@@ -50,6 +50,13 @@ The **Beat sensitivity** slider adjusts how easily a beat is detected: low
 sensitivity requires a large, sharp bass spike; high sensitivity reacts to
 smaller bumps in the bass energy.
 
+The **Flash speed** slider adjusts how fast beats can retrigger the
+flash/vibrate: low speed limits retriggering to about 2.5 times per second
+(minimum ~400ms between beats), high speed allows close to a genuine strobe
+at up to ~14 times per second (~70ms between beats). Note that real-world
+speed can also be limited by how fast a given phone's camera hardware can
+physically toggle the torch.
+
 If the flash stops responding mid-session (commonly caused by the screen
 locking or the tab losing focus, which can end the camera connection), the
 status line will say so — turn the flash toggle off and back on to

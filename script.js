@@ -12,6 +12,7 @@
   const flashBtn = document.getElementById("flashBtn");
   const flashStatus = document.getElementById("flashStatus");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
+  const speedSlider = document.getElementById("speedSlider");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -44,10 +45,23 @@
   let bassHistory = [];
   let lastBeatAt = 0;
   let sensitivity = 0.5; // 0 (least sensitive) .. 1 (most sensitive)
-  const BEAT_COOLDOWN_MS = 180;
+  let flashSpeed = 0.5; // 0 (slow) .. 1 (fast strobe)
+  let beatCooldownMs = 180;
+  let minFlashMs = 50;
+  let maxFlashMs = 160;
   const BEAT_HISTORY_LEN = 40;
 
   function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function updateFlashSpeed() {
+    flashSpeed = Number(speedSlider.value) / 100;
+    // Slowest: a beat can retrigger at most ~2.5x/sec. Fastest: ~14x/sec
+    // (close to a genuine strobe). Flash pulse length is kept well inside
+    // the cooldown window so pulses never bleed into the next beat.
+    beatCooldownMs = lerp(400, 70, flashSpeed);
+    minFlashMs = Math.max(18, beatCooldownMs * 0.28);
+    maxFlashMs = Math.max(minFlashMs + 10, beatCooldownMs * 0.75);
+  }
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -131,7 +145,7 @@
     const isBeat =
       bass > absThreshold &&
       bass > avg * relThreshold &&
-      now - lastBeatAt > BEAT_COOLDOWN_MS;
+      now - lastBeatAt > beatCooldownMs;
 
     if (isBeat) {
       lastBeatAt = now;
@@ -142,15 +156,12 @@
     }
   }
 
-  const MIN_FLASH_MS = 50;
-  const MAX_FLASH_MS = 160;
-
   function fireBeatEffects(strength) {
     if (vibrateSupported) {
       try { navigator.vibrate(35); } catch (_) { /* ignore */ }
     }
     if (torchSupported && torchTrack && !torchBusy) {
-      const duration = lerp(MIN_FLASH_MS, MAX_FLASH_MS, strength);
+      const duration = lerp(minFlashMs, maxFlashMs, strength);
       pulseTorch(duration);
     }
   }
@@ -385,5 +396,7 @@
   restartBtn.addEventListener("click", restart);
   flashBtn.addEventListener("click", toggleFlash);
   sensitivitySlider.addEventListener("input", updateSensitivity);
+  speedSlider.addEventListener("input", updateFlashSpeed);
   updateSensitivity();
+  updateFlashSpeed();
 })();
