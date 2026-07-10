@@ -15,6 +15,7 @@
   const speedSlider = document.getElementById("speedSlider");
   const dimToggle = document.getElementById("dimToggle");
   const screenFlashToggle = document.getElementById("screenFlashToggle");
+  const testFlashBtn = document.getElementById("testFlashBtn");
   const screenFlashEl = document.getElementById("screenFlash");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
@@ -191,15 +192,17 @@
     const hue =
       (BANDS[0].hue * bass + BANDS[1].hue * mid + BANDS[2].hue * treble) / total;
     // Stronger beats trend brighter/whiter; quieter ones stay more tinted.
-    const light = lerp(55, 88, strength);
-    const sat = lerp(85, 55, strength);
+    // Kept fairly light/bright throughout since the "screen" blend mode
+    // means darker colours would barely register against the scene.
+    const light = lerp(65, 92, strength);
+    const sat = lerp(90, 45, strength);
     return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
   }
 
   function flashScreen(color, durationMs, strength) {
     screenFlashEl.style.transition = "none";
     screenFlashEl.style.backgroundColor = color;
-    screenFlashEl.style.opacity = String(lerp(0.28, 0.62, strength));
+    screenFlashEl.style.opacity = String(lerp(0.45, 0.85, strength));
     // Force a reflow so the transition below animates from this opacity
     // instead of jumping straight to the end value.
     void screenFlashEl.offsetHeight;
@@ -466,6 +469,11 @@
   });
   screenFlashToggle.addEventListener("change", () => {
     screenFlashEnabled = screenFlashToggle.checked;
+  });
+  testFlashBtn.addEventListener("click", () => {
+    // Bypasses beat detection entirely — a bright white pop so it's
+    // obviously visible regardless of the current bass/mid/treble mix.
+    flashScreen("hsl(0, 0%, 100%)", 260, 1);
   });
   updateSensitivity();
   updateFlashSpeed();

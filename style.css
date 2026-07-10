@@ -33,6 +33,10 @@ html, body {
   opacity: 0;
   background-color: transparent;
   z-index: 1;
+  /* "screen" brightens what's underneath instead of just alpha-tinting it,
+     so the flash reads clearly against the already-colourful, dark nebula
+     scene instead of blending into it. */
+  mix-blend-mode: screen;
 }
 
 #overlay {
