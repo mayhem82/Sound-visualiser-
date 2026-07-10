@@ -40,3 +40,12 @@ It is not available in iOS Safari or on desktops without a camera with a
 torch — the app detects this and falls back to vibrate-only (or silently
 does nothing on devices with neither capability), reporting the current
 mode in the status line under the button.
+
+The **Beat sensitivity** slider adjusts how easily a beat is detected: low
+sensitivity requires a large, sharp bass spike; high sensitivity reacts to
+smaller bumps in the bass energy.
+
+If the flash stops responding mid-session (commonly caused by the screen
+locking or the tab losing focus, which can end the camera connection), the
+status line will say so — turn the flash toggle off and back on to
+reconnect.

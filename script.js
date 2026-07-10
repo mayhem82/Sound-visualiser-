@@ -11,6 +11,7 @@
   const restartBtn = document.getElementById("restartBtn");
   const flashBtn = document.getElementById("flashBtn");
   const flashStatus = document.getElementById("flashStatus");
+  const sensitivitySlider = document.getElementById("sensitivitySlider");
 
   const BANDS = [
     { name: "bass", from: 0, to: 0.08, hue: 262, count: 90 },   // violet
@@ -29,14 +30,19 @@
 
   // Beat -> flash/vibrate.
   let flashEnabled = false;
-  let flashRequested = false;
   let torchTrack = null;
   let torchSupported = false;
+  let torchBusy = false;
+  let torchFailCount = 0;
+  const TORCH_MAX_FAILS = 5;
   let vibrateSupported = typeof navigator.vibrate === "function";
   let bassHistory = [];
   let lastBeatAt = 0;
+  let sensitivity = 0.5; // 0 (least sensitive) .. 1 (most sensitive)
   const BEAT_COOLDOWN_MS = 180;
   const BEAT_HISTORY_LEN = 40;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -111,10 +117,16 @@
     if (bassHistory.length > BEAT_HISTORY_LEN) bassHistory.shift();
     if (bassHistory.length < 8) return;
 
+    // sensitivity 0 -> harder to trigger (high bar), 1 -> easier (low bar).
+    const absThreshold = lerp(0.36, 0.12, sensitivity);
+    const relThreshold = lerp(1.8, 1.15, sensitivity);
+
     const avg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
     const now = performance.now();
     const isBeat =
-      bass > 0.22 && bass > avg * 1.45 && now - lastBeatAt > BEAT_COOLDOWN_MS;
+      bass > absThreshold &&
+      bass > avg * relThreshold &&
+      now - lastBeatAt > BEAT_COOLDOWN_MS;
 
     if (isBeat) {
       lastBeatAt = now;
@@ -126,19 +138,58 @@
     if (vibrateSupported) {
       try { navigator.vibrate(35); } catch (_) { /* ignore */ }
     }
-    if (torchSupported && torchTrack) {
-      setTorch(true);
-      setTimeout(() => setTorch(false), 90);
+    if (torchSupported && torchTrack && !torchBusy) {
+      pulseTorch();
     }
   }
 
-  function setTorch(on) {
-    if (!torchTrack) return;
-    torchTrack.applyConstraints({ advanced: [{ torch: on }] }).catch(() => {
-      // Some browsers report torch as a capability but reject the
-      // constraint at runtime; disable further attempts if so.
-      torchSupported = false;
+  function pulseTorch() {
+    torchBusy = true;
+    setTorchConstraint(true).then(() => {
+      setTimeout(() => {
+        setTorchConstraint(false).finally(() => {
+          torchBusy = false;
+        });
+      }, 90);
+    }).catch(() => {
+      torchBusy = false;
     });
+  }
+
+  function setTorchConstraint(on) {
+    if (!torchTrack || torchTrack.readyState === "ended") {
+      handleTorchLost(
+        "The camera connection was lost (often caused by the screen locking " +
+          "or the tab losing focus). Turn the flash toggle off and back on to reconnect."
+      );
+      return Promise.reject(new Error("torch track unavailable"));
+    }
+    return torchTrack
+      .applyConstraints({ advanced: [{ torch: on }] })
+      .then(() => {
+        torchFailCount = 0;
+      })
+      .catch((err) => {
+        // A single rejected constraint call can happen transiently (e.g. an
+        // overlapping on/off pair); only give up after repeated failures.
+        torchFailCount++;
+        if (torchFailCount >= TORCH_MAX_FAILS) {
+          handleTorchLost(
+            "The camera flash stopped responding and has been disarmed. " +
+              "Turn the flash toggle off and back on to try again."
+          );
+        }
+        throw err;
+      });
+  }
+
+  function handleTorchLost(message) {
+    torchSupported = false;
+    if (torchTrack) {
+      torchTrack.stop();
+      torchTrack = null;
+    }
+    appendFlashStatus(message);
   }
 
   function draw(time) {
@@ -241,16 +292,13 @@
   }
 
   async function requestFlashCapability() {
-    flashRequested = true;
     flashStatus.classList.remove("hide");
 
-    if (!vibrateSupported) {
-      flashStatus.textContent =
-        "This device/browser doesn't support vibration.";
-    }
-
     if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
-      appendFlashStatus("Camera flash isn't available in this browser.");
+      appendFlashStatus(
+        "Camera flash isn't available in this browser." +
+          (vibrateSupported ? " Vibrate-only mode armed." : "")
+      );
       return;
     }
 
@@ -264,6 +312,13 @@
       if (caps && caps.torch) {
         torchTrack = track;
         torchSupported = true;
+        torchFailCount = 0;
+        track.addEventListener("ended", () =>
+          handleTorchLost(
+            "The camera connection ended (often caused by the screen locking " +
+              "or the tab losing focus). Turn the flash toggle off and back on to reconnect."
+          )
+        );
         appendFlashStatus(
           vibrateSupported
             ? "Flash + vibrate armed."
@@ -290,17 +345,24 @@
   }
 
   async function toggleFlash() {
-    if (!flashRequested) {
+    flashEnabled = !flashEnabled;
+    if (flashEnabled && !torchSupported) {
+      // First arm, or a previous arm was lost — (re)request the camera.
       await requestFlashCapability();
     }
-    flashEnabled = !flashEnabled;
     flashBtn.textContent = "Flash + vibrate on beat: " + (flashEnabled ? "On" : "Off");
     flashBtn.classList.toggle("active", flashEnabled);
-    if (!flashEnabled) setTorch(false);
+    if (!flashEnabled && torchTrack) setTorchConstraint(false).catch(() => {});
+  }
+
+  function updateSensitivity() {
+    sensitivity = Number(sensitivitySlider.value) / 100;
   }
 
   startBtn.addEventListener("click", startAudio);
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
   flashBtn.addEventListener("click", toggleFlash);
+  sensitivitySlider.addEventListener("input", updateSensitivity);
+  updateSensitivity();
 })();

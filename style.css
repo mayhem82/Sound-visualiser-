@@ -134,6 +134,24 @@ html, body {
 
 .flash-status.hide { display: none; }
 
+.hud-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(15, 15, 25, 0.55);
+  color: rgba(242, 242, 247, 0.85);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.hud-slider input[type="range"] {
+  width: 100px;
+  accent-color: #7dd3fc;
+}
+
 @media (prefers-color-scheme: light) {
   /* This project is intentionally dark-only; a bright nebula on white
      washes out the glow blending, so we keep the dark theme fixed. */
