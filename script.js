@@ -135,27 +135,34 @@
 
     if (isBeat) {
       lastBeatAt = now;
-      fireBeatEffects();
+      // How far above threshold this hit landed, 0 (just cleared the bar)
+      // to 1 (very strong hit) — drives a proportionally longer flash.
+      const strength = Math.min(1, Math.max(0, (bass - absThreshold) / (0.85 - absThreshold)));
+      fireBeatEffects(strength);
     }
   }
 
-  function fireBeatEffects() {
+  const MIN_FLASH_MS = 50;
+  const MAX_FLASH_MS = 160;
+
+  function fireBeatEffects(strength) {
     if (vibrateSupported) {
       try { navigator.vibrate(35); } catch (_) { /* ignore */ }
     }
     if (torchSupported && torchTrack && !torchBusy) {
-      pulseTorch();
+      const duration = lerp(MIN_FLASH_MS, MAX_FLASH_MS, strength);
+      pulseTorch(duration);
     }
   }
 
-  function pulseTorch() {
+  function pulseTorch(durationMs) {
     torchBusy = true;
     setTorchConstraint(true).then(() => {
       setTimeout(() => {
         setTorchConstraint(false).finally(() => {
           torchBusy = false;
         });
-      }, 90);
+      }, durationMs);
     }).catch(() => {
       torchBusy = false;
     });

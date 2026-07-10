@@ -34,8 +34,10 @@ The **Flash + vibrate on beat** button arms a simple bass-onset detector
 (compares the current bass-band energy against its rolling average) and, on
 each detected beat:
 
-- pulses the device's camera flash (torch) for ~90ms, via the
-  `MediaStreamTrack` `torch` constraint on an environment-facing camera, and
+- pulses the device's camera flash (torch) via the `MediaStreamTrack`
+  `torch` constraint on an environment-facing camera — the pulse length
+  scales with how strong the beat was, from ~50ms for a hit that just
+  clears the threshold up to ~160ms for a very strong one, and
 - triggers a short vibration via `navigator.vibrate`.
 
 Camera flash control is only exposed by some Android/Chrome-based browsers.
