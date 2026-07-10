@@ -9,6 +9,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+<div id="screenFlash" aria-hidden="true"></div>
 
 <div id="overlay">
   <div id="panel">
@@ -34,6 +35,10 @@
   <label id="dimWrap" class="hud-slider" title="Camera flashes are hardware on/off only — there's no real brightness control on the web. This flickers the torch rapidly to approximate a dimmer look; it's experimental and may look janky on slower hardware.">
     Dim flicker (experimental)
     <input id="dimToggle" type="checkbox">
+  </label>
+  <label id="screenFlashWrap" class="hud-slider" title="Flashes the whole screen on each beat, colour-blended from the current bass/mid/treble mix. Needs no camera permission, so it works on every device including iPhone.">
+    Screen flash on beat
+    <input id="screenFlashToggle" type="checkbox">
   </label>
 </div>
 <p id="flashStatus" class="flash-status hide"></p>

@@ -70,3 +70,18 @@ If the flash stops responding mid-session (commonly caused by the screen
 locking or the tab losing focus, which can end the camera connection), the
 status line will say so — turn the flash toggle off and back on to
 reconnect.
+
+## Screen flash on beat
+
+The **Screen flash on beat** switch flashes the whole page on each detected
+beat instead of (or alongside) the camera torch. It needs no camera
+permission at all, so it works on every device — including iPhone/Safari,
+where the torch is never available.
+
+The flash colour is a live blend of the current bass/mid/treble mix
+(violet/cyan/pink, matching the particle swarms), weighted by how much
+energy each band has at that instant, so it visually tracks whatever's
+dominant in the sound rather than being a flat colour. Stronger beats trend
+brighter and closer to white; quieter ones stay more tinted toward whichever
+band triggered them. Shares the same sensitivity and speed sliders as the
+torch/vibrate beat detector.

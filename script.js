@@ -14,6 +14,8 @@
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const speedSlider = document.getElementById("speedSlider");
   const dimToggle = document.getElementById("dimToggle");
+  const screenFlashToggle = document.getElementById("screenFlashToggle");
+  const screenFlashEl = document.getElementById("screenFlash");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -51,6 +53,7 @@
   let minFlashMs = 50;
   let maxFlashMs = 160;
   let dimFlickerEnabled = false;
+  let screenFlashEnabled = false;
   const BEAT_HISTORY_LEN = 40;
   // There's no real brightness constraint for camera torch on the web
   // platform — it's on/off only. This rapidly toggles the torch during
@@ -137,7 +140,7 @@
         (bandEnergy[band.name] - bandEnergySmoothed[band.name]) * 0.2;
     }
 
-    if (flashEnabled) detectBeat();
+    if (flashEnabled || screenFlashEnabled) detectBeat();
   }
 
   function detectBeat() {
@@ -167,13 +170,41 @@
   }
 
   function fireBeatEffects(strength) {
-    if (vibrateSupported) {
-      try { navigator.vibrate(35); } catch (_) { /* ignore */ }
+    if (flashEnabled) {
+      if (vibrateSupported) {
+        try { navigator.vibrate(35); } catch (_) { /* ignore */ }
+      }
+      if (torchSupported && torchTrack && !torchBusy) {
+        const duration = lerp(minFlashMs, maxFlashMs, strength);
+        pulseTorch(duration);
+      }
     }
-    if (torchSupported && torchTrack && !torchBusy) {
-      const duration = lerp(minFlashMs, maxFlashMs, strength);
-      pulseTorch(duration);
+    if (screenFlashEnabled) {
+      const duration = lerp(minFlashMs, maxFlashMs, strength) + 60;
+      flashScreen(beatColor(strength), duration, strength);
     }
+  }
+
+  function beatColor(strength) {
+    const bass = bandEnergy.bass, mid = bandEnergy.mid, treble = bandEnergy.treble;
+    const total = bass + mid + treble || 1;
+    const hue =
+      (BANDS[0].hue * bass + BANDS[1].hue * mid + BANDS[2].hue * treble) / total;
+    // Stronger beats trend brighter/whiter; quieter ones stay more tinted.
+    const light = lerp(55, 88, strength);
+    const sat = lerp(85, 55, strength);
+    return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
+  }
+
+  function flashScreen(color, durationMs, strength) {
+    screenFlashEl.style.transition = "none";
+    screenFlashEl.style.backgroundColor = color;
+    screenFlashEl.style.opacity = String(lerp(0.28, 0.62, strength));
+    // Force a reflow so the transition below animates from this opacity
+    // instead of jumping straight to the end value.
+    void screenFlashEl.offsetHeight;
+    screenFlashEl.style.transition = `opacity ${durationMs}ms ease-out`;
+    screenFlashEl.style.opacity = "0";
   }
 
   function pulseTorch(durationMs) {
@@ -432,6 +463,9 @@
   speedSlider.addEventListener("input", updateFlashSpeed);
   dimToggle.addEventListener("change", () => {
     dimFlickerEnabled = dimToggle.checked;
+  });
+  screenFlashToggle.addEventListener("change", () => {
+    screenFlashEnabled = screenFlashToggle.checked;
   });
   updateSensitivity();
   updateFlashSpeed();
