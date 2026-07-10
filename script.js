@@ -118,8 +118,8 @@
     if (bassHistory.length < 8) return;
 
     // sensitivity 0 -> harder to trigger (high bar), 1 -> easier (low bar).
-    const absThreshold = lerp(0.36, 0.12, sensitivity);
-    const relThreshold = lerp(1.8, 1.15, sensitivity);
+    const absThreshold = lerp(0.30, 0.08, sensitivity);
+    const relThreshold = lerp(1.6, 1.12, sensitivity);
 
     const avg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
     const now = performance.now();
@@ -252,7 +252,10 @@
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.8;
+    // Kept low (not the AnalyserNode default of 0.8) so short percussive
+    // hits aren't blended away before the beat detector sees them; the
+    // particle visuals get their own smoothing separately below.
+    analyser.smoothingTimeConstant = 0.15;
     freqData = new Uint8Array(analyser.frequencyBinCount);
     timeData = new Uint8Array(analyser.fftSize);
 
