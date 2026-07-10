@@ -13,6 +13,7 @@
   const flashStatus = document.getElementById("flashStatus");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const speedSlider = document.getElementById("speedSlider");
+  const dimToggle = document.getElementById("dimToggle");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -49,9 +50,18 @@
   let beatCooldownMs = 180;
   let minFlashMs = 50;
   let maxFlashMs = 160;
+  let dimFlickerEnabled = false;
   const BEAT_HISTORY_LEN = 40;
+  // There's no real brightness constraint for camera torch on the web
+  // platform — it's on/off only. This rapidly toggles the torch during
+  // each pulse to approximate a dimmer look; it's a rough illusion, not
+  // real dimming, and its smoothness is capped by how fast the device's
+  // camera hardware can actually respond to on/off calls.
+  const FLICKER_PERIOD_MS = 30;
+  const FLICKER_DUTY = 0.45;
 
   function lerp(a, b, t) { return a + (b - a) * t; }
+  function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
   function updateFlashSpeed() {
     flashSpeed = Number(speedSlider.value) / 100;
@@ -168,6 +178,12 @@
 
   function pulseTorch(durationMs) {
     torchBusy = true;
+    if (dimFlickerEnabled) {
+      flickerTorch(durationMs).finally(() => {
+        torchBusy = false;
+      });
+      return;
+    }
     setTorchConstraint(true).then(() => {
       setTimeout(() => {
         setTorchConstraint(false).finally(() => {
@@ -177,6 +193,23 @@
     }).catch(() => {
       torchBusy = false;
     });
+  }
+
+  async function flickerTorch(durationMs) {
+    const cycles = Math.max(1, Math.round(durationMs / FLICKER_PERIOD_MS));
+    const onMs = FLICKER_PERIOD_MS * FLICKER_DUTY;
+    const offMs = FLICKER_PERIOD_MS - onMs;
+    for (let i = 0; i < cycles; i++) {
+      if (!dimFlickerEnabled || !torchTrack || torchTrack.readyState === "ended") break;
+      await setTorchConstraint(true).catch(() => {});
+      await sleep(onMs);
+      if (!torchSupported) break;
+      await setTorchConstraint(false).catch(() => {});
+      await sleep(offMs);
+    }
+    if (torchTrack && torchTrack.readyState !== "ended") {
+      await setTorchConstraint(false).catch(() => {});
+    }
   }
 
   function setTorchConstraint(on) {
@@ -397,6 +430,9 @@
   flashBtn.addEventListener("click", toggleFlash);
   sensitivitySlider.addEventListener("input", updateSensitivity);
   speedSlider.addEventListener("input", updateFlashSpeed);
+  dimToggle.addEventListener("change", () => {
+    dimFlickerEnabled = dimToggle.checked;
+  });
   updateSensitivity();
   updateFlashSpeed();
 })();

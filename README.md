@@ -57,6 +57,15 @@ at up to ~14 times per second (~70ms between beats). Note that real-world
 speed can also be limited by how fast a given phone's camera hardware can
 physically toggle the torch.
 
+The **Dim flicker (experimental)** switch is the closest approximation to
+"brightness" available: the web platform's `torch` constraint is on/off
+only, there is no real intensity/brightness control exposed to browsers.
+When switched on, each flash pulse is broken into a rapid on/off flicker
+instead of staying solidly lit, to give a rough dimmer look. It's an
+illusion, not real dimming, and how smooth it looks depends on how fast
+the device's camera hardware can respond to on/off calls — on slower
+phones it may look janky or stuttery rather than dim.
+
 If the flash stops responding mid-session (commonly caused by the screen
 locking or the tab losing focus, which can end the camera connection), the
 status line will say so — turn the flash toggle off and back on to
