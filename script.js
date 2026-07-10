@@ -9,6 +9,8 @@
   const hud = document.getElementById("hud");
   const pauseBtn = document.getElementById("pauseBtn");
   const restartBtn = document.getElementById("restartBtn");
+  const flashBtn = document.getElementById("flashBtn");
+  const flashStatus = document.getElementById("flashStatus");
 
   const BANDS = [
     { name: "bass", from: 0, to: 0.08, hue: 262, count: 90 },   // violet
@@ -24,6 +26,17 @@
   let smoothedVolume = 0;
   const bandEnergy = { bass: 0, mid: 0, treble: 0 };
   const bandEnergySmoothed = { bass: 0, mid: 0, treble: 0 };
+
+  // Beat -> flash/vibrate.
+  let flashEnabled = false;
+  let flashRequested = false;
+  let torchTrack = null;
+  let torchSupported = false;
+  let vibrateSupported = typeof navigator.vibrate === "function";
+  let bassHistory = [];
+  let lastBeatAt = 0;
+  const BEAT_COOLDOWN_MS = 180;
+  const BEAT_HISTORY_LEN = 40;
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -88,6 +101,44 @@
       bandEnergySmoothed[band.name] +=
         (bandEnergy[band.name] - bandEnergySmoothed[band.name]) * 0.2;
     }
+
+    if (flashEnabled) detectBeat();
+  }
+
+  function detectBeat() {
+    const bass = bandEnergy.bass;
+    bassHistory.push(bass);
+    if (bassHistory.length > BEAT_HISTORY_LEN) bassHistory.shift();
+    if (bassHistory.length < 8) return;
+
+    const avg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
+    const now = performance.now();
+    const isBeat =
+      bass > 0.22 && bass > avg * 1.45 && now - lastBeatAt > BEAT_COOLDOWN_MS;
+
+    if (isBeat) {
+      lastBeatAt = now;
+      fireBeatEffects();
+    }
+  }
+
+  function fireBeatEffects() {
+    if (vibrateSupported) {
+      try { navigator.vibrate(35); } catch (_) { /* ignore */ }
+    }
+    if (torchSupported && torchTrack) {
+      setTorch(true);
+      setTimeout(() => setTorch(false), 90);
+    }
+  }
+
+  function setTorch(on) {
+    if (!torchTrack) return;
+    torchTrack.applyConstraints({ advanced: [{ torch: on }] }).catch(() => {
+      // Some browsers report torch as a capability but reject the
+      // constraint at runtime; disable further attempts if so.
+      torchSupported = false;
+    });
   }
 
   function draw(time) {
@@ -189,7 +240,67 @@
     ctx.fillRect(0, 0, width, height);
   }
 
+  async function requestFlashCapability() {
+    flashRequested = true;
+    flashStatus.classList.remove("hide");
+
+    if (!vibrateSupported) {
+      flashStatus.textContent =
+        "This device/browser doesn't support vibration.";
+    }
+
+    if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
+      appendFlashStatus("Camera flash isn't available in this browser.");
+      return;
+    }
+
+    try {
+      const camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+      const track = camStream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps && caps.torch) {
+        torchTrack = track;
+        torchSupported = true;
+        appendFlashStatus(
+          vibrateSupported
+            ? "Flash + vibrate armed."
+            : "Flash armed (vibrate unsupported)."
+        );
+      } else {
+        track.stop();
+        appendFlashStatus(
+          "This device/browser doesn't expose a camera flash (common on iPhone/Safari)." +
+            (vibrateSupported ? " Vibrate-only mode armed." : "")
+        );
+      }
+    } catch (err) {
+      appendFlashStatus(
+        "Couldn't access the camera for flash: " +
+          (err && err.message ? err.message : err) +
+          (vibrateSupported ? " Vibrate-only mode armed." : "")
+      );
+    }
+  }
+
+  function appendFlashStatus(text) {
+    flashStatus.textContent = text;
+  }
+
+  async function toggleFlash() {
+    if (!flashRequested) {
+      await requestFlashCapability();
+    }
+    flashEnabled = !flashEnabled;
+    flashBtn.textContent = "Flash + vibrate on beat: " + (flashEnabled ? "On" : "Off");
+    flashBtn.classList.toggle("active", flashEnabled);
+    if (!flashEnabled) setTorch(false);
+  }
+
   startBtn.addEventListener("click", startAudio);
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
+  flashBtn.addEventListener("click", toggleFlash);
 })();

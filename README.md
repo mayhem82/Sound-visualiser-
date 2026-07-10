@@ -24,3 +24,19 @@ and click **Enable microphone & start**. No build step, no dependencies.
 
 The microphone stream is only analysed, never connected to audio output, so
 there's no feedback loop.
+
+## Flash + vibrate on beat
+
+The **Flash + vibrate on beat** button arms a simple bass-onset detector
+(compares the current bass-band energy against its rolling average) and, on
+each detected beat:
+
+- pulses the device's camera flash (torch) for ~90ms, via the
+  `MediaStreamTrack` `torch` constraint on an environment-facing camera, and
+- triggers a short vibration via `navigator.vibrate`.
+
+Camera flash control is only exposed by some Android/Chrome-based browsers.
+It is not available in iOS Safari or on desktops without a camera with a
+torch — the app detects this and falls back to vibrate-only (or silently
+does nothing on devices with neither capability), reporting the current
+mode in the status line under the button.
