@@ -41,6 +41,13 @@
     <input id="screenFlashToggle" type="checkbox">
   </label>
   <button id="testFlashBtn" class="hud-btn" title="Manually fires one screen flash, independent of beat detection — use this to check the flash itself works.">Test flash</button>
+  <div id="freqRangeWrap" class="hud-slider freq-range" title="Which frequency range (Hz) the beat detector listens to. Narrow around 20-150Hz for kick/bass-drum only, or widen it up to catch bass guitar and low toms too.">
+    <div class="freq-range-title">Beat detection range: <span id="freqRangeLabel">20-150 Hz</span></div>
+    <div class="freq-range-sliders">
+      <input id="freqLowSlider" type="range" min="20" max="500" step="5" value="20">
+      <input id="freqHighSlider" type="range" min="60" max="2000" step="10" value="150">
+    </div>
+  </div>
 </div>
 <p id="flashStatus" class="flash-status hide"></p>
 

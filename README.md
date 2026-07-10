@@ -50,6 +50,14 @@ The **Beat sensitivity** slider adjusts how easily a beat is detected: low
 sensitivity requires a large, sharp bass spike; high sensitivity reacts to
 smaller bumps in the bass energy.
 
+The **Beat detection range** control is a pair of Hz sliders (default
+20-150Hz) setting which frequency range feeds the beat detector. Narrow it
+to isolate kick/bass-drum content, or widen it up to ~2kHz to also catch
+bass guitar or low toms. The two sliders keep a 20Hz minimum gap between
+them automatically. Since this is the same signal that drives the "bass"
+particle swarm, changing the range reshapes that swarm's frequency source
+too.
+
 The **Flash speed** slider adjusts how fast beats can retrigger the
 flash/vibrate: low speed limits retriggering to about 2.5 times per second
 (minimum ~400ms between beats), high speed allows close to a genuine strobe

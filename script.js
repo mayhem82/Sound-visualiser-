@@ -17,6 +17,9 @@
   const screenFlashToggle = document.getElementById("screenFlashToggle");
   const testFlashBtn = document.getElementById("testFlashBtn");
   const screenFlashEl = document.getElementById("screenFlash");
+  const freqLowSlider = document.getElementById("freqLowSlider");
+  const freqHighSlider = document.getElementById("freqHighSlider");
+  const freqRangeLabel = document.getElementById("freqRangeLabel");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -29,7 +32,7 @@
     { name: "treble", fromHz: 2000, toHz: 9000, hue: 330, count: 90 } // pink — cymbals, presence
   ];
 
-  let audioCtx, analyser, freqData, timeData, source, stream;
+  let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
   let width, height, cx, cy, dpr;
   let particles = [];
   let running = false;
@@ -75,6 +78,32 @@
     beatCooldownMs = lerp(400, 70, flashSpeed);
     minFlashMs = Math.max(18, beatCooldownMs * 0.28);
     maxFlashMs = Math.max(minFlashMs + 10, beatCooldownMs * 0.75);
+  }
+
+  const FREQ_MIN_GAP_HZ = 20;
+
+  function updateFreqRange(movedSlider) {
+    let low = Number(freqLowSlider.value);
+    let high = Number(freqHighSlider.value);
+    if (high - low < FREQ_MIN_GAP_HZ) {
+      if (movedSlider === "low") {
+        high = Math.min(Number(freqHighSlider.max), low + FREQ_MIN_GAP_HZ);
+        freqHighSlider.value = String(high);
+      } else {
+        low = Math.max(Number(freqLowSlider.min), high - FREQ_MIN_GAP_HZ);
+        freqLowSlider.value = String(low);
+      }
+    }
+    // BANDS[0] ("bass") drives both the bass particle swarm and beat
+    // detection — they read the same underlying signal, so this slider
+    // reshapes both together, not beat detection alone.
+    BANDS[0].fromHz = low;
+    BANDS[0].toHz = high;
+    freqRangeLabel.textContent = `${low}-${high} Hz`;
+    if (nyquist) {
+      BANDS[0].from = Math.min(1, low / nyquist);
+      BANDS[0].to = Math.min(1, high / nyquist);
+    }
   }
 
   function resize() {
@@ -349,7 +378,7 @@
     freqData = new Uint8Array(analyser.frequencyBinCount);
     timeData = new Uint8Array(analyser.fftSize);
 
-    const nyquist = audioCtx.sampleRate / 2;
+    nyquist = audioCtx.sampleRate / 2;
     for (const band of BANDS) {
       band.from = Math.min(1, band.fromHz / nyquist);
       band.to = Math.min(1, band.toHz / nyquist);
@@ -475,6 +504,9 @@
     // obviously visible regardless of the current bass/mid/treble mix.
     flashScreen("hsl(0, 0%, 100%)", 260, 1);
   });
+  freqLowSlider.addEventListener("input", () => updateFreqRange("low"));
+  freqHighSlider.addEventListener("input", () => updateFreqRange("high"));
   updateSensitivity();
   updateFlashSpeed();
+  updateFreqRange("low");
 })();

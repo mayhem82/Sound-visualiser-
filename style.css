@@ -168,6 +168,26 @@ html, body {
   accent-color: #7dd3fc;
 }
 
+.freq-range {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.freq-range-title {
+  white-space: nowrap;
+}
+
+.freq-range-sliders {
+  display: flex;
+  gap: 8px;
+}
+
+.freq-range-sliders input[type="range"] {
+  width: 90px;
+  accent-color: #7dd3fc;
+}
+
 @media (prefers-color-scheme: light) {
   /* This project is intentionally dark-only; a bright nebula on white
      washes out the glow blending, so we keep the dark theme fixed. */
