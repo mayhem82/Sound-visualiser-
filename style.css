@@ -180,12 +180,19 @@ html, body {
 
 .freq-range-sliders {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
 .freq-range-sliders input[type="range"] {
   width: 90px;
   accent-color: #7dd3fc;
+}
+
+.freq-all-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  margin: 0;
 }
 
 @media (prefers-color-scheme: light) {

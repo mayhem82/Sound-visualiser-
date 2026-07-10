@@ -54,9 +54,11 @@ The **Beat detection range** control is a pair of Hz sliders (default
 20-150Hz) setting which frequency range feeds the beat detector. Narrow it
 to isolate kick/bass-drum content, or widen it up to ~2kHz to also catch
 bass guitar or low toms. The two sliders keep a 20Hz minimum gap between
-them automatically. Since this is the same signal that drives the "bass"
-particle swarm, changing the range reshapes that swarm's frequency source
-too.
+them automatically. The **All Hz** button resets it to the sliders' full
+extent (20-2000Hz) in one click, so detection reacts to the whole spectrum
+rather than just bass. Since this is the same signal that drives the
+"bass" particle swarm, changing the range reshapes that swarm's frequency
+source too.
 
 The **Flash speed** slider adjusts how fast beats can retrigger the
 flash/vibrate: low speed limits retriggering to about 2.5 times per second

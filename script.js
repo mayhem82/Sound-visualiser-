@@ -20,6 +20,7 @@
   const freqLowSlider = document.getElementById("freqLowSlider");
   const freqHighSlider = document.getElementById("freqHighSlider");
   const freqRangeLabel = document.getElementById("freqRangeLabel");
+  const freqAllBtn = document.getElementById("freqAllBtn");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -506,6 +507,11 @@
   });
   freqLowSlider.addEventListener("input", () => updateFreqRange("low"));
   freqHighSlider.addEventListener("input", () => updateFreqRange("high"));
+  freqAllBtn.addEventListener("click", () => {
+    freqLowSlider.value = freqLowSlider.min;
+    freqHighSlider.value = freqHighSlider.max;
+    updateFreqRange("low");
+  });
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");
