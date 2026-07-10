@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sound Visualiser — Nebula</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Sound Nebula</h1>
+    <p>A live microphone visualiser. Bass, mids, and treble each drive their own swarm of glowing particles around a pulsing core — instead of the usual bars or waveform.</p>
+    <button id="startBtn">Enable microphone &amp; start</button>
+    <p id="status" class="status"></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <button id="pauseBtn" class="hud-btn">Pause</button>
+  <button id="restartBtn" class="hud-btn">Restart</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

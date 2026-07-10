@@ -1,0 +1,116 @@
+:root {
+  color-scheme: dark;
+  --bg: #05050a;
+  --fg: #f2f2f7;
+  --accent: #7dd3fc;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  overflow: hidden;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 5, 10, 0.55);
+  backdrop-filter: blur(6px);
+  padding: 24px;
+  transition: opacity 0.4s ease;
+}
+
+#overlay.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#panel {
+  max-width: 420px;
+  text-align: center;
+  background: rgba(15, 15, 25, 0.7);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 18px;
+  padding: 32px 28px;
+}
+
+#panel h1 {
+  margin: 0 0 12px;
+  font-size: 26px;
+  letter-spacing: 0.02em;
+}
+
+#panel p {
+  margin: 0 0 20px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.75);
+  font-size: 15px;
+}
+
+#startBtn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+#startBtn:hover { filter: brightness(1.08); }
+#startBtn:active { transform: scale(0.98); }
+
+.status {
+  min-height: 20px;
+  font-size: 13px;
+  color: #fca5a5;
+  margin: 14px 0 0 !important;
+}
+
+#hud {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+#hud.hide { display: none; }
+
+.hud-btn {
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(15, 15, 25, 0.55);
+  color: var(--fg);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hud-btn:hover { background: rgba(125, 211, 252, 0.18); }
+
+@media (prefers-color-scheme: light) {
+  /* This project is intentionally dark-only; a bright nebula on white
+     washes out the glow blending, so we keep the dark theme fixed. */
+}
