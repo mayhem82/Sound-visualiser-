@@ -421,6 +421,21 @@
     ctx.fillRect(0, 0, width, height);
   }
 
+  function isTransientCameraError(err) {
+    // These typically mean the camera hardware/OS briefly refused to
+    // start (e.g. another app still holding it, or the previous session's
+    // handle not yet released) rather than "this device has no torch" —
+    // worth one retry after a short delay instead of giving up immediately.
+    const name = err && err.name;
+    return name === "NotReadableError" || name === "AbortError" || name === "TrackStartError";
+  }
+
+  function acquireCameraTrack() {
+    return navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+      .then((camStream) => camStream.getVideoTracks()[0]);
+  }
+
   async function requestFlashCapability() {
     flashStatus.classList.remove("hide");
 
@@ -432,39 +447,53 @@
       return;
     }
 
+    let track;
     try {
-      const camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false
-      });
-      const track = camStream.getVideoTracks()[0];
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (caps && caps.torch) {
-        torchTrack = track;
-        torchSupported = true;
-        torchFailCount = 0;
-        track.addEventListener("ended", () =>
-          handleTorchLost(
-            "The camera connection ended (often caused by the screen locking " +
-              "or the tab losing focus). Turn the flash toggle off and back on to reconnect."
-          )
-        );
+      track = await acquireCameraTrack();
+    } catch (err) {
+      if (!isTransientCameraError(err)) {
         appendFlashStatus(
-          vibrateSupported
-            ? "Flash + vibrate armed."
-            : "Flash armed (vibrate unsupported)."
-        );
-      } else {
-        track.stop();
-        appendFlashStatus(
-          "This device/browser doesn't expose a camera flash (common on iPhone/Safari)." +
+          "Couldn't access the camera for flash: " +
+            (err && err.message ? err.message : err) +
             (vibrateSupported ? " Vibrate-only mode armed." : "")
         );
+        return;
       }
-    } catch (err) {
+      appendFlashStatus("Camera busy — retrying...");
+      await sleep(700);
+      try {
+        track = await acquireCameraTrack();
+      } catch (err2) {
+        appendFlashStatus(
+          "Couldn't access the camera for flash: " +
+            (err2 && err2.message ? err2.message : err2) +
+            " Close any other app or tab using the camera, then toggle flash off and back on to retry." +
+            (vibrateSupported ? " Vibrate-only mode armed for now." : "")
+        );
+        return;
+      }
+    }
+
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps && caps.torch) {
+      torchTrack = track;
+      torchSupported = true;
+      torchFailCount = 0;
+      track.addEventListener("ended", () =>
+        handleTorchLost(
+          "The camera connection ended (often caused by the screen locking " +
+            "or the tab losing focus). Turn the flash toggle off and back on to reconnect."
+        )
+      );
       appendFlashStatus(
-        "Couldn't access the camera for flash: " +
-          (err && err.message ? err.message : err) +
+        vibrateSupported
+          ? "Flash + vibrate armed."
+          : "Flash armed (vibrate unsupported)."
+      );
+    } else {
+      track.stop();
+      appendFlashStatus(
+        "This device/browser doesn't expose a camera flash (common on iPhone/Safari)." +
           (vibrateSupported ? " Vibrate-only mode armed." : "")
       );
     }

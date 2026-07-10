@@ -45,6 +45,11 @@ each detected beat:
   clears the threshold up to ~160ms for a very strong one, and
 - triggers a short vibration via `navigator.vibrate`.
 
+If the camera fails to start with a transient-looking error (e.g. Chrome's
+"Could not start video source" / `NotReadableError`, usually meaning
+another app or tab is still holding the camera), it's retried once
+automatically after a short delay before falling back.
+
 Camera flash control is only exposed by some Android/Chrome-based browsers.
 It is not available in iOS Safari or on desktops without a camera with a
 torch — the app detects this and falls back to vibrate-only (or silently
