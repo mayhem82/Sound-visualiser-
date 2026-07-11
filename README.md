@@ -93,6 +93,12 @@ system by itself (requesting the camera if needed) — you don't have to
 also press the Flash button first. (It takes priority over Dim flicker,
 which only applies to the normal on-beat pulse.)
 
+Establishing that baseline on/off state is protected from beat-triggered
+pulses firing concurrently with it (both are serialized through the same
+lock), and retries once on failure — some devices reject a torch command
+issued immediately after the camera starts, before its preview has
+actually begun streaming frames.
+
 If the flash stops responding mid-session (commonly caused by the screen
 locking or the tab losing focus, which can end the camera connection), the
 status line will say so — turn the flash toggle off and back on to

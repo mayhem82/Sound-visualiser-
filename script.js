@@ -519,30 +519,74 @@
     flashStatus.textContent = text;
   }
 
-  async function armFlash() {
-    flashEnabled = true;
-    if (!torchSupported) {
-      // First arm, or a previous arm was lost — (re)request the camera.
-      await requestFlashCapability();
+  async function setTorchBaseline(on) {
+    // Callers hold torchBusy for the duration of this call so a
+    // beat-triggered pulse can never interleave with it — without that,
+    // a baseline "on" call and an organic beat's "off" call could race,
+    // and whichever happened to resolve last would silently win.
+    if (!torchTrack) return;
+    try {
+      await setTorchConstraint(on);
+      return;
+    } catch (err) {
+      // Some devices reject a torch constraint applied immediately after
+      // getUserMedia resolves, before the camera preview has actually
+      // started streaming frames — one retry after a short delay usually
+      // clears it.
     }
-    flashBtn.textContent = "Flash + vibrate on beat: On";
-    flashBtn.classList.add("active");
-    if (torchSupported && torchTrack && torchInverted) {
-      // Inverted mode's base state is ON; establish it as soon as armed.
-      setTorchConstraint(true).catch(() => {});
+    await sleep(250);
+    try {
+      await setTorchConstraint(on);
+    } catch (err2) {
+      // Unlike regular beat pulses (which tolerate a transient failure
+      // silently — one missed flash isn't worth reporting), a failed
+      // *baseline* call means the light may just never turn on with no
+      // other feedback, so this one is surfaced.
+      appendFlashStatus(
+        "The camera flash didn't respond to the initial " +
+          (on ? "on" : "off") +
+          " command (" +
+          (err2 && err2.message ? err2.message : err2) +
+          "). Try toggling the flash off and back on."
+      );
     }
   }
 
-  function disarmFlash() {
+  async function armFlash() {
+    flashEnabled = true;
+    torchBusy = true; // hold off beat-triggered pulses until arming settles
+    try {
+      if (!torchSupported) {
+        // First arm, or a previous arm was lost — (re)request the camera.
+        await requestFlashCapability();
+      }
+      flashBtn.textContent = "Flash + vibrate on beat: On";
+      flashBtn.classList.add("active");
+      if (torchSupported && torchTrack && torchInverted) {
+        // Inverted mode's base state is ON; establish it as soon as armed.
+        await setTorchBaseline(true);
+      }
+    } finally {
+      torchBusy = false;
+    }
+  }
+
+  async function disarmFlash() {
     flashEnabled = false;
     flashBtn.textContent = "Flash + vibrate on beat: Off";
     flashBtn.classList.remove("active");
-    if (torchTrack) setTorchConstraint(false).catch(() => {});
+    if (!torchTrack) return;
+    torchBusy = true;
+    try {
+      await setTorchBaseline(false);
+    } finally {
+      torchBusy = false;
+    }
   }
 
   async function toggleFlash() {
     if (flashEnabled) {
-      disarmFlash();
+      await disarmFlash();
     } else {
       await armFlash();
     }
@@ -571,7 +615,12 @@
     }
     if (flashEnabled && torchSupported && torchTrack && !torchBusy) {
       // Switch the base state immediately: ON for inverted mode, OFF for normal.
-      setTorchConstraint(torchInverted).catch(() => {});
+      torchBusy = true;
+      try {
+        await setTorchBaseline(torchInverted);
+      } finally {
+        torchBusy = false;
+      }
     }
   });
   screenFlashToggle.addEventListener("change", () => {
