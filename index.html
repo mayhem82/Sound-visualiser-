@@ -47,6 +47,10 @@
     <input id="screenFlashToggle" type="checkbox">
   </label>
   <button id="testFlashBtn" class="hud-btn" title="Manually fires one screen flash, independent of beat detection — use this to check the flash itself works.">Test flash</button>
+  <label id="syncDelayWrap" class="hud-slider" title="Delays torch/vibrate/screen flash after a beat is detected, to compensate for a slower device's own hardware response lag (e.g. torch that's slow to physically respond) or to match timing with another device.">
+    Sync delay: <span id="syncDelayLabel">0 ms</span>
+    <input id="syncDelaySlider" type="range" min="0" max="500" step="10" value="0">
+  </label>
   <div id="freqRangeWrap" class="hud-slider freq-range" title="Which frequency range (Hz) the beat detector listens to. Narrow around 20-150Hz for kick/bass-drum only, or widen it up to catch bass guitar and low toms too.">
     <div class="freq-range-title">Beat detection range: <span id="freqRangeLabel">20-150 Hz</span></div>
     <div class="freq-range-sliders">

@@ -23,6 +23,8 @@
   const freqRangeLabel = document.getElementById("freqRangeLabel");
   const freqAllBtn = document.getElementById("freqAllBtn");
   const blackoutEl = document.getElementById("blackout");
+  const syncDelaySlider = document.getElementById("syncDelaySlider");
+  const syncDelayLabel = document.getElementById("syncDelayLabel");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -62,6 +64,7 @@
   let dimFlickerEnabled = false;
   let screenFlashEnabled = false;
   let torchInverted = false; // false: off, flashes on beat. true: on, cuts on beat.
+  let syncDelayMs = 0; // delays torch/vibrate/screen flash after beat detection
   const BEAT_HISTORY_LEN = 40;
   // There's no real brightness constraint for camera torch on the web
   // platform — it's on/off only. This rapidly toggles the torch during
@@ -199,7 +202,11 @@
       // How far above threshold this hit landed, 0 (just cleared the bar)
       // to 1 (very strong hit) — drives a proportionally longer flash.
       const strength = Math.min(1, Math.max(0, (bass - absThreshold) / (0.85 - absThreshold)));
-      fireBeatEffects(strength);
+      if (syncDelayMs > 0) {
+        setTimeout(() => fireBeatEffects(strength), syncDelayMs);
+      } else {
+        fireBeatEffects(strength);
+      }
     }
   }
 
@@ -596,6 +603,11 @@
     sensitivity = Number(sensitivitySlider.value) / 100;
   }
 
+  function updateSyncDelay() {
+    syncDelayMs = Number(syncDelaySlider.value);
+    syncDelayLabel.textContent = `${syncDelayMs} ms`;
+  }
+
   startBtn.addEventListener("click", startAudio);
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
@@ -638,9 +650,11 @@
     freqHighSlider.value = freqHighSlider.max;
     updateFreqRange("low");
   });
+  syncDelaySlider.addEventListener("input", updateSyncDelay);
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");
+  updateSyncDelay();
 
   // Tap the empty screen to hide/show the menu; double-tap to black out
   // the screen. Beat detection and effects (torch/vibrate/screen flash)

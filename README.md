@@ -70,6 +70,12 @@ rather than just bass. Since this is the same signal that drives the
 "bass" particle swarm, changing the range reshapes that swarm's frequency
 source too.
 
+The **Sync delay** slider (0-500ms, default 0) delays torch/vibrate/screen
+flash after a beat is detected. Useful for compensating for a slower
+device's own hardware response lag (e.g. a torch that's slow to physically
+respond), or for nudging timing to match another device. Doesn't affect
+the particle visuals, which always react immediately.
+
 The **Flash speed** slider adjusts how fast beats can retrigger the
 flash/vibrate: low speed limits retriggering to about 2.5 times per second
 (minimum ~400ms between beats), high speed allows close to a genuine strobe
