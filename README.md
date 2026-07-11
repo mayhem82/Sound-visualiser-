@@ -86,6 +86,12 @@ illusion, not real dimming, and how smooth it looks depends on how fast
 the device's camera hardware can respond to on/off calls — on slower
 phones it may look janky or stuttery rather than dim.
 
+The **Invert torch (on, cuts on beat)** switch flips the polarity: instead
+of the torch staying off and briefly flashing on for each beat, it stays on
+continuously and briefly cuts off on each beat. Toggling it takes effect
+immediately if the flash is already armed. (It takes priority over Dim
+flicker, which only applies to the normal on-beat pulse.)
+
 If the flash stops responding mid-session (commonly caused by the screen
 locking or the tab losing focus, which can end the camera connection), the
 status line will say so — turn the flash toggle off and back on to

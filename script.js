@@ -14,6 +14,7 @@
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const speedSlider = document.getElementById("speedSlider");
   const dimToggle = document.getElementById("dimToggle");
+  const invertToggle = document.getElementById("invertToggle");
   const screenFlashToggle = document.getElementById("screenFlashToggle");
   const testFlashBtn = document.getElementById("testFlashBtn");
   const screenFlashEl = document.getElementById("screenFlash");
@@ -60,6 +61,7 @@
   let maxFlashMs = 160;
   let dimFlickerEnabled = false;
   let screenFlashEnabled = false;
+  let torchInverted = false; // false: off, flashes on beat. true: on, cuts on beat.
   const BEAT_HISTORY_LEN = 40;
   // There's no real brightness constraint for camera torch on the web
   // platform — it's on/off only. This rapidly toggles the torch during
@@ -243,6 +245,20 @@
 
   function pulseTorch(durationMs) {
     torchBusy = true;
+    if (torchInverted) {
+      // Base state is ON (set when flash was armed/toggled); a beat
+      // briefly cuts it OFF then restores ON.
+      setTorchConstraint(false).then(() => {
+        setTimeout(() => {
+          setTorchConstraint(true).finally(() => {
+            torchBusy = false;
+          });
+        }, durationMs);
+      }).catch(() => {
+        torchBusy = false;
+      });
+      return;
+    }
     if (dimFlickerEnabled) {
       flickerTorch(durationMs).finally(() => {
         torchBusy = false;
@@ -511,7 +527,12 @@
     }
     flashBtn.textContent = "Flash + vibrate on beat: " + (flashEnabled ? "On" : "Off");
     flashBtn.classList.toggle("active", flashEnabled);
-    if (!flashEnabled && torchTrack) setTorchConstraint(false).catch(() => {});
+    if (flashEnabled && torchSupported && torchTrack && torchInverted) {
+      // Inverted mode's base state is ON; establish it as soon as armed.
+      setTorchConstraint(true).catch(() => {});
+    } else if (!flashEnabled && torchTrack) {
+      setTorchConstraint(false).catch(() => {});
+    }
   }
 
   function updateSensitivity() {
@@ -526,6 +547,13 @@
   speedSlider.addEventListener("input", updateFlashSpeed);
   dimToggle.addEventListener("change", () => {
     dimFlickerEnabled = dimToggle.checked;
+  });
+  invertToggle.addEventListener("change", () => {
+    torchInverted = invertToggle.checked;
+    if (flashEnabled && torchSupported && torchTrack && !torchBusy) {
+      // Switch the base state immediately: ON for inverted mode, OFF for normal.
+      setTorchConstraint(torchInverted).catch(() => {});
+    }
   });
   screenFlashToggle.addEventListener("change", () => {
     screenFlashEnabled = screenFlashToggle.checked;
