@@ -519,19 +519,32 @@
     flashStatus.textContent = text;
   }
 
-  async function toggleFlash() {
-    flashEnabled = !flashEnabled;
-    if (flashEnabled && !torchSupported) {
+  async function armFlash() {
+    flashEnabled = true;
+    if (!torchSupported) {
       // First arm, or a previous arm was lost — (re)request the camera.
       await requestFlashCapability();
     }
-    flashBtn.textContent = "Flash + vibrate on beat: " + (flashEnabled ? "On" : "Off");
-    flashBtn.classList.toggle("active", flashEnabled);
-    if (flashEnabled && torchSupported && torchTrack && torchInverted) {
+    flashBtn.textContent = "Flash + vibrate on beat: On";
+    flashBtn.classList.add("active");
+    if (torchSupported && torchTrack && torchInverted) {
       // Inverted mode's base state is ON; establish it as soon as armed.
       setTorchConstraint(true).catch(() => {});
-    } else if (!flashEnabled && torchTrack) {
-      setTorchConstraint(false).catch(() => {});
+    }
+  }
+
+  function disarmFlash() {
+    flashEnabled = false;
+    flashBtn.textContent = "Flash + vibrate on beat: Off";
+    flashBtn.classList.remove("active");
+    if (torchTrack) setTorchConstraint(false).catch(() => {});
+  }
+
+  async function toggleFlash() {
+    if (flashEnabled) {
+      disarmFlash();
+    } else {
+      await armFlash();
     }
   }
 
@@ -548,8 +561,14 @@
   dimToggle.addEventListener("change", () => {
     dimFlickerEnabled = dimToggle.checked;
   });
-  invertToggle.addEventListener("change", () => {
+  invertToggle.addEventListener("change", async () => {
     torchInverted = invertToggle.checked;
+    if (torchInverted && !flashEnabled) {
+      // Checking Invert should activate the flash system by itself,
+      // without requiring the separate Flash button to already be on.
+      await armFlash();
+      return;
+    }
     if (flashEnabled && torchSupported && torchTrack && !torchBusy) {
       // Switch the base state immediately: ON for inverted mode, OFF for normal.
       setTorchConstraint(torchInverted).catch(() => {});
