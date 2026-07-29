@@ -3,6 +3,7 @@
 
   const MAX_POINTS = 32;
   const STORAGE_KEY = "cvCalibrationPoints_v1";
+  const ROTATE_KEY = "cvRotate180_v1";
 
   const stage = document.getElementById("stage");
   const video = document.getElementById("cameraFeed");
@@ -20,6 +21,7 @@
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
+  const rotateBtn = document.getElementById("rotateBtn");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -55,6 +57,11 @@
   let frozenColor = null;
   let aiming = false;
   let paused = false;
+  // Some phones (notably several Android back cameras) deliver frames
+  // pre-rotated 180° at the driver/OS level — unrelated to WebGL's own
+  // texture-space Y-flip, and not something we can reliably detect, so it's
+  // a manual per-device toggle instead, persisted once the user sets it.
+  let rotate180 = loadRotatePref();
   let gl, program, uniforms, quadBuffer, videoTexture;
   let rafId = null;
   let aimIntervalId = null;
@@ -144,6 +151,22 @@
     }
   }
 
+  function loadRotatePref() {
+    try {
+      return localStorage.getItem(ROTATE_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function saveRotatePref() {
+    try {
+      localStorage.setItem(ROTATE_KEY, rotate180 ? "1" : "0");
+    } catch (e) {
+      // Non-fatal — just won't persist across reloads.
+    }
+  }
+
   function setStatus(msg) {
     statusEl.textContent = msg || "";
   }
@@ -155,8 +178,10 @@
   const VERT_SRC = `
     attribute vec2 aPos;
     varying vec2 vUv;
+    uniform float uRotate180;
     void main() {
-      vUv = aPos * 0.5 + 0.5;
+      vec2 uv = aPos * 0.5 + 0.5;
+      vUv = uRotate180 > 0.5 ? (1.0 - uv) : uv;
       gl_Position = vec4(aPos, 0.0, 1.0);
     }
   `;
@@ -294,6 +319,7 @@
     uniforms = {
       uTex: gl.getUniformLocation(program, "uTex"),
       uBlend: gl.getUniformLocation(program, "uBlend"),
+      uRotate180: gl.getUniformLocation(program, "uRotate180"),
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
       uCorrection: gl.getUniformLocation(program, "uCorrection")
@@ -329,6 +355,7 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.uniform1i(uniforms.uTex, 0);
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
+      gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     rafId = requestAnimationFrame(renderLoop);
@@ -524,6 +551,12 @@
     pauseBtn.textContent = paused ? "Resume" : "Pause";
   });
 
+  rotateBtn.addEventListener("click", () => {
+    rotate180 = !rotate180;
+    rotateBtn.classList.toggle("active", rotate180);
+    saveRotatePref();
+  });
+
   calibrateBtn.addEventListener("click", startAiming);
   cancelAimBtn.addEventListener("click", stopAiming);
 
@@ -551,4 +584,5 @@
 
   updatePointsCount();
   blendLabel.textContent = `${blendSlider.value}%`;
+  rotateBtn.classList.toggle("active", rotate180);
 })();
