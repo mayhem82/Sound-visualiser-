@@ -67,17 +67,18 @@ video#cameraFeed, canvas#sampleCanvas {
   color: rgba(242, 242, 247, 0.75);
 }
 
-/* Tune panel + saved-colours panel: same glass-modal look as #panel */
+/* Tune panel + saved-colours panel: docked at the bottom of the screen,
+   over the camera feed — not a dimmed modal takeover, so the camera stays
+   visible and the HUD above stays usable while tuning. */
 #tunePanel,
 #pointsPanel {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 4;
   display: flex;
-  align-items: flex-end;
   justify-content: center;
-  background: rgba(5, 5, 10, 0.55);
-  backdrop-filter: blur(6px);
 }
 
 #tunePanel.hide,
