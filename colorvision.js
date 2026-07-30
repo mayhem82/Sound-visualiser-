@@ -6,6 +6,9 @@
   const ROTATE_KEY = "cvRotate180_v1";
   const SPREAD_KEY = "cvSpread_v1";
   const DEFAULT_SPREAD = 4;
+  const CVD_TYPE_KEY = "cvCvdType_v1";
+  const CVD_STRENGTH_KEY = "cvCvdStrength_v1";
+  const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
 
   const stage = document.getElementById("stage");
   const video = document.getElementById("cameraFeed");
@@ -21,6 +24,10 @@
   const blendLabel = document.getElementById("blendLabel");
   const spreadSlider = document.getElementById("spreadSlider");
   const spreadLabel = document.getElementById("spreadLabel");
+  const cvdTypeSelect = document.getElementById("cvdTypeSelect");
+  const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
+  const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
+  const cvdStrengthLabel = document.getElementById("cvdStrengthLabel");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -112,6 +119,8 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
+  let cvdType = loadCvdTypePref();
+  let cvdStrength = loadCvdStrengthPref();
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -286,6 +295,40 @@
     return "Very wide";
   }
 
+  function loadCvdTypePref() {
+    try {
+      const raw = localStorage.getItem(CVD_TYPE_KEY);
+      return Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, raw) ? raw : "none";
+    } catch (e) {
+      return "none";
+    }
+  }
+
+  function saveCvdTypePref() {
+    try {
+      localStorage.setItem(CVD_TYPE_KEY, cvdType);
+    } catch (e) {
+      // Non-fatal — just won't persist across reloads.
+    }
+  }
+
+  function loadCvdStrengthPref() {
+    try {
+      const raw = parseFloat(localStorage.getItem(CVD_STRENGTH_KEY));
+      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function saveCvdStrengthPref() {
+    try {
+      localStorage.setItem(CVD_STRENGTH_KEY, String(cvdStrength));
+    } catch (e) {
+      // Non-fatal — just won't persist across reloads.
+    }
+  }
+
   function setStatus(msg) {
     statusEl.textContent = msg || "";
   }
@@ -315,9 +358,50 @@
     uniform vec3 uSourceLab[${MAX_POINTS}];
     uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
     uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
+    uniform int uCvdType;      // 0=none, 1=protan, 2=deutan, 3=tritan
+    uniform float uCvdStrength;
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    float linearToSrgb(float c) {
+      return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+    }
+
+    // Machado, Oliveira & Fonseca (2009) dichromacy-simulation matrices,
+    // applied directly in linear RGB. Error-redistribution implements the
+    // classic "Daltonize" technique (Fidaner, Lin & Ozguven): simulate what
+    // a dichromat sees, take what's lost (error = original - simulated),
+    // and push that lost information into the channels the deficiency
+    // doesn't affect. The protan/deutan redistribution matrix is the one
+    // from that original algorithm; the tritan one is an analogous
+    // derivation of our own (blue-yellow deficiency is far less commonly
+    // covered by published implementations than red-green is).
+    vec3 daltonize(vec3 srgbColor, int type, float strength) {
+      if (type == 0 || strength <= 0.0) return srgbColor;
+
+      vec3 lin = vec3(srgbToLinear(srgbColor.r), srgbToLinear(srgbColor.g), srgbToLinear(srgbColor.b));
+      mat3 sim;
+      mat3 errMat;
+      if (type == 1) {
+        sim = mat3(0.152286, 0.114503, -0.003882,  1.052583, 0.786281, -0.048116,  -0.204868, 0.099216, 1.051998);
+        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
+      } else if (type == 2) {
+        sim = mat3(0.367322, 0.280085, -0.011820,  0.860646, 0.672501, 0.042940,  -0.227968, 0.047413, 0.968881);
+        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
+      } else {
+        sim = mat3(1.255528, -0.078411, 0.004733,  -0.076749, 0.930809, 0.691367,  -0.178779, 0.147602, 0.303900);
+        errMat = mat3(1.0, 0.0, 0.0,  0.0, 1.0, 0.0,  0.7, 0.7, 0.0);
+      }
+
+      vec3 simulated = sim * lin;
+      vec3 err = lin - simulated;
+      vec3 correctedLin = clamp(lin + errMat * err, 0.0, 1.0);
+      vec3 correctedSrgb = vec3(
+        linearToSrgb(correctedLin.r), linearToSrgb(correctedLin.g), linearToSrgb(correctedLin.b)
+      );
+      return mix(srgbColor, correctedSrgb, strength);
     }
 
     vec3 rgb2lab(vec3 c) {
@@ -367,6 +451,7 @@
 
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
+      vec3 base = daltonize(original, uCvdType, uCvdStrength);
       vec3 correction = vec3(0.0);
       vec2 correction2 = vec2(0.0);
 
@@ -389,7 +474,7 @@
         }
       }
 
-      vec3 hsl = rgb2hsl(original);
+      vec3 hsl = rgb2hsl(base);
       hsl.x = mod(hsl.x + correction.x + 360.0, 360.0);
       hsl.y = clamp(hsl.y + correction.y, 0.0, 1.0);
       hsl.z = clamp(hsl.z + correction.z, 0.0, 1.0);
@@ -455,7 +540,9 @@
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
       uCorrection: gl.getUniformLocation(program, "uCorrection"),
-      uCorrection2: gl.getUniformLocation(program, "uCorrection2")
+      uCorrection2: gl.getUniformLocation(program, "uCorrection2"),
+      uCvdType: gl.getUniformLocation(program, "uCvdType"),
+      uCvdStrength: gl.getUniformLocation(program, "uCvdStrength")
     };
   }
 
@@ -493,6 +580,8 @@
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
+      gl.uniform1i(uniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
+      gl.uniform1f(uniforms.uCvdStrength, cvdStrength);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     rafId = requestAnimationFrame(renderLoop);
@@ -1006,6 +1095,18 @@
     saveSpreadPref();
   });
 
+  cvdTypeSelect.addEventListener("change", () => {
+    cvdType = cvdTypeSelect.value;
+    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+    saveCvdTypePref();
+  });
+
+  cvdStrengthSlider.addEventListener("input", () => {
+    cvdStrength = parseFloat(cvdStrengthSlider.value) / 100;
+    cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
+    saveCvdStrengthPref();
+  });
+
   pauseBtn.addEventListener("click", () => {
     paused = !paused;
     pauseBtn.textContent = paused ? "Resume" : "Pause";
@@ -1098,4 +1199,8 @@
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);
   rotateBtn.classList.toggle("active", rotate180);
+  cvdTypeSelect.value = cvdType;
+  cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+  cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
+  cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
 })();

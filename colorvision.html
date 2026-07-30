@@ -28,6 +28,19 @@
     True &harr; Corrected: <span id="blendLabel">100%</span>
     <input id="blendSlider" type="range" min="0" max="100" value="100">
   </label>
+  <label id="cvdTypeWrap" class="hud-slider" title="Applies a whole-frame correction tuned to a diagnosed colour vision deficiency type, independent of any colours you calibrate by hand below.">
+    Colour blindness type:
+    <select id="cvdTypeSelect">
+      <option value="none">None (manual only)</option>
+      <option value="protan">Protanopia (red-weak)</option>
+      <option value="deutan">Deuteranopia (green-weak)</option>
+      <option value="tritan">Tritanopia (blue-yellow)</option>
+    </select>
+  </label>
+  <label id="cvdStrengthWrap" class="hud-slider hide" title="How strongly the type-based correction is applied. Lower it if the full correction looks over-saturated or unnatural for your degree of colour vision deficiency.">
+    Type correction: <span id="cvdStrengthLabel">100%</span>
+    <input id="cvdStrengthSlider" type="range" min="0" max="100" value="100">
+  </label>
   <label id="spreadWrap" class="hud-slider" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
     Correction spread: <span id="spreadLabel">Medium</span>
     <input id="spreadSlider" type="range" min="1" max="40" value="4">
