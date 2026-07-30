@@ -26,6 +26,7 @@
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
+  const torchBtn = document.getElementById("torchBtn");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -109,6 +110,9 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
+  let torchTrack = null;
+  let torchOn = false;
+  let torchSupported = false;
   let gl, program, uniforms, quadBuffer, videoTexture;
   let rafId = null;
   let aimIntervalId = null;
@@ -506,8 +510,51 @@
       initGL();
       uploadPointUniforms();
       renderLoop();
+      setupTorch(stream.getVideoTracks()[0]);
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
+    }
+  }
+
+  // ---- Flashlight (torch) ----
+  // The torch constraint is only exposed on some Android/Chrome-based
+  // environment-facing cameras — not iOS Safari, not desktops without a
+  // torch-capable camera — so the button only appears once capability is
+  // actually confirmed on the live track, rather than assumed.
+
+  function setupTorch(track) {
+    torchTrack = track;
+    torchOn = false;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    torchSupported = !!(caps && caps.torch);
+    torchBtn.classList.toggle("hide", !torchSupported);
+    torchBtn.classList.remove("active");
+    torchBtn.setAttribute("aria-pressed", "false");
+    torchBtn.textContent = "Flashlight";
+    if (!torchSupported) return;
+    track.addEventListener("ended", () => {
+      // Commonly fires when the screen locks or the tab loses focus, which
+      // can end the camera connection outright — the torch goes with it.
+      torchSupported = false;
+      torchOn = false;
+      torchBtn.classList.add("hide");
+    });
+  }
+
+  async function toggleTorch() {
+    if (!torchTrack || !torchSupported) return;
+    const next = !torchOn;
+    try {
+      await torchTrack.applyConstraints({ advanced: [{ torch: next }] });
+      torchOn = next;
+      torchBtn.classList.toggle("active", torchOn);
+      torchBtn.setAttribute("aria-pressed", String(torchOn));
+      torchBtn.textContent = torchOn ? "Flashlight: On" : "Flashlight";
+    } catch (err) {
+      // Some devices report the capability but reject the constraint in
+      // practice — stop offering it rather than leave a dead button.
+      torchSupported = false;
+      torchBtn.classList.add("hide");
     }
   }
 
@@ -906,6 +953,8 @@
     rotateBtn.setAttribute("aria-pressed", String(rotate180));
     saveRotatePref();
   });
+
+  torchBtn.addEventListener("click", toggleTorch);
 
   calibrateBtn.addEventListener("click", openChoosePanel);
   chooseAimBtn.addEventListener("click", () => {
