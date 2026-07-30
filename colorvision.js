@@ -27,6 +27,8 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
+  const switchCameraBtn = document.getElementById("switchCameraBtn");
+  const cameraStatus = document.getElementById("cameraStatus");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -113,6 +115,9 @@
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
+  let currentStream = null;
+  let videoDevices = [];
+  let currentDeviceIndex = -1;
   let gl, program, uniforms, quadBuffer, videoTexture;
   let rafId = null;
   let aimIntervalId = null;
@@ -502,17 +507,77 @@
         video: { facingMode: { ideal: "environment" } },
         audio: false
       });
-      video.srcObject = stream;
-      await video.play();
+      await attachStream(stream);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
       resizeStage();
       initGL();
       uploadPointUniforms();
       renderLoop();
-      setupTorch(stream.getVideoTracks()[0]);
+      refreshVideoDevices();
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
+    }
+  }
+
+  async function attachStream(stream) {
+    currentStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    setupTorch(stream.getVideoTracks()[0]);
+  }
+
+  function stopCurrentStream() {
+    if (!currentStream) return;
+    currentStream.getTracks().forEach((t) => t.stop());
+    currentStream = null;
+  }
+
+  function showCameraStatus(msg) {
+    cameraStatus.textContent = msg;
+    cameraStatus.classList.remove("hide");
+  }
+
+  function hideCameraStatus() {
+    cameraStatus.classList.add("hide");
+    cameraStatus.textContent = "";
+  }
+
+  // ---- Camera switching ----
+  // Phones commonly expose more than the simple front/back pair (extra
+  // wide, telephoto, multiple back lenses), so devices are enumerated and
+  // cycled by deviceId rather than just flipping a front/back facingMode.
+
+  async function refreshVideoDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      switchCameraBtn.classList.toggle("hide", videoDevices.length <= 1);
+      const track = currentStream && currentStream.getVideoTracks()[0];
+      const activeId = track && track.getSettings ? track.getSettings().deviceId : null;
+      currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
+      if (currentDeviceIndex === -1) currentDeviceIndex = 0;
+    } catch (err) {
+      switchCameraBtn.classList.add("hide");
+    }
+  }
+
+  async function switchCamera() {
+    if (videoDevices.length <= 1) return;
+    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    const nextDevice = videoDevices[nextIndex];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: nextDevice.deviceId } },
+        audio: false
+      });
+      stopCurrentStream();
+      await attachStream(stream);
+      currentDeviceIndex = nextIndex;
+      hideCameraStatus();
+      refreshVideoDevices();
+    } catch (err) {
+      showCameraStatus("Couldn't switch camera: " + (err.message || err.name || "unknown error"));
     }
   }
 
@@ -955,6 +1020,7 @@
   });
 
   torchBtn.addEventListener("click", toggleTorch);
+  switchCameraBtn.addEventListener("click", switchCamera);
 
   calibrateBtn.addEventListener("click", openChoosePanel);
   chooseAimBtn.addEventListener("click", () => {
