@@ -131,6 +131,7 @@
   let currentStream = null;
   let videoDevices = [];
   let currentDeviceIndex = -1;
+  let switchingCamera = false;
   let mediaRecorder = null;
   let recordedChunks = [];
   let recordingMimeType = "";
@@ -667,21 +668,41 @@
   }
 
   async function switchCamera() {
-    if (videoDevices.length <= 1) return;
+    if (videoDevices.length <= 1 || switchingCamera) return;
+    switchingCamera = true;
     const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
     const nextDevice = videoDevices[nextIndex];
+    // Release the current camera before requesting the next one. Many
+    // phones — especially Android — refuse or silently fail a second
+    // concurrent camera open, so grabbing the new stream while the old
+    // one is still held (the previous ordering here) could fail on real
+    // hardware even though it works fine against a single mocked device.
+    stopCurrentStream();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { deviceId: { exact: nextDevice.deviceId } },
         audio: false
       });
-      stopCurrentStream();
       await attachStream(stream);
       currentDeviceIndex = nextIndex;
       hideCameraStatus();
-      refreshVideoDevices();
+      await refreshVideoDevices();
     } catch (err) {
       showCameraStatus("Couldn't switch camera: " + (err.message || err.name || "unknown error"));
+      // The old camera is already released at this point — try to recover
+      // some feed rather than leave the screen dark.
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        await attachStream(fallback);
+        await refreshVideoDevices();
+      } catch (err2) {
+        showCameraStatus("Camera lost — reload the page to reconnect.");
+      }
+    } finally {
+      switchingCamera = false;
     }
   }
 
