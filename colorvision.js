@@ -1194,6 +1194,21 @@
 
   window.addEventListener("resize", resizeStage);
 
+  // Tap the empty camera view to hide/show the HUD — same pattern as the
+  // main Sound Nebula page: taps on any button, panel, or status readout
+  // are excluded so those keep working normally; only taps on the clear
+  // corrected feed itself toggle the HUD away.
+  function isHudTapTarget(el) {
+    return !!(el && el.closest && el.closest(
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel"
+    ));
+  }
+
+  document.body.addEventListener("click", (e) => {
+    if (isHudTapTarget(e.target)) return;
+    hud.classList.toggle("hide");
+  });
+
   updatePointsCount();
   blendLabel.textContent = `${blendSlider.value}%`;
   spreadSlider.value = String(spread);
