@@ -35,7 +35,11 @@
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
+  const photoBtn = document.getElementById("photoBtn");
+  const recordBtn = document.getElementById("recordBtn");
   const cameraStatus = document.getElementById("cameraStatus");
+  const recordingIndicator = document.getElementById("recordingIndicator");
+  const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -127,6 +131,12 @@
   let currentStream = null;
   let videoDevices = [];
   let currentDeviceIndex = -1;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordingMimeType = "";
+  let isRecording = false;
+  let recordingStartedAt = 0;
+  let recordingTimerId = null;
   let gl, program, uniforms, quadBuffer, videoTexture;
   let rafId = null;
   let aimIntervalId = null;
@@ -501,7 +511,12 @@
   }
 
   function initGL() {
-    gl = stage.getContext("webgl", { antialias: false }) || stage.getContext("experimental-webgl");
+    // preserveDrawingBuffer is needed for the photo/video capture buttons:
+    // without it the browser is free to clear the backbuffer right after
+    // compositing, and a toDataURL()/toBlob() call outside the render loop
+    // (or captureStream() picking up a stale frame) can read back nothing.
+    gl = stage.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
+      stage.getContext("experimental-webgl", { preserveDrawingBuffer: true });
     if (!gl) throw new Error("WebGL not supported on this device/browser.");
 
     const vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
@@ -710,6 +725,106 @@
       torchSupported = false;
       torchBtn.classList.add("hide");
     }
+  }
+
+  // ---- Photo & video capture ----
+  // Captures the fully-composited stage canvas — true/corrected blend,
+  // per-point calibration, and any colour-blindness-type correction all
+  // baked in — exactly what's currently on screen, not a re-render.
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function timestampForFilename() {
+    return new Date().toISOString().replace(/[:.]/g, "-");
+  }
+
+  function takePhoto() {
+    if (!gl) return;
+    stage.toBlob((blob) => {
+      if (!blob) {
+        showCameraStatus("Couldn't capture a photo — try again.");
+        return;
+      }
+      downloadBlob(blob, `colour-vision-photo-${timestampForFilename()}.png`);
+    }, "image/png");
+  }
+
+  function pickRecordingMimeType() {
+    if (typeof MediaRecorder === "undefined") return "";
+    const candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
+    return candidates.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+  }
+
+  function updateRecordingLabel() {
+    const secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+    const ss = String(secs % 60).padStart(2, "0");
+    recordBtn.textContent = `⏹ ${mm}:${ss}`;
+    recordingIndicatorTime.textContent = `${mm}:${ss}`;
+  }
+
+  function startRecording() {
+    if (isRecording || !gl || typeof stage.captureStream !== "function") return;
+    recordingMimeType = pickRecordingMimeType();
+    if (!recordingMimeType) {
+      showCameraStatus("Video recording isn't supported in this browser.");
+      return;
+    }
+    let canvasStream;
+    try {
+      canvasStream = stage.captureStream(30);
+    } catch (err) {
+      showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
+      return;
+    }
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: recordingMimeType });
+    mediaRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+    mediaRecorder.addEventListener("stop", () => {
+      const ext = recordingMimeType.includes("mp4") ? "mp4" : "webm";
+      const blob = new Blob(recordedChunks, { type: recordingMimeType });
+      recordedChunks = [];
+      if (blob.size > 0) {
+        downloadBlob(blob, `colour-vision-video-${timestampForFilename()}.${ext}`);
+      } else {
+        showCameraStatus("Recording produced no data — try again.");
+      }
+    });
+    mediaRecorder.start();
+    isRecording = true;
+    recordingStartedAt = Date.now();
+    recordBtn.classList.add("recording");
+    recordBtn.setAttribute("aria-pressed", "true");
+    recordingIndicator.classList.remove("hide");
+    updateRecordingLabel();
+    recordingTimerId = setInterval(updateRecordingLabel, 500);
+  }
+
+  function stopRecording() {
+    if (!isRecording || !mediaRecorder) return;
+    mediaRecorder.stop();
+    isRecording = false;
+    recordBtn.classList.remove("recording");
+    recordBtn.setAttribute("aria-pressed", "false");
+    recordBtn.textContent = "⏺ Record";
+    recordingIndicator.classList.add("hide");
+    if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
+  }
+
+  function toggleRecording() {
+    if (isRecording) stopRecording();
+    else startRecording();
   }
 
   // ---- Sampling for calibration ----
@@ -1122,6 +1237,22 @@
 
   torchBtn.addEventListener("click", toggleTorch);
   switchCameraBtn.addEventListener("click", switchCamera);
+  photoBtn.addEventListener("click", takePhoto);
+  recordBtn.addEventListener("click", toggleRecording);
+
+  // Best-effort hardware shutter: most browsers never forward physical
+  // volume-button presses to page JavaScript at all (iOS Safari and
+  // desktop never do), and even where a browser does — mainly some
+  // Android/Chrome versions, especially as an installed PWA — the OS may
+  // still also change the system volume alongside it. Where it works,
+  // volume-down takes a photo, same convention as native camera apps; the
+  // on-screen Photo button is the reliable fallback everywhere else.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "AudioVolumeDown" && e.code !== "AudioVolumeDown") return;
+    if (!currentStream) return;
+    e.preventDefault();
+    takePhoto();
+  });
 
   calibrateBtn.addEventListener("click", openChoosePanel);
   chooseAimBtn.addEventListener("click", () => {
