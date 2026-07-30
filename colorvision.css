@@ -52,6 +52,27 @@ video#cameraFeed, canvas#sampleCanvas {
   pointer-events: none;
 }
 
+/* Text readout of the sampled/corrected colour — this app exists because
+   colour swatches alone aren't reliable for its own users, so every swatch
+   gets a plain-language name alongside it, never colour as the only cue. */
+.color-name {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.7);
+  text-transform: capitalize;
+}
+
+.reticle-color-name {
+  position: absolute;
+  top: calc(50% + 110px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
 .reticle-btn {
   position: fixed;
   left: 50%;
@@ -169,13 +190,17 @@ video#cameraFeed, canvas#sampleCanvas {
 }
 
 .point-card {
+  appearance: none;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(242, 242, 247, 0.2);
   background: rgba(5, 5, 10, 0.4);
   text-align: center;
-  padding-bottom: 6px;
+  padding: 0 0 6px;
+  min-height: 44px;
 }
 
 .point-card .point-swatch { width: 100%; height: 56px; }
@@ -187,4 +212,32 @@ video#cameraFeed, canvas#sampleCanvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.point-card .point-name {
+  font-size: 10px;
+  color: rgba(242, 242, 247, 0.5);
+  padding: 0 4px;
+}
+
+/* Touch/click targets at a comfortable minimum, and a visible focus ring
+   for keyboard/switch-access users — this page has no visible outline
+   suppression, but buttons are small enough by default to need help. */
+.hud-btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.hud-btn:focus-visible,
+input[type="range"]:focus-visible,
+input[type="text"]:focus-visible,
+.point-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay {
+    transition: none;
+  }
 }

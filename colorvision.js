@@ -4,6 +4,8 @@
   const MAX_POINTS = 32;
   const STORAGE_KEY = "cvCalibrationPoints_v1";
   const ROTATE_KEY = "cvRotate180_v1";
+  const SPREAD_KEY = "cvSpread_v1";
+  const DEFAULT_SPREAD = 4;
 
   const stage = document.getElementById("stage");
   const video = document.getElementById("cameraFeed");
@@ -17,6 +19,8 @@
   const hud = document.getElementById("hud");
   const blendSlider = document.getElementById("blendSlider");
   const blendLabel = document.getElementById("blendLabel");
+  const spreadSlider = document.getElementById("spreadSlider");
+  const spreadLabel = document.getElementById("spreadLabel");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -25,12 +29,15 @@
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
+  const reticleColorName = document.getElementById("reticleColorName");
   const freezeBtn = document.getElementById("freezeBtn");
   const cancelAimBtn = document.getElementById("cancelAimBtn");
 
   const tunePanel = document.getElementById("tunePanel");
   const swatchOriginal = document.getElementById("swatchOriginal");
   const swatchCorrected = document.getElementById("swatchCorrected");
+  const swatchOriginalName = document.getElementById("swatchOriginalName");
+  const swatchCorrectedName = document.getElementById("swatchCorrectedName");
   const hueSlider = document.getElementById("hueSlider");
   const satSlider = document.getElementById("satSlider");
   const lightSlider = document.getElementById("lightSlider");
@@ -45,6 +52,10 @@
   const pointsPanel = document.getElementById("pointsPanel");
   const pointsGrid = document.getElementById("pointsGrid");
   const closePointsBtn = document.getElementById("closePointsBtn");
+  const exportBtn = document.getElementById("exportBtn");
+  const importBtn = document.getElementById("importBtn");
+  const importFile = document.getElementById("importFile");
+  const importExportStatus = document.getElementById("importExportStatus");
 
   // Each saved point is a real colour the user aimed at and personally tuned:
   // { id, label, sourceColor: [r,g,b 0-1], hueShift (deg), satAdjust, lightAdjust (-1..1) }.
@@ -55,6 +66,7 @@
   let points = loadPoints();
   let editingPointId = null;
   let frozenColor = null;
+  let tuneReturnFocusEl = null;
   let aiming = false;
   let paused = false;
   // Some phones (notably several Android back cameras) deliver frames
@@ -62,6 +74,7 @@
   // texture-space Y-flip, and not something we can reliably detect, so it's
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
+  let spread = loadSpreadPref();
   let gl, program, uniforms, quadBuffer, videoTexture;
   let rafId = null;
   let aimIntervalId = null;
@@ -131,6 +144,26 @@
     return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
   }
 
+  // A colour swatch alone doesn't help the people this page is for — the
+  // whole point is that colour perception can't be trusted, so every swatch
+  // also gets a plain-language name from a fixed palette of familiar terms.
+  function nearestColorName([r, g, b]) {
+    const [h, s, l] = rgb2hsl(r, g, b);
+    if (l < 0.10) return "black";
+    if (l > 0.94 && s < 0.12) return "white";
+    if (s < 0.14) return l < 0.35 ? "dark grey" : l > 0.75 ? "light grey" : "grey";
+    if (l < 0.28 && h >= 15 && h < 55 && s >= 0.25) return "brown";
+    if (h < 15 || h >= 345) return "red";
+    if (h < 45) return "orange";
+    if (h < 70) return "yellow";
+    if (h < 170) return "green";
+    if (h < 195) return "cyan";
+    if (h < 255) return "blue";
+    if (h < 290) return "purple";
+    if (h < 320) return "magenta";
+    return "pink";
+  }
+
   // ---- Persistence ----
 
   function loadPoints() {
@@ -167,6 +200,30 @@
     }
   }
 
+  function loadSpreadPref() {
+    try {
+      const raw = parseFloat(localStorage.getItem(SPREAD_KEY));
+      return Number.isFinite(raw) ? raw : DEFAULT_SPREAD;
+    } catch (e) {
+      return DEFAULT_SPREAD;
+    }
+  }
+
+  function saveSpreadPref() {
+    try {
+      localStorage.setItem(SPREAD_KEY, String(spread));
+    } catch (e) {
+      // Non-fatal — just won't persist across reloads.
+    }
+  }
+
+  function spreadDescription(value) {
+    if (value <= 3) return "Tight";
+    if (value <= 10) return "Medium";
+    if (value <= 22) return "Wide";
+    return "Very wide";
+  }
+
   function setStatus(msg) {
     statusEl.textContent = msg || "";
   }
@@ -191,6 +248,7 @@
     varying vec2 vUv;
     uniform sampler2D uTex;
     uniform float uBlend;
+    uniform float uSpread;
     uniform int uPointCount;
     uniform vec3 uSourceLab[${MAX_POINTS}];
     uniform vec3 uCorrection[${MAX_POINTS}];
@@ -255,7 +313,7 @@
         for (int i = 0; i < ${MAX_POINTS}; i++) {
           if (i >= uPointCount) break;
           float d = distance(labP, uSourceLab[i]);
-          float w = 1.0 / (d * d + 4.0);
+          float w = 1.0 / (d * d + uSpread);
           weightedSum += uCorrection[i] * w;
           totalWeight += w;
         }
@@ -319,6 +377,7 @@
     uniforms = {
       uTex: gl.getUniformLocation(program, "uTex"),
       uBlend: gl.getUniformLocation(program, "uBlend"),
+      uSpread: gl.getUniformLocation(program, "uSpread"),
       uRotate180: gl.getUniformLocation(program, "uRotate180"),
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
@@ -355,6 +414,7 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.uniform1i(uniforms.uTex, 0);
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
+      gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
@@ -410,14 +470,18 @@
     aiming = true;
     reticleLayer.classList.remove("hide");
     aimIntervalId = setInterval(() => {
-      reticleSwatch.style.background = rgbToCss(sampleCenterColor());
+      const c = sampleCenterColor();
+      reticleSwatch.style.background = rgbToCss(c);
+      reticleColorName.textContent = nearestColorName(c);
     }, 120);
+    cancelAimBtn.focus();
   }
 
   function stopAiming() {
     aiming = false;
     reticleLayer.classList.add("hide");
     if (aimIntervalId) { clearInterval(aimIntervalId); aimIntervalId = null; }
+    calibrateBtn.focus();
   }
 
   // ---- Tune panel ----
@@ -429,7 +493,9 @@
     labelInput.value = "";
     deletePointBtn.classList.add("hide");
     refreshTunePreview();
+    tuneReturnFocusEl = calibrateBtn;
     tunePanel.classList.remove("hide");
+    hueSlider.focus();
   }
 
   function openTuneForExistingPoint(point) {
@@ -442,7 +508,9 @@
     deletePointBtn.classList.remove("hide");
     refreshTunePreview();
     pointsPanel.classList.add("hide");
+    tuneReturnFocusEl = pointsBtn;
     tunePanel.classList.remove("hide");
+    hueSlider.focus();
   }
 
   function currentTuneValues() {
@@ -456,8 +524,11 @@
   function refreshTunePreview() {
     if (!frozenColor) return;
     const { hueShift, satAdjust, lightAdjust } = currentTuneValues();
+    const corrected = applyCorrection(frozenColor, hueShift, satAdjust, lightAdjust);
     swatchOriginal.style.background = rgbToCss(frozenColor);
-    swatchCorrected.style.background = rgbToCss(applyCorrection(frozenColor, hueShift, satAdjust, lightAdjust));
+    swatchCorrected.style.background = rgbToCss(corrected);
+    swatchOriginalName.textContent = nearestColorName(frozenColor);
+    swatchCorrectedName.textContent = nearestColorName(corrected);
     hueLabel.textContent = `${hueShift}°`;
     satLabel.textContent = `${satSlider.value}%`;
     lightLabel.textContent = `${lightSlider.value}%`;
@@ -467,6 +538,8 @@
     tunePanel.classList.add("hide");
     frozenColor = null;
     editingPointId = null;
+    if (tuneReturnFocusEl) tuneReturnFocusEl.focus();
+    tuneReturnFocusEl = null;
   }
 
   function savePoint() {
@@ -523,19 +596,97 @@
       return;
     }
     points.forEach((p) => {
-      const card = document.createElement("div");
+      const colorName = nearestColorName(p.sourceColor);
+      const card = document.createElement("button");
+      card.type = "button";
       card.className = "point-card";
+      card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}. Tap to review or re-tune.`);
       const sw = document.createElement("div");
       sw.className = "point-swatch";
       sw.style.background = rgbToCss(p.sourceColor);
       const label = document.createElement("div");
       label.className = "point-label";
       label.textContent = p.label || "untitled";
+      const name = document.createElement("div");
+      name.className = "point-name";
+      name.textContent = colorName;
       card.appendChild(sw);
       card.appendChild(label);
+      card.appendChild(name);
       card.addEventListener("click", () => openTuneForExistingPoint(p));
       pointsGrid.appendChild(card);
     });
+  }
+
+  // ---- Export / import ----
+  // Calibration only ever lived in localStorage, so clearing site data or
+  // switching devices silently wiped it. Export/import makes it a portable
+  // file instead — a backup, and a way to carry corrections to another phone.
+
+  function isValidImportedPoint(p) {
+    return p && typeof p === "object" &&
+      Array.isArray(p.sourceColor) && p.sourceColor.length === 3 &&
+      p.sourceColor.every((c) => typeof c === "number" && c >= 0 && c <= 1) &&
+      typeof p.hueShift === "number" &&
+      typeof p.satAdjust === "number" &&
+      typeof p.lightAdjust === "number";
+  }
+
+  function exportPoints() {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved colours to export yet.";
+      return;
+    }
+    const blob = new Blob([JSON.stringify(points, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `colour-vision-calibration-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    importExportStatus.textContent = `Exported ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+  }
+
+  function importPointsFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (e) {
+        importExportStatus.textContent = "Import failed: not a valid JSON file.";
+        return;
+      }
+      const incoming = Array.isArray(parsed) ? parsed : [];
+      const valid = incoming.filter(isValidImportedPoint);
+      if (valid.length === 0) {
+        importExportStatus.textContent = "Import failed: no valid saved colours found in that file.";
+        return;
+      }
+      const room = MAX_POINTS - points.length;
+      const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
+        id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
+        sourceColor: p.sourceColor,
+        hueShift: p.hueShift,
+        satAdjust: p.satAdjust,
+        lightAdjust: p.lightAdjust
+      }));
+      points = points.concat(toAdd);
+      savePoints();
+      uploadPointUniforms();
+      updatePointsCount();
+      renderPointsGrid();
+      const skipped = valid.length - toAdd.length;
+      importExportStatus.textContent = `Imported ${toAdd.length} colour${toAdd.length === 1 ? "" : "s"}.` +
+        (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
+    };
+    reader.onerror = () => {
+      importExportStatus.textContent = "Import failed: could not read that file.";
+    };
+    reader.readAsText(file);
   }
 
   // ---- Wiring ----
@@ -546,14 +697,22 @@
     blendLabel.textContent = `${blendSlider.value}%`;
   });
 
+  spreadSlider.addEventListener("input", () => {
+    spread = parseFloat(spreadSlider.value);
+    spreadLabel.textContent = spreadDescription(spread);
+    saveSpreadPref();
+  });
+
   pauseBtn.addEventListener("click", () => {
     paused = !paused;
     pauseBtn.textContent = paused ? "Resume" : "Pause";
+    pauseBtn.setAttribute("aria-pressed", String(paused));
   });
 
   rotateBtn.addEventListener("click", () => {
     rotate180 = !rotate180;
     rotateBtn.classList.toggle("active", rotate180);
+    rotateBtn.setAttribute("aria-pressed", String(rotate180));
     saveRotatePref();
   });
 
@@ -574,15 +733,45 @@
   deletePointBtn.addEventListener("click", deleteCurrentPoint);
   closeTuneBtn.addEventListener("click", closeTunePanel);
 
+  function closePointsPanel() {
+    pointsPanel.classList.add("hide");
+    importExportStatus.textContent = "";
+    pointsBtn.focus();
+  }
+
   pointsBtn.addEventListener("click", () => {
     renderPointsGrid();
+    importExportStatus.textContent = "";
     pointsPanel.classList.remove("hide");
+    closePointsBtn.focus();
   });
-  closePointsBtn.addEventListener("click", () => pointsPanel.classList.add("hide"));
+  closePointsBtn.addEventListener("click", closePointsPanel);
+
+  exportBtn.addEventListener("click", exportPoints);
+  importBtn.addEventListener("click", () => importFile.click());
+  importFile.addEventListener("change", () => {
+    if (importFile.files && importFile.files[0]) {
+      importPointsFromFile(importFile.files[0]);
+    }
+    importFile.value = "";
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!tunePanel.classList.contains("hide")) {
+      closeTunePanel();
+    } else if (!pointsPanel.classList.contains("hide")) {
+      closePointsPanel();
+    } else if (aiming) {
+      stopAiming();
+    }
+  });
 
   window.addEventListener("resize", resizeStage);
 
   updatePointsCount();
   blendLabel.textContent = `${blendSlider.value}%`;
+  spreadSlider.value = String(spread);
+  spreadLabel.textContent = spreadDescription(spread);
   rotateBtn.classList.toggle("active", rotate180);
 })();

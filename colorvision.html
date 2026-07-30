@@ -18,7 +18,7 @@
     <h1>Colour Vision Assist</h1>
     <p>Live camera correction built from colours you calibrate yourself, not a generic filter. Aim at a colour, tune it until it reads right, save it — corrections blend outward from every point you save.</p>
     <button id="startBtn">Enable camera &amp; start</button>
-    <p id="status" class="status"></p>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
   </div>
 </div>
@@ -28,31 +28,38 @@
     True &harr; Corrected: <span id="blendLabel">100%</span>
     <input id="blendSlider" type="range" min="0" max="100" value="100">
   </label>
+  <label id="spreadWrap" class="hud-slider" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
+    Correction spread: <span id="spreadLabel">Medium</span>
+    <input id="spreadSlider" type="range" min="1" max="40" value="4">
+  </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
-  <button id="pauseBtn" class="hud-btn">Pause</button>
-  <button id="rotateBtn" class="hud-btn" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
 </div>
 
 <div id="reticleLayer" class="hide">
-  <div id="reticle"></div>
-  <div id="reticleSwatch" class="reticle-swatch"></div>
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
   <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
   <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
 </div>
 
-<div id="tunePanel" class="hide">
+<div id="tunePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="tunePanelTitle">
   <div id="tunePanelInner">
-    <h2>Tune until it's recognisable</h2>
+    <h2 id="tunePanelTitle">Tune until it's recognisable</h2>
 
     <div class="swatch-row">
       <div class="swatch-block">
         <div id="swatchOriginal" class="swatch"></div>
         <span>What the camera sees</span>
+        <p id="swatchOriginalName" class="color-name"></p>
       </div>
       <div class="swatch-block">
         <div id="swatchCorrected" class="swatch"></div>
         <span>Your correction</span>
+        <p id="swatchCorrectedName" class="color-name"></p>
       </div>
     </div>
 
@@ -81,11 +88,17 @@
   </div>
 </div>
 
-<div id="pointsPanel" class="hide">
+<div id="pointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="pointsPanelTitle">
   <div id="pointsPanelInner">
-    <h2>Saved colours</h2>
+    <h2 id="pointsPanelTitle">Saved colours</h2>
     <p class="hint">Tap a colour to review or re-tune it.</p>
     <div id="pointsGrid"></div>
+    <p id="importExportStatus" class="hint" role="status" aria-live="polite"></p>
+    <div class="tune-actions">
+      <button id="exportBtn" class="hud-btn reticle-btn-secondary">Export</button>
+      <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden>
+    </div>
     <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>
