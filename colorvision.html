@@ -38,6 +38,26 @@
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
 </div>
 
+<div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
+  <div id="choosePanelInner">
+    <h2 id="choosePanelTitle">Choose a colour to calibrate</h2>
+    <p class="hint">Aim at a real colour with the camera, pick one exactly, or start from a colour commonly confused in colour vision deficiency.</p>
+
+    <div class="choose-actions">
+      <button id="chooseAimBtn" class="hud-btn">Aim with camera</button>
+      <label id="colourPickerWrap" class="hud-btn choose-picker-btn">
+        Colour picker
+        <input id="colourPickerInput" type="color" value="#ff0000" aria-label="Pick an exact colour to calibrate">
+      </label>
+    </div>
+
+    <h3 id="presetGridTitle">Common CVD confusion colours</h3>
+    <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
+
+    <button id="closeChooseBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
 <div id="reticleLayer" class="hide">
   <div id="reticle" aria-hidden="true"></div>
   <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
@@ -76,6 +96,14 @@
       <input id="lightSlider" type="range" min="-100" max="100" value="0">
     </label>
     <label class="hud-slider">
+      Contrast: <span id="contrastLabel">0%</span>
+      <input id="contrastSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Exposure: <span id="exposureLabel">0%</span>
+      <input id="exposureSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
       Label (optional)
       <input id="labelInput" type="text" placeholder="e.g. traffic light red" maxlength="40">
     </label>
@@ -91,9 +119,15 @@
 <div id="pointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="pointsPanelTitle">
   <div id="pointsPanelInner">
     <h2 id="pointsPanelTitle">Saved colours</h2>
-    <p class="hint">Tap a colour to review or re-tune it.</p>
+    <p class="hint" id="pointsHint">Tap a colour to review or re-tune it.</p>
     <div id="pointsGrid"></div>
     <p id="importExportStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="points-actions">
+      <button id="selectModeBtn" class="hud-btn reticle-btn-secondary" aria-pressed="false">Select</button>
+      <button id="deleteSelectedBtn" class="hud-btn reticle-btn-secondary hide">Delete selected (<span id="selectedCount">0</span>)</button>
+      <button id="clearAllBtn" class="hud-btn reticle-btn-secondary">Clear all</button>
+    </div>
     <div class="tune-actions">
       <button id="exportBtn" class="hud-btn reticle-btn-secondary">Export</button>
       <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>

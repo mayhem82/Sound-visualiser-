@@ -41,9 +41,13 @@
   const hueSlider = document.getElementById("hueSlider");
   const satSlider = document.getElementById("satSlider");
   const lightSlider = document.getElementById("lightSlider");
+  const contrastSlider = document.getElementById("contrastSlider");
+  const exposureSlider = document.getElementById("exposureSlider");
   const hueLabel = document.getElementById("hueLabel");
   const satLabel = document.getElementById("satLabel");
   const lightLabel = document.getElementById("lightLabel");
+  const contrastLabel = document.getElementById("contrastLabel");
+  const exposureLabel = document.getElementById("exposureLabel");
   const labelInput = document.getElementById("labelInput");
   const savePointBtn = document.getElementById("savePointBtn");
   const deletePointBtn = document.getElementById("deletePointBtn");
@@ -51,11 +55,38 @@
 
   const pointsPanel = document.getElementById("pointsPanel");
   const pointsGrid = document.getElementById("pointsGrid");
+  const pointsHint = document.getElementById("pointsHint");
   const closePointsBtn = document.getElementById("closePointsBtn");
+  const selectModeBtn = document.getElementById("selectModeBtn");
+  const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
+  const selectedCount = document.getElementById("selectedCount");
+  const clearAllBtn = document.getElementById("clearAllBtn");
   const exportBtn = document.getElementById("exportBtn");
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
   const importExportStatus = document.getElementById("importExportStatus");
+
+  const choosePanel = document.getElementById("choosePanel");
+  const chooseAimBtn = document.getElementById("chooseAimBtn");
+  const colourPickerInput = document.getElementById("colourPickerInput");
+  const presetGrid = document.getElementById("presetGrid");
+  const closeChooseBtn = document.getElementById("closeChooseBtn");
+
+  // Colours commonly reported as confusable in red-green and blue-yellow CVD.
+  // Starting points, not a diagnosis — the user still verifies each one
+  // against their own vision.
+  const CVD_PRESETS = [
+    { label: "Traffic light red", hex: "#d1352b" },
+    { label: "Traffic light green", hex: "#3a9b5c" },
+    { label: "Ripe tomato red", hex: "#c82f1e" },
+    { label: "Unripe leaf green", hex: "#5c8a3a" },
+    { label: "Amber / brown", hex: "#a5661a" },
+    { label: "Grey (low-sat)", hex: "#8a8a8a" },
+    { label: "Purple", hex: "#7a4fb5" },
+    { label: "Blue", hex: "#2f6fd1" },
+    { label: "Orange", hex: "#e0792a" },
+    { label: "Pink", hex: "#d1668f" }
+  ];
 
   // Each saved point is a real colour the user aimed at and personally tuned:
   // { id, label, sourceColor: [r,g,b 0-1], hueShift (deg), satAdjust, lightAdjust (-1..1) }.
@@ -67,8 +98,11 @@
   let editingPointId = null;
   let frozenColor = null;
   let tuneReturnFocusEl = null;
+  let choosePanelReturnFocusEl = null;
   let aiming = false;
   let paused = false;
+  let selectMode = false;
+  let selectedIds = new Set();
   // Some phones (notably several Android back cameras) deliver frames
   // pre-rotated 180° at the driver/OS level — unrelated to WebGL's own
   // texture-space Y-flip, and not something we can reliably detect, so it's
@@ -132,16 +166,35 @@
     return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
   }
 
-  function applyCorrection([r, g, b], hueShift, satAdjust, lightAdjust) {
+  function applyCorrection([r, g, b], hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust) {
     let [h, s, l] = rgb2hsl(r, g, b);
     h = (h + hueShift + 360) % 360;
     s = Math.min(1, Math.max(0, s + satAdjust));
     l = Math.min(1, Math.max(0, l + lightAdjust));
-    return hsl2rgb(h, s, l);
+    let [r1, g1, b1] = hsl2rgb(h, s, l);
+    // Exposure: multiplicative brightness in stops. Contrast: spread around midpoint.
+    const expMul = Math.pow(2, exposureAdjust || 0);
+    const contMul = 1 + (contrastAdjust || 0);
+    r1 = (r1 * expMul - 0.5) * contMul + 0.5;
+    g1 = (g1 * expMul - 0.5) * contMul + 0.5;
+    b1 = (b1 * expMul - 0.5) * contMul + 0.5;
+    return [clamp01(r1), clamp01(g1), clamp01(b1)];
+  }
+
+  function clamp01(v) {
+    return Math.min(1, Math.max(0, v));
   }
 
   function rgbToCss([r, g, b]) {
     return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+  }
+
+  function hexToRgb01(hex) {
+    const m = hex.replace("#", "");
+    const r = parseInt(m.substring(0, 2), 16) / 255;
+    const g = parseInt(m.substring(2, 4), 16) / 255;
+    const b = parseInt(m.substring(4, 6), 16) / 255;
+    return [r, g, b];
   }
 
   // A colour swatch alone doesn't help the people this page is for — the
@@ -251,7 +304,8 @@
     uniform float uSpread;
     uniform int uPointCount;
     uniform vec3 uSourceLab[${MAX_POINTS}];
-    uniform vec3 uCorrection[${MAX_POINTS}];
+    uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
+    uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -305,19 +359,25 @@
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 correction = vec3(0.0);
+      vec2 correction2 = vec2(0.0);
 
       if (uPointCount > 0) {
         vec3 labP = rgb2lab(original);
         float totalWeight = 0.0;
         vec3 weightedSum = vec3(0.0);
+        vec2 weightedSum2 = vec2(0.0);
         for (int i = 0; i < ${MAX_POINTS}; i++) {
           if (i >= uPointCount) break;
           float d = distance(labP, uSourceLab[i]);
           float w = 1.0 / (d * d + uSpread);
           weightedSum += uCorrection[i] * w;
+          weightedSum2 += uCorrection2[i] * w;
           totalWeight += w;
         }
-        if (totalWeight > 0.0) correction = weightedSum / totalWeight;
+        if (totalWeight > 0.0) {
+          correction = weightedSum / totalWeight;
+          correction2 = weightedSum2 / totalWeight;
+        }
       }
 
       vec3 hsl = rgb2hsl(original);
@@ -325,6 +385,10 @@
       hsl.y = clamp(hsl.y + correction.y, 0.0, 1.0);
       hsl.z = clamp(hsl.z + correction.z, 0.0, 1.0);
       vec3 corrected = hsl2rgb(hsl);
+
+      float contMul = 1.0 + correction2.x;
+      float expMul = pow(2.0, correction2.y);
+      corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
       gl_FragColor = vec4(mix(original, corrected, uBlend), 1.0);
     }
@@ -381,7 +445,8 @@
       uRotate180: gl.getUniformLocation(program, "uRotate180"),
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
-      uCorrection: gl.getUniformLocation(program, "uCorrection")
+      uCorrection: gl.getUniformLocation(program, "uCorrection"),
+      uCorrection2: gl.getUniformLocation(program, "uCorrection2")
     };
   }
 
@@ -396,16 +461,19 @@
     const count = Math.min(points.length, MAX_POINTS);
     const labArr = new Float32Array(MAX_POINTS * 3);
     const corrArr = new Float32Array(MAX_POINTS * 3);
+    const corr2Arr = new Float32Array(MAX_POINTS * 2);
     for (let i = 0; i < count; i++) {
       const p = points[i];
       const [L, A, B] = rgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
       labArr[i * 3] = L; labArr[i * 3 + 1] = A; labArr[i * 3 + 2] = B;
       corrArr[i * 3] = p.hueShift; corrArr[i * 3 + 1] = p.satAdjust; corrArr[i * 3 + 2] = p.lightAdjust;
+      corr2Arr[i * 2] = p.contrastAdjust || 0; corr2Arr[i * 2 + 1] = p.exposureAdjust || 0;
     }
     gl.useProgram(program);
     gl.uniform1i(uniforms.uPointCount, count);
     gl.uniform3fv(uniforms.uSourceLab, labArr);
     gl.uniform3fv(uniforms.uCorrection, corrArr);
+    gl.uniform2fv(uniforms.uCorrection2, corr2Arr);
   }
 
   function renderLoop() {
@@ -485,11 +553,22 @@
   }
 
   // ---- Tune panel ----
+  // The three bottom-docked overlays (tune, saved-colours, choose-colour)
+  // share a z-index and their triggers (HUD buttons) stay reachable even
+  // while one is open, so only one may ever be shown at a time.
+
+  function hideOverlayPanels() {
+    tunePanel.classList.add("hide");
+    pointsPanel.classList.add("hide");
+    choosePanel.classList.add("hide");
+  }
 
   function openTuneForNewPoint(sourceColor) {
+    hideOverlayPanels();
     editingPointId = null;
     frozenColor = sourceColor;
     hueSlider.value = 0; satSlider.value = 0; lightSlider.value = 0;
+    contrastSlider.value = 0; exposureSlider.value = 0;
     labelInput.value = "";
     deletePointBtn.classList.add("hide");
     refreshTunePreview();
@@ -499,15 +578,17 @@
   }
 
   function openTuneForExistingPoint(point) {
+    hideOverlayPanels();
     editingPointId = point.id;
     frozenColor = point.sourceColor;
     hueSlider.value = point.hueShift;
     satSlider.value = Math.round(point.satAdjust * 100);
     lightSlider.value = Math.round(point.lightAdjust * 100);
+    contrastSlider.value = Math.round((point.contrastAdjust || 0) * 100);
+    exposureSlider.value = Math.round((point.exposureAdjust || 0) * 100);
     labelInput.value = point.label || "";
     deletePointBtn.classList.remove("hide");
     refreshTunePreview();
-    pointsPanel.classList.add("hide");
     tuneReturnFocusEl = pointsBtn;
     tunePanel.classList.remove("hide");
     hueSlider.focus();
@@ -517,14 +598,16 @@
     return {
       hueShift: parseFloat(hueSlider.value),
       satAdjust: parseFloat(satSlider.value) / 100,
-      lightAdjust: parseFloat(lightSlider.value) / 100
+      lightAdjust: parseFloat(lightSlider.value) / 100,
+      contrastAdjust: parseFloat(contrastSlider.value) / 100,
+      exposureAdjust: parseFloat(exposureSlider.value) / 100
     };
   }
 
   function refreshTunePreview() {
     if (!frozenColor) return;
-    const { hueShift, satAdjust, lightAdjust } = currentTuneValues();
-    const corrected = applyCorrection(frozenColor, hueShift, satAdjust, lightAdjust);
+    const { hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust } = currentTuneValues();
+    const corrected = applyCorrection(frozenColor, hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust);
     swatchOriginal.style.background = rgbToCss(frozenColor);
     swatchCorrected.style.background = rgbToCss(corrected);
     swatchOriginalName.textContent = nearestColorName(frozenColor);
@@ -532,6 +615,8 @@
     hueLabel.textContent = `${hueShift}°`;
     satLabel.textContent = `${satSlider.value}%`;
     lightLabel.textContent = `${lightSlider.value}%`;
+    contrastLabel.textContent = `${contrastSlider.value}%`;
+    exposureLabel.textContent = `${exposureSlider.value}%`;
   }
 
   function closeTunePanel() {
@@ -543,7 +628,7 @@
   }
 
   function savePoint() {
-    const { hueShift, satAdjust, lightAdjust } = currentTuneValues();
+    const { hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust } = currentTuneValues();
     if (editingPointId) {
       const p = points.find((pt) => pt.id === editingPointId);
       if (p) {
@@ -551,6 +636,8 @@
         p.hueShift = hueShift;
         p.satAdjust = satAdjust;
         p.lightAdjust = lightAdjust;
+        p.contrastAdjust = contrastAdjust;
+        p.exposureAdjust = exposureAdjust;
         p.label = labelInput.value.trim();
       }
     } else {
@@ -562,7 +649,7 @@
         id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         label: labelInput.value.trim(),
         sourceColor: frozenColor,
-        hueShift, satAdjust, lightAdjust
+        hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust
       });
     }
     savePoints();
@@ -597,10 +684,16 @@
     }
     points.forEach((p) => {
       const colorName = nearestColorName(p.sourceColor);
+      const selected = selectedIds.has(p.id);
       const card = document.createElement("button");
       card.type = "button";
-      card.className = "point-card";
-      card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}. Tap to review or re-tune.`);
+      card.className = "point-card" + (selectMode ? " selectable" : "") + (selected ? " selected" : "");
+      if (selectMode) {
+        card.setAttribute("aria-pressed", String(selected));
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}${selected ? ", selected" : ""}.`);
+      } else {
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}. Tap to review or re-tune.`);
+      }
       const sw = document.createElement("div");
       sw.className = "point-swatch";
       sw.style.background = rgbToCss(p.sourceColor);
@@ -613,9 +706,103 @@
       card.appendChild(sw);
       card.appendChild(label);
       card.appendChild(name);
-      card.addEventListener("click", () => openTuneForExistingPoint(p));
+      if (selectMode) {
+        const check = document.createElement("div");
+        check.className = "point-check";
+        check.setAttribute("aria-hidden", "true");
+        check.textContent = selected ? "✓" : "";
+        card.appendChild(check);
+      }
+      card.addEventListener("click", () => {
+        if (selectMode) {
+          toggleSelected(p.id);
+        } else {
+          openTuneForExistingPoint(p);
+        }
+      });
       pointsGrid.appendChild(card);
     });
+  }
+
+  function toggleSelected(id) {
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    selectedCount.textContent = String(selectedIds.size);
+    deleteSelectedBtn.classList.toggle("hide", selectedIds.size === 0);
+    renderPointsGrid();
+  }
+
+  function setSelectMode(on) {
+    selectMode = on;
+    selectedIds.clear();
+    selectedCount.textContent = "0";
+    selectModeBtn.textContent = on ? "Cancel select" : "Select";
+    selectModeBtn.setAttribute("aria-pressed", String(on));
+    deleteSelectedBtn.classList.add("hide");
+    pointsHint.textContent = on
+      ? "Tap colours to select, then delete the ones you no longer want."
+      : "Tap a colour to review or re-tune it.";
+    renderPointsGrid();
+  }
+
+  function deleteSelected() {
+    if (selectedIds.size === 0) return;
+    points = points.filter((p) => !selectedIds.has(p.id));
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    setSelectMode(false);
+  }
+
+  function clearAllPoints() {
+    if (points.length === 0) return;
+    const ok = window.confirm(`Delete all ${points.length} saved colours? This can't be undone.`);
+    if (!ok) return;
+    points = [];
+    selectedIds.clear();
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    setSelectMode(false);
+  }
+
+  // ---- Choose-colour panel ----
+
+  function renderPresetGrid() {
+    presetGrid.innerHTML = "";
+    CVD_PRESETS.forEach((preset) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "preset-card";
+      card.setAttribute("aria-label", `${preset.label}. Calibrate this colour.`);
+      const sw = document.createElement("div");
+      sw.className = "preset-swatch";
+      sw.style.background = preset.hex;
+      const label = document.createElement("div");
+      label.className = "preset-label";
+      label.textContent = preset.label;
+      card.appendChild(sw);
+      card.appendChild(label);
+      card.addEventListener("click", () => {
+        choosePanel.classList.add("hide");
+        openTuneForNewPoint(hexToRgb01(preset.hex));
+      });
+      presetGrid.appendChild(card);
+    });
+  }
+
+  function openChoosePanel() {
+    hideOverlayPanels();
+    renderPresetGrid();
+    choosePanelReturnFocusEl = calibrateBtn;
+    choosePanel.classList.remove("hide");
+    chooseAimBtn.focus();
+  }
+
+  function closeChoosePanel() {
+    choosePanel.classList.add("hide");
+    if (choosePanelReturnFocusEl) choosePanelReturnFocusEl.focus();
+    choosePanelReturnFocusEl = null;
   }
 
   // ---- Export / import ----
@@ -629,7 +816,9 @@
       p.sourceColor.every((c) => typeof c === "number" && c >= 0 && c <= 1) &&
       typeof p.hueShift === "number" &&
       typeof p.satAdjust === "number" &&
-      typeof p.lightAdjust === "number";
+      typeof p.lightAdjust === "number" &&
+      (p.contrastAdjust === undefined || typeof p.contrastAdjust === "number") &&
+      (p.exposureAdjust === undefined || typeof p.exposureAdjust === "number");
   }
 
   function exportPoints() {
@@ -672,7 +861,9 @@
         sourceColor: p.sourceColor,
         hueShift: p.hueShift,
         satAdjust: p.satAdjust,
-        lightAdjust: p.lightAdjust
+        lightAdjust: p.lightAdjust,
+        contrastAdjust: p.contrastAdjust || 0,
+        exposureAdjust: p.exposureAdjust || 0
       }));
       points = points.concat(toAdd);
       savePoints();
@@ -716,7 +907,19 @@
     saveRotatePref();
   });
 
-  calibrateBtn.addEventListener("click", startAiming);
+  calibrateBtn.addEventListener("click", openChoosePanel);
+  chooseAimBtn.addEventListener("click", () => {
+    choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    startAiming();
+  });
+  colourPickerInput.addEventListener("input", () => {
+    choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
+  });
+  closeChooseBtn.addEventListener("click", closeChoosePanel);
+
   cancelAimBtn.addEventListener("click", stopAiming);
 
   freezeBtn.addEventListener("click", () => {
@@ -725,7 +928,7 @@
     openTuneForNewPoint(c);
   });
 
-  [hueSlider, satSlider, lightSlider].forEach((el) => {
+  [hueSlider, satSlider, lightSlider, contrastSlider, exposureSlider].forEach((el) => {
     el.addEventListener("input", refreshTunePreview);
   });
 
@@ -740,12 +943,16 @@
   }
 
   pointsBtn.addEventListener("click", () => {
-    renderPointsGrid();
+    hideOverlayPanels();
+    setSelectMode(false);
     importExportStatus.textContent = "";
     pointsPanel.classList.remove("hide");
     closePointsBtn.focus();
   });
   closePointsBtn.addEventListener("click", closePointsPanel);
+  selectModeBtn.addEventListener("click", () => setSelectMode(!selectMode));
+  deleteSelectedBtn.addEventListener("click", deleteSelected);
+  clearAllBtn.addEventListener("click", clearAllPoints);
 
   exportBtn.addEventListener("click", exportPoints);
   importBtn.addEventListener("click", () => importFile.click());
@@ -762,6 +969,8 @@
       closeTunePanel();
     } else if (!pointsPanel.classList.contains("hide")) {
       closePointsPanel();
+    } else if (!choosePanel.classList.contains("hide")) {
+      closeChoosePanel();
     } else if (aiming) {
       stopAiming();
     }

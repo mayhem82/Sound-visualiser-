@@ -220,6 +220,130 @@ video#cameraFeed, canvas#sampleCanvas {
   padding: 0 4px;
 }
 
+.point-card {
+  position: relative;
+}
+
+.point-card.selectable .point-swatch {
+  opacity: 0.55;
+}
+
+.point-card .point-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(242, 242, 247, 0.7);
+  background: rgba(5, 5, 10, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.point-card.selected .point-check {
+  background: var(--accent, #7dd3fc);
+  border-color: var(--accent, #7dd3fc);
+  color: #05050a;
+}
+
+.points-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.points-actions .hud-btn { flex: 1 1 auto; font-size: 13px; padding: 10px 12px; }
+
+/* Choose-colour panel: same docked-bottom treatment as the tune/points panels */
+#choosePanel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+}
+
+#choosePanel.hide {
+  display: none;
+}
+
+#choosePanelInner {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(15, 15, 25, 0.92);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 18px 18px 0 0;
+  padding: 24px 24px 32px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+#choosePanelInner h2 { margin: 0 0 8px; font-size: 18px; }
+#choosePanelInner h3 { margin: 18px 0 8px; font-size: 13px; color: rgba(242, 242, 247, 0.6); font-weight: 500; }
+
+.choose-actions {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.choose-actions .hud-btn { flex: 1 1 auto; }
+
+.choose-picker-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.choose-picker-btn input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+#presetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.preset-card {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(242, 242, 247, 0.2);
+  background: rgba(5, 5, 10, 0.4);
+  text-align: center;
+  padding: 0 0 6px;
+  min-height: 44px;
+}
+
+.preset-card .preset-swatch { width: 100%; height: 48px; }
+
+.preset-card .preset-label {
+  font-size: 10px;
+  color: rgba(242, 242, 247, 0.65);
+  padding: 4px 4px 0;
+  line-height: 1.3;
+}
+
 /* Touch/click targets at a comfortable minimum, and a visible focus ring
    for keyboard/switch-access users — this page has no visible outline
    suppression, but buttons are small enough by default to need help. */
@@ -231,7 +355,9 @@ video#cameraFeed, canvas#sampleCanvas {
 .hud-btn:focus-visible,
 input[type="range"]:focus-visible,
 input[type="text"]:focus-visible,
-.point-card:focus-visible {
+input[type="color"]:focus-visible,
+.point-card:focus-visible,
+.preset-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
