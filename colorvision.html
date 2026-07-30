@@ -53,10 +53,38 @@
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
   <button id="photoBtn" class="hud-btn" title="Take a photo of the corrected view. On some Android browsers, the phone's volume-down button works as a shutter too.">&#128247; Photo</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
+  <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a tablet) as a read-only viewer.">Connect tablet</button>
 </div>
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
 <p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+<p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
+
+<div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
+  <div id="viewerPanelInner">
+    <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
+    <p class="hint">On the other device, open <strong>viewer.html</strong> from this site. It shows a read-only view of this corrected feed — no camera or controls of its own.</p>
+
+    <label class="hud-slider">
+      Step 1 — code for the other device
+      <textarea id="broadcastOfferOutput" rows="4" readonly></textarea>
+    </label>
+    <button id="copyOfferBtn" class="hud-btn">Copy code</button>
+
+    <label class="hud-slider">
+      Step 2 — paste the reply code from that device
+      <textarea id="broadcastAnswerInput" rows="4" placeholder="Paste the reply code here"></textarea>
+    </label>
+    <button id="completeConnectBtn" class="hud-btn">Connect</button>
+
+    <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="tune-actions">
+      <button id="disconnectViewerBtn" class="hud-btn reticle-btn-secondary hide">Disconnect</button>
+      <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
 
 <div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
   <div id="choosePanelInner">

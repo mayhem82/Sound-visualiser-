@@ -9,6 +9,11 @@
   const CVD_TYPE_KEY = "cvCvdType_v1";
   const CVD_STRENGTH_KEY = "cvCvdStrength_v1";
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
+  // Public, no-signup STUN server — needed for NAT traversal even between
+  // devices on the same wifi network in many router configurations. No
+  // TURN relay is configured (would need a paid or self-hosted server),
+  // so very restrictive networks can still block the connection.
+  const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
   const stage = document.getElementById("stage");
   const video = document.getElementById("cameraFeed");
@@ -40,6 +45,17 @@
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
+
+  const connectTabletBtn = document.getElementById("connectTabletBtn");
+  const viewerPanel = document.getElementById("viewerPanel");
+  const broadcastOfferOutput = document.getElementById("broadcastOfferOutput");
+  const copyOfferBtn = document.getElementById("copyOfferBtn");
+  const broadcastAnswerInput = document.getElementById("broadcastAnswerInput");
+  const completeConnectBtn = document.getElementById("completeConnectBtn");
+  const viewerStatus = document.getElementById("viewerStatus");
+  const disconnectViewerBtn = document.getElementById("disconnectViewerBtn");
+  const closeViewerPanelBtn = document.getElementById("closeViewerPanelBtn");
+  const viewerConnectedBadge = document.getElementById("viewerConnectedBadge");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -132,6 +148,7 @@
   let videoDevices = [];
   let currentDeviceIndex = -1;
   let switchingCamera = false;
+  let broadcastPc = null;
   let mediaRecorder = null;
   let recordedChunks = [];
   let recordingMimeType = "";
@@ -848,6 +865,138 @@
     else startRecording();
   }
 
+  // ---- Tablet viewer (WebRTC, manual signaling) ----
+  // Streams the same fully-composited stage canvas used for photo/video
+  // capture to a second device (e.g. a tablet) as a read-only viewer, over
+  // a direct peer-to-peer connection — no backend, since this is a static
+  // site with nowhere to run one. With no signaling server available
+  // either, the one-time connection handshake (SDP offer/answer) is
+  // exchanged manually: this device shows a code, the other device shows
+  // a reply code, and copying each one to the other device completes the
+  // pairing. viewer.html is the minimal read-only page that receives it.
+
+  function encodeSignal(desc) {
+    return btoa(JSON.stringify({ type: desc.type, sdp: desc.sdp }));
+  }
+
+  function decodeSignal(code) {
+    return JSON.parse(atob(code.trim()));
+  }
+
+  // Waiting for ICE gathering to finish before generating the shareable
+  // code means every candidate is already embedded in the SDP — a single
+  // copy/paste round trip is enough, no separate candidate exchange needed.
+  function waitForIceGatheringComplete(peer) {
+    if (peer.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve) => {
+      function check() {
+        if (peer.iceGatheringState === "complete") {
+          peer.removeEventListener("icegatheringstatechange", check);
+          resolve();
+        }
+      }
+      peer.addEventListener("icegatheringstatechange", check);
+    });
+  }
+
+  function handleBroadcastConnectionStateChange() {
+    if (!broadcastPc) return;
+    const state = broadcastPc.connectionState;
+    if (state === "connected") {
+      viewerStatus.textContent = "Tablet connected.";
+      disconnectViewerBtn.classList.remove("hide");
+      viewerConnectedBadge.classList.remove("hide");
+    } else if (state === "failed") {
+      // Terminal — clean up so reopening this panel regenerates a fresh
+      // code instead of getting stuck reusing a dead connection.
+      viewerConnectedBadge.classList.add("hide");
+      viewerStatus.textContent = "Connection failed. Close and reopen this panel to try again.";
+      broadcastPc.close();
+      broadcastPc = null;
+      disconnectViewerBtn.classList.add("hide");
+    } else if (state === "disconnected") {
+      // Can recover on its own via ICE renegotiation — keep the Disconnect
+      // button available as a manual way out if it doesn't.
+      viewerConnectedBadge.classList.add("hide");
+      viewerStatus.textContent = "Tablet connection interrupted — may reconnect automatically.";
+    }
+  }
+
+  async function startBroadcastOffer() {
+    if (!gl || typeof stage.captureStream !== "function") {
+      viewerStatus.textContent = "Viewer streaming isn't supported in this browser.";
+      return;
+    }
+    viewerStatus.textContent = "Generating connection code…";
+    broadcastPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const stream = stage.captureStream(30);
+    stream.getTracks().forEach((t) => broadcastPc.addTrack(t, stream));
+    broadcastPc.addEventListener("connectionstatechange", handleBroadcastConnectionStateChange);
+
+    try {
+      const offer = await broadcastPc.createOffer();
+      await broadcastPc.setLocalDescription(offer);
+      await waitForIceGatheringComplete(broadcastPc);
+      broadcastOfferOutput.value = encodeSignal(broadcastPc.localDescription);
+      viewerStatus.textContent = "Copy the code above to the other device, then paste its reply code below.";
+    } catch (err) {
+      viewerStatus.textContent = "Couldn't start: " + (err.message || err.name || "unknown error");
+    }
+  }
+
+  async function completeViewerConnection() {
+    if (!broadcastPc) return;
+    const raw = broadcastAnswerInput.value.trim();
+    if (!raw) {
+      viewerStatus.textContent = "Paste the reply code from the other device first.";
+      return;
+    }
+    let answer;
+    try {
+      answer = decodeSignal(raw);
+    } catch (e) {
+      viewerStatus.textContent = "That doesn't look like a valid reply code.";
+      return;
+    }
+    try {
+      await broadcastPc.setRemoteDescription(new RTCSessionDescription(answer));
+      viewerStatus.textContent = "Connecting…";
+    } catch (err) {
+      viewerStatus.textContent = "Couldn't connect: " + (err.message || err.name || "unknown error");
+    }
+  }
+
+  async function disconnectViewer() {
+    if (broadcastPc) {
+      broadcastPc.close();
+      broadcastPc = null;
+    }
+    viewerConnectedBadge.classList.add("hide");
+    disconnectViewerBtn.classList.add("hide");
+    broadcastOfferOutput.value = "";
+    broadcastAnswerInput.value = "";
+    viewerStatus.textContent = "Disconnected.";
+    // If the panel's still open, line up a fresh code right away so
+    // reconnecting doesn't need a close/reopen round trip.
+    if (!viewerPanel.classList.contains("hide")) {
+      await startBroadcastOffer();
+    }
+  }
+
+  async function openViewerPanel() {
+    hideOverlayPanels();
+    viewerPanel.classList.remove("hide");
+    closeViewerPanelBtn.focus();
+    if (!broadcastPc) {
+      await startBroadcastOffer();
+    }
+  }
+
+  function closeViewerPanel() {
+    viewerPanel.classList.add("hide");
+    connectTabletBtn.focus();
+  }
+
   // ---- Sampling for calibration ----
   // Averages a small patch from the raw video frame (not the shader's
   // corrected output) so calibration is always anchored to the real colour.
@@ -890,14 +1039,17 @@
   }
 
   // ---- Tune panel ----
-  // The three bottom-docked overlays (tune, saved-colours, choose-colour)
-  // share a z-index and their triggers (HUD buttons) stay reachable even
-  // while one is open, so only one may ever be shown at a time.
+  // The four bottom-docked overlays (tune, saved-colours, choose-colour,
+  // viewer-pairing) share a z-index and their triggers (HUD buttons) stay
+  // reachable even while one is open, so only one may ever be shown at a
+  // time. Hiding the viewer panel here does NOT disconnect an active
+  // broadcast — that keeps running in the background, same as recording.
 
   function hideOverlayPanels() {
     tunePanel.classList.add("hide");
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
+    viewerPanel.classList.add("hide");
   }
 
   function openTuneForNewPoint(sourceColor) {
@@ -1261,6 +1413,21 @@
   photoBtn.addEventListener("click", takePhoto);
   recordBtn.addEventListener("click", toggleRecording);
 
+  connectTabletBtn.addEventListener("click", openViewerPanel);
+  copyOfferBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(broadcastOfferOutput.value);
+      copyOfferBtn.textContent = "Copied!";
+      setTimeout(() => { copyOfferBtn.textContent = "Copy code"; }, 1500);
+    } catch (e) {
+      broadcastOfferOutput.select();
+      viewerStatus.textContent = "Couldn't copy automatically — the code is selected, copy it manually.";
+    }
+  });
+  completeConnectBtn.addEventListener("click", completeViewerConnection);
+  disconnectViewerBtn.addEventListener("click", disconnectViewer);
+  closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
+
   // Best-effort hardware shutter: most browsers never forward physical
   // volume-button presses to page JavaScript at all (iOS Safari and
   // desktop never do), and even where a browser does — mainly some
@@ -1339,6 +1506,8 @@
       closePointsPanel();
     } else if (!choosePanel.classList.contains("hide")) {
       closeChoosePanel();
+    } else if (!viewerPanel.classList.contains("hide")) {
+      closeViewerPanel();
     } else if (aiming) {
       stopAiming();
     }
@@ -1352,7 +1521,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel"
     ));
   }
 
