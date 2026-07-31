@@ -80,13 +80,17 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+/* Sized dynamically in JS (updateReticleSize) to visually match the
+   fraction of the frame actually being averaged — widening the sample
+   area slider grows this circle, not just a number. Width/height here
+   are just an unstyled-flash fallback before JS first runs. */
 #reticle {
   position: absolute;
   top: 50%;
   left: 50%;
+  transform: translate(-50%, -50%);
   width: 46px;
   height: 46px;
-  margin: -23px 0 0 -23px;
   border: 2px solid rgba(242, 242, 247, 0.85);
   border-radius: 50%;
   pointer-events: none;
@@ -102,13 +106,25 @@ video#cameraFeed, canvas#sampleCanvas {
 #reticle::before { top: 50%; left: -8px; right: -8px; height: 1px; }
 #reticle::after { left: 50%; top: -8px; bottom: -8px; width: 1px; }
 
-.reticle-swatch {
-  position: absolute;
-  top: calc(50% + 40px);
+/* Docked at the top of the screen rather than tucked under the reticle,
+   since the reticle's own size now varies with the sample-area slider —
+   fixing the preview here means it never collides with a large reticle. */
+#reticlePreview {
+  position: fixed;
+  top: 16px;
   left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+}
+
+.reticle-swatch {
   width: 64px;
   height: 64px;
-  margin-left: -32px;
   border-radius: 14px;
   border: 1px solid rgba(125, 211, 252, 0.4);
   pointer-events: none;
@@ -126,11 +142,6 @@ video#cameraFeed, canvas#sampleCanvas {
 }
 
 .reticle-color-name {
-  position: absolute;
-  top: calc(50% + 110px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
   text-align: center;
   pointer-events: none;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);

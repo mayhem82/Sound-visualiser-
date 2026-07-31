@@ -6,6 +6,8 @@
   const ROTATE_KEY = "pcRotate180_v1";
   const SPREAD_KEY = "pcSpread_v1";
   const DEFAULT_SPREAD = 4;
+  const SAMPLE_AREA_KEY = "pcSampleArea_v1";
+  const DEFAULT_SAMPLE_AREA = 15;
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -51,8 +53,11 @@
   const viewerConnectedBadge = document.getElementById("viewerConnectedBadge");
 
   const reticleLayer = document.getElementById("reticleLayer");
+  const reticle = document.getElementById("reticle");
   const reticleSwatch = document.getElementById("reticleSwatch");
   const reticleColorName = document.getElementById("reticleColorName");
+  const sampleAreaSlider = document.getElementById("sampleAreaSlider");
+  const sampleAreaLabel = document.getElementById("sampleAreaLabel");
   const freezeBtn = document.getElementById("freezeBtn");
   const cancelAimBtn = document.getElementById("cancelAimBtn");
 
@@ -132,6 +137,7 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
+  let sampleArea = loadSampleAreaPref();
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -312,6 +318,31 @@
     if (value <= 10) return "Medium";
     if (value <= 22) return "Wide";
     return "Very wide";
+  }
+
+  function loadSampleAreaPref() {
+    try {
+      const raw = parseFloat(localStorage.getItem(SAMPLE_AREA_KEY));
+      return Number.isFinite(raw) ? raw : DEFAULT_SAMPLE_AREA;
+    } catch (e) {
+      return DEFAULT_SAMPLE_AREA;
+    }
+  }
+
+  function saveSampleAreaPref() {
+    try {
+      localStorage.setItem(SAMPLE_AREA_KEY, String(sampleArea));
+    } catch (e) {
+      // Non-fatal — just won't persist across reloads.
+    }
+  }
+
+  function sampleAreaDescription(value) {
+    if (value <= 10) return "Point";
+    if (value <= 20) return "Small";
+    if (value <= 35) return "Medium";
+    if (value <= 50) return "Large";
+    return "Very large";
   }
 
   function setStatus(msg) {
@@ -915,21 +946,26 @@
   }
 
   // ---- Sampling for calibration ----
-  // Averages a small patch from the raw video frame (not the shader's
-  // corrected output) so matching is always anchored to the real colour.
+  // Averages a patch from the raw video frame (not the shader's corrected
+  // output) so matching is always anchored to the real colour. The patch
+  // size is adjustable (sampleArea) rather than fixed: a real wall, roof,
+  // or run of windows shows a range of shades from shadows and reflections,
+  // not one flat colour, so widening the sampled area averages across more
+  // of that real variation instead of anchoring to a single spot that might
+  // happen to be a highlight or a shadow.
 
-  const SAMPLE_SIZE = 12;
+  const SAMPLE_CANVAS_SIZE = 64;
 
   function sampleCenterColor() {
     if (video.readyState < video.HAVE_CURRENT_DATA) return [0.5, 0.5, 0.5];
-    sampleCanvas.width = 64;
-    sampleCanvas.height = 64;
+    sampleCanvas.width = SAMPLE_CANVAS_SIZE;
+    sampleCanvas.height = SAMPLE_CANVAS_SIZE;
     const vw = video.videoWidth, vh = video.videoHeight;
-    const cropSize = Math.min(vw, vh) * 0.15;
+    const cropSize = Math.min(vw, vh) * (sampleArea / 100);
     const sx = vw / 2 - cropSize / 2;
     const sy = vh / 2 - cropSize / 2;
-    sampleCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, 64, 64);
-    const data = sampleCtx.getImageData(24, 24, SAMPLE_SIZE, SAMPLE_SIZE).data;
+    sampleCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, SAMPLE_CANVAS_SIZE, SAMPLE_CANVAS_SIZE);
+    const data = sampleCtx.getImageData(0, 0, SAMPLE_CANVAS_SIZE, SAMPLE_CANVAS_SIZE).data;
     let r = 0, g = 0, b = 0, n = 0;
     for (let i = 0; i < data.length; i += 4) {
       r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
@@ -937,8 +973,19 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // The on-screen reticle is sized to visually match the fraction of the
+  // frame actually being averaged, so what you see is what you get —
+  // widening the slider grows the circle, not just a number.
+  function updateReticleSize() {
+    const vmin = Math.min(window.innerWidth, window.innerHeight);
+    const diameter = Math.round(vmin * (sampleArea / 100));
+    reticle.style.width = diameter + "px";
+    reticle.style.height = diameter + "px";
+  }
+
   function startAiming() {
     aiming = true;
+    updateReticleSize();
     reticleLayer.classList.remove("hide");
     aimIntervalId = setInterval(() => {
       const c = sampleCenterColor();
@@ -1293,6 +1340,13 @@
     saveSpreadPref();
   });
 
+  sampleAreaSlider.addEventListener("input", () => {
+    sampleArea = parseFloat(sampleAreaSlider.value);
+    sampleAreaLabel.textContent = sampleAreaDescription(sampleArea);
+    saveSampleAreaPref();
+    updateReticleSize();
+  });
+
   pauseBtn.addEventListener("click", () => {
     paused = !paused;
     pauseBtn.textContent = paused ? "Resume" : "Pause";
@@ -1412,6 +1466,9 @@
   });
 
   window.addEventListener("resize", resizeStage);
+  window.addEventListener("resize", () => {
+    if (aiming) updateReticleSize();
+  });
 
   // Tap the empty camera view to hide/show the HUD — same pattern as the
   // main Sound Nebula page: taps on any button, panel, or status readout
@@ -1433,4 +1490,6 @@
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);
   rotateBtn.classList.toggle("active", rotate180);
+  sampleAreaSlider.value = String(sampleArea);
+  sampleAreaLabel.textContent = sampleAreaDescription(sampleArea);
 })();

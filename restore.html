@@ -94,9 +94,15 @@
 </div>
 
 <div id="reticleLayer" class="hide">
+  <div id="reticlePreview">
+    <label id="sampleAreaWrap" class="hud-slider" title="How large an area to average when you freeze a colour. Widen it to span a wall, roof, or run of windows so the reference reflects the real range of shadows and reflections instead of a single spot.">
+      Sample area: <span id="sampleAreaLabel">Small</span>
+      <input id="sampleAreaSlider" type="range" min="5" max="60" value="15">
+    </label>
+    <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+    <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
+  </div>
   <div id="reticle" aria-hidden="true"></div>
-  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
-  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
   <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
   <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
 </div>
