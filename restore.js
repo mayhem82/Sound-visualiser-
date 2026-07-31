@@ -2,13 +2,10 @@
   "use strict";
 
   const MAX_POINTS = 32;
-  const STORAGE_KEY = "cvCalibrationPoints_v1";
-  const ROTATE_KEY = "cvRotate180_v1";
-  const SPREAD_KEY = "cvSpread_v1";
+  const STORAGE_KEY = "pcCalibrationPoints_v1";
+  const ROTATE_KEY = "pcRotate180_v1";
+  const SPREAD_KEY = "pcSpread_v1";
   const DEFAULT_SPREAD = 4;
-  const CVD_TYPE_KEY = "cvCvdType_v1";
-  const CVD_STRENGTH_KEY = "cvCvdStrength_v1";
-  const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -29,10 +26,6 @@
   const blendLabel = document.getElementById("blendLabel");
   const spreadSlider = document.getElementById("spreadSlider");
   const spreadLabel = document.getElementById("spreadLabel");
-  const cvdTypeSelect = document.getElementById("cvdTypeSelect");
-  const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
-  const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
-  const cvdStrengthLabel = document.getElementById("cvdStrengthLabel");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -102,20 +95,20 @@
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
 
-  // Colours commonly reported as confusable in red-green and blue-yellow CVD.
-  // Starting points, not a diagnosis — the user still verifies each one
-  // against their own vision.
-  const CVD_PRESETS = [
-    { label: "Traffic light red", hex: "#d1352b" },
-    { label: "Traffic light green", hex: "#3a9b5c" },
-    { label: "Ripe tomato red", hex: "#c82f1e" },
-    { label: "Unripe leaf green", hex: "#5c8a3a" },
-    { label: "Amber / brown", hex: "#a5661a" },
-    { label: "Grey (low-sat)", hex: "#8a8a8a" },
-    { label: "Purple", hex: "#7a4fb5" },
-    { label: "Blue", hex: "#2f6fd1" },
-    { label: "Orange", hex: "#e0792a" },
-    { label: "Pink", hex: "#d1668f" }
+  // Neutral references useful as calibration starting points for property
+  // documentation — a grey card and white/black references are standard
+  // photographic targets; the paint neutrals are common enough starting
+  // shades to tune from. None of these are a substitute for calibrating
+  // against your own actual paint chip, swatch, or matched sample.
+  const REFERENCE_PRESETS = [
+    { label: "Pure white reference", hex: "#ffffff" },
+    { label: "18% grey card", hex: "#8a8a8a" },
+    { label: "Black reference", hex: "#1a1a1a" },
+    { label: "Warm white paint", hex: "#f5f0e6" },
+    { label: "Cool white paint", hex: "#f0f2f5" },
+    { label: "Beige / greige", hex: "#d9cfc1" },
+    { label: "Taupe", hex: "#b8a99a" },
+    { label: "Charcoal trim", hex: "#3a3a3a" }
   ];
 
   // Each saved point is a real colour the user aimed at and personally tuned:
@@ -139,8 +132,6 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
-  let cvdType = loadCvdTypePref();
-  let cvdStrength = loadCvdStrengthPref();
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -243,9 +234,9 @@
     return [r, g, b];
   }
 
-  // A colour swatch alone doesn't help the people this page is for — the
-  // whole point is that colour perception can't be trusted, so every swatch
-  // also gets a plain-language name from a fixed palette of familiar terms.
+  // A quick plain-language name next to every swatch — faster to read at a
+  // glance than judging a colour patch, especially outdoors or on a small
+  // screen.
   function nearestColorName([r, g, b]) {
     const [h, s, l] = rgb2hsl(r, g, b);
     if (l < 0.10) return "black";
@@ -323,40 +314,6 @@
     return "Very wide";
   }
 
-  function loadCvdTypePref() {
-    try {
-      const raw = localStorage.getItem(CVD_TYPE_KEY);
-      return Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, raw) ? raw : "none";
-    } catch (e) {
-      return "none";
-    }
-  }
-
-  function saveCvdTypePref() {
-    try {
-      localStorage.setItem(CVD_TYPE_KEY, cvdType);
-    } catch (e) {
-      // Non-fatal — just won't persist across reloads.
-    }
-  }
-
-  function loadCvdStrengthPref() {
-    try {
-      const raw = parseFloat(localStorage.getItem(CVD_STRENGTH_KEY));
-      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
-    } catch (e) {
-      return 1;
-    }
-  }
-
-  function saveCvdStrengthPref() {
-    try {
-      localStorage.setItem(CVD_STRENGTH_KEY, String(cvdStrength));
-    } catch (e) {
-      // Non-fatal — just won't persist across reloads.
-    }
-  }
-
   function setStatus(msg) {
     statusEl.textContent = msg || "";
   }
@@ -386,50 +343,9 @@
     uniform vec3 uSourceLab[${MAX_POINTS}];
     uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
     uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
-    uniform int uCvdType;      // 0=none, 1=protan, 2=deutan, 3=tritan
-    uniform float uCvdStrength;
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
-    }
-
-    float linearToSrgb(float c) {
-      return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-    }
-
-    // Machado, Oliveira & Fonseca (2009) dichromacy-simulation matrices,
-    // applied directly in linear RGB. Error-redistribution implements the
-    // classic "Daltonize" technique (Fidaner, Lin & Ozguven): simulate what
-    // a dichromat sees, take what's lost (error = original - simulated),
-    // and push that lost information into the channels the deficiency
-    // doesn't affect. The protan/deutan redistribution matrix is the one
-    // from that original algorithm; the tritan one is an analogous
-    // derivation of our own (blue-yellow deficiency is far less commonly
-    // covered by published implementations than red-green is).
-    vec3 daltonize(vec3 srgbColor, int type, float strength) {
-      if (type == 0 || strength <= 0.0) return srgbColor;
-
-      vec3 lin = vec3(srgbToLinear(srgbColor.r), srgbToLinear(srgbColor.g), srgbToLinear(srgbColor.b));
-      mat3 sim;
-      mat3 errMat;
-      if (type == 1) {
-        sim = mat3(0.152286, 0.114503, -0.003882,  1.052583, 0.786281, -0.048116,  -0.204868, 0.099216, 1.051998);
-        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
-      } else if (type == 2) {
-        sim = mat3(0.367322, 0.280085, -0.011820,  0.860646, 0.672501, 0.042940,  -0.227968, 0.047413, 0.968881);
-        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
-      } else {
-        sim = mat3(1.255528, -0.078411, 0.004733,  -0.076749, 0.930809, 0.691367,  -0.178779, 0.147602, 0.303900);
-        errMat = mat3(1.0, 0.0, 0.0,  0.0, 1.0, 0.0,  0.7, 0.7, 0.0);
-      }
-
-      vec3 simulated = sim * lin;
-      vec3 err = lin - simulated;
-      vec3 correctedLin = clamp(lin + errMat * err, 0.0, 1.0);
-      vec3 correctedSrgb = vec3(
-        linearToSrgb(correctedLin.r), linearToSrgb(correctedLin.g), linearToSrgb(correctedLin.b)
-      );
-      return mix(srgbColor, correctedSrgb, strength);
     }
 
     vec3 rgb2lab(vec3 c) {
@@ -479,7 +395,6 @@
 
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
-      vec3 base = daltonize(original, uCvdType, uCvdStrength);
       vec3 correction = vec3(0.0);
       vec2 correction2 = vec2(0.0);
 
@@ -502,7 +417,7 @@
         }
       }
 
-      vec3 hsl = rgb2hsl(base);
+      vec3 hsl = rgb2hsl(original);
       hsl.x = mod(hsl.x + correction.x + 360.0, 360.0);
       hsl.y = clamp(hsl.y + correction.y, 0.0, 1.0);
       hsl.z = clamp(hsl.z + correction.z, 0.0, 1.0);
@@ -573,9 +488,7 @@
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
       uCorrection: gl.getUniformLocation(program, "uCorrection"),
-      uCorrection2: gl.getUniformLocation(program, "uCorrection2"),
-      uCvdType: gl.getUniformLocation(program, "uCvdType"),
-      uCvdStrength: gl.getUniformLocation(program, "uCvdStrength")
+      uCorrection2: gl.getUniformLocation(program, "uCorrection2")
     };
   }
 
@@ -613,8 +526,6 @@
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
-      gl.uniform1i(uniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
-      gl.uniform1f(uniforms.uCvdStrength, cvdStrength);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     rafId = requestAnimationFrame(renderLoop);
@@ -766,9 +677,9 @@
   }
 
   // ---- Photo & video capture ----
-  // Captures the fully-composited stage canvas — true/corrected blend,
-  // per-point calibration, and any colour-blindness-type correction all
-  // baked in — exactly what's currently on screen, not a re-render.
+  // Captures the fully-composited stage canvas — true/corrected blend and
+  // per-point calibration all baked in — exactly what's currently on
+  // screen, not a re-render.
 
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -797,7 +708,7 @@
         showCameraStatus("Couldn't capture a photo — try again.");
         return;
       }
-      downloadBlob(blob, `colour-vision-photo-${timestampForFilename()}.png`);
+      downloadBlob(blob, `property-colour-photo-${timestampForFilename()}.png`);
     }, "image/png");
   }
 
@@ -839,7 +750,7 @@
       const blob = new Blob(recordedChunks, { type: recordingMimeType });
       recordedChunks = [];
       if (blob.size > 0) {
-        downloadBlob(blob, `colour-vision-video-${timestampForFilename()}.${ext}`);
+        downloadBlob(blob, `property-colour-video-${timestampForFilename()}.${ext}`);
       } else {
         showCameraStatus("Recording produced no data — try again.");
       }
@@ -872,13 +783,14 @@
 
   // ---- Tablet viewer (WebRTC, manual signaling) ----
   // Streams the same fully-composited stage canvas used for photo/video
-  // capture to a second device (e.g. a tablet) as a read-only viewer, over
-  // a direct peer-to-peer connection — no backend, since this is a static
-  // site with nowhere to run one. With no signaling server available
-  // either, the one-time connection handshake (SDP offer/answer) is
-  // exchanged manually: this device shows a code, the other device shows
-  // a reply code, and copying each one to the other device completes the
-  // pairing. viewer.html is the minimal read-only page that receives it.
+  // capture to a second device (e.g. a tablet, or a client watching along)
+  // as a read-only viewer, over a direct peer-to-peer connection — no
+  // backend, since this is a static site with nowhere to run one. With no
+  // signaling server available either, the one-time connection handshake
+  // (SDP offer/answer) is exchanged manually: this device shows a code,
+  // the other device shows a reply code, and copying each one to the
+  // other device completes the pairing. viewer.html is the minimal
+  // read-only page that receives it.
 
   function encodeSignal(desc) {
     return btoa(JSON.stringify({ type: desc.type, sdp: desc.sdp }));
@@ -1004,7 +916,7 @@
 
   // ---- Sampling for calibration ----
   // Averages a small patch from the raw video frame (not the shader's
-  // corrected output) so calibration is always anchored to the real colour.
+  // corrected output) so matching is always anchored to the real colour.
 
   const SAMPLE_SIZE = 12;
 
@@ -1044,7 +956,7 @@
   }
 
   // ---- Tune panel ----
-  // The four bottom-docked overlays (tune, saved-colours, choose-colour,
+  // The four bottom-docked overlays (tune, saved-references, choose-colour,
   // viewer-pairing) share a z-index and their triggers (HUD buttons) stay
   // reachable even while one is open, so only one may ever be shown at a
   // time. Hiding the viewer panel here does NOT disconnect an active
@@ -1136,7 +1048,7 @@
       }
     } else {
       if (points.length >= MAX_POINTS) {
-        setStatus(`Limit of ${MAX_POINTS} saved colours reached — delete one to add another.`);
+        setStatus(`Limit of ${MAX_POINTS} saved references reached — delete one to add another.`);
         return;
       }
       points.push({
@@ -1165,14 +1077,14 @@
     pointsCount.textContent = String(points.length);
   }
 
-  // ---- Saved-colours grid ----
+  // ---- Saved-references grid ----
 
   function renderPointsGrid() {
     pointsGrid.innerHTML = "";
     if (points.length === 0) {
       const empty = document.createElement("p");
       empty.className = "hint";
-      empty.textContent = "No colours saved yet. Use \"Calibrate a colour\" to add your first one.";
+      empty.textContent = "No references saved yet. Use \"Match a reference colour\" to add your first one.";
       pointsGrid.appendChild(empty);
       return;
     }
@@ -1234,8 +1146,8 @@
     selectModeBtn.setAttribute("aria-pressed", String(on));
     deleteSelectedBtn.classList.add("hide");
     pointsHint.textContent = on
-      ? "Tap colours to select, then delete the ones you no longer want."
-      : "Tap a colour to review or re-tune it.";
+      ? "Tap references to select, then delete the ones you no longer want."
+      : "Tap a reference to review or re-tune it.";
     renderPointsGrid();
   }
 
@@ -1250,7 +1162,7 @@
 
   function clearAllPoints() {
     if (points.length === 0) return;
-    const ok = window.confirm(`Delete all ${points.length} saved colours? This can't be undone.`);
+    const ok = window.confirm(`Delete all ${points.length} saved references? This can't be undone.`);
     if (!ok) return;
     points = [];
     selectedIds.clear();
@@ -1264,11 +1176,11 @@
 
   function renderPresetGrid() {
     presetGrid.innerHTML = "";
-    CVD_PRESETS.forEach((preset) => {
+    REFERENCE_PRESETS.forEach((preset) => {
       const card = document.createElement("button");
       card.type = "button";
       card.className = "preset-card";
-      card.setAttribute("aria-label", `${preset.label}. Calibrate this colour.`);
+      card.setAttribute("aria-label", `${preset.label}. Match this reference colour.`);
       const sw = document.createElement("div");
       sw.className = "preset-swatch";
       sw.style.background = preset.hex;
@@ -1302,7 +1214,7 @@
   // ---- Export / import ----
   // Calibration only ever lived in localStorage, so clearing site data or
   // switching devices silently wiped it. Export/import makes it a portable
-  // file instead — a backup, and a way to carry corrections to another phone.
+  // file instead — a backup, and a way to carry references to another phone.
 
   function isValidImportedPoint(p) {
     return p && typeof p === "object" &&
@@ -1317,12 +1229,12 @@
 
   function exportPoints() {
     if (points.length === 0) {
-      importExportStatus.textContent = "No saved colours to export yet.";
+      importExportStatus.textContent = "No saved references to export yet.";
       return;
     }
     const blob = new Blob([JSON.stringify(points, null, 2)], { type: "application/json" });
-    downloadBlob(blob, `colour-vision-calibration-${new Date().toISOString().slice(0, 10)}.json`);
-    importExportStatus.textContent = `Exported ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+    downloadBlob(blob, `property-colour-reference-${new Date().toISOString().slice(0, 10)}.json`);
+    importExportStatus.textContent = `Exported ${points.length} reference${points.length === 1 ? "" : "s"}.`;
   }
 
   function importPointsFromFile(file) {
@@ -1338,7 +1250,7 @@
       const incoming = Array.isArray(parsed) ? parsed : [];
       const valid = incoming.filter(isValidImportedPoint);
       if (valid.length === 0) {
-        importExportStatus.textContent = "Import failed: no valid saved colours found in that file.";
+        importExportStatus.textContent = "Import failed: no valid saved references found in that file.";
         return;
       }
       const room = MAX_POINTS - points.length;
@@ -1358,7 +1270,7 @@
       updatePointsCount();
       renderPointsGrid();
       const skipped = valid.length - toAdd.length;
-      importExportStatus.textContent = `Imported ${toAdd.length} colour${toAdd.length === 1 ? "" : "s"}.` +
+      importExportStatus.textContent = `Imported ${toAdd.length} reference${toAdd.length === 1 ? "" : "s"}.` +
         (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
     };
     reader.onerror = () => {
@@ -1379,18 +1291,6 @@
     spread = parseFloat(spreadSlider.value);
     spreadLabel.textContent = spreadDescription(spread);
     saveSpreadPref();
-  });
-
-  cvdTypeSelect.addEventListener("change", () => {
-    cvdType = cvdTypeSelect.value;
-    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
-    saveCvdTypePref();
-  });
-
-  cvdStrengthSlider.addEventListener("input", () => {
-    cvdStrength = parseFloat(cvdStrengthSlider.value) / 100;
-    cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
-    saveCvdStrengthPref();
   });
 
   pauseBtn.addEventListener("click", () => {
@@ -1533,8 +1433,4 @@
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);
   rotateBtn.classList.toggle("active", rotate180);
-  cvdTypeSelect.value = cvdType;
-  cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
-  cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
-  cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
 })();
