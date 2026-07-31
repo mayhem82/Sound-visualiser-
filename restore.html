@@ -50,15 +50,24 @@
 <p id="maskActiveBadge" class="hide" aria-hidden="true">&#128396; Mask active</p>
 
 <canvas id="maskCanvas"></canvas>
+<canvas id="maskAnalysisCanvas" hidden></canvas>
 <div id="maskLayer" class="hide">
   <div id="maskToolbar">
     <div id="maskToolGroup" role="group" aria-label="Mask tool">
       <button id="maskExcludeBtn" class="hud-btn" aria-pressed="true">Exclude</button>
       <button id="maskRestoreBtn" class="hud-btn" aria-pressed="false">Restore</button>
     </div>
+    <div id="maskModeGroup" role="group" aria-label="Selection method">
+      <button id="maskModeBrushBtn" class="hud-btn" aria-pressed="true" title="Drag to paint the mask by hand.">Brush</button>
+      <button id="maskModeSmartBtn" class="hud-btn" aria-pressed="false" title="Tap once inside a surface (e.g. a ceiling) to auto-select the contiguous area, following real edges instead of just colour proximity.">Smart select</button>
+    </div>
     <label id="maskBrushWrap" class="hud-slider" title="How large a brush to paint the mask with.">
       Brush size: <span id="maskBrushLabel">Medium</span>
       <input id="maskBrushSlider" type="range" min="10" max="100" value="35">
+    </label>
+    <label id="maskToleranceWrap" class="hud-slider hide" title="How different a neighbouring colour can be and still count as the same surface. Raise it if the selection stops too early at a shadow; lower it if it spills onto a neighbouring surface.">
+      Tolerance: <span id="maskToleranceLabel">Medium</span>
+      <input id="maskToleranceSlider" type="range" min="4" max="60" value="20">
     </label>
     <button id="clearMaskBtn" class="hud-btn reticle-btn-secondary">Clear mask</button>
   </div>

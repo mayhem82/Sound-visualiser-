@@ -54,11 +54,19 @@
 
   const maskBtn = document.getElementById("maskBtn");
   const maskCanvas = document.getElementById("maskCanvas");
+  const maskAnalysisCanvas = document.getElementById("maskAnalysisCanvas");
   const maskLayer = document.getElementById("maskLayer");
   const maskExcludeBtn = document.getElementById("maskExcludeBtn");
   const maskRestoreBtn = document.getElementById("maskRestoreBtn");
+  const maskModeBrushBtn = document.getElementById("maskModeBrushBtn");
+  const maskModeSmartBtn = document.getElementById("maskModeSmartBtn");
+  const maskBrushWrap = document.getElementById("maskBrushWrap");
   const maskBrushSlider = document.getElementById("maskBrushSlider");
   const maskBrushLabel = document.getElementById("maskBrushLabel");
+  const maskToleranceWrap = document.getElementById("maskToleranceWrap");
+  const maskToleranceSlider = document.getElementById("maskToleranceSlider");
+  const maskToleranceLabel = document.getElementById("maskToleranceLabel");
+  const maskHint = document.getElementById("maskHint");
   const clearMaskBtn = document.getElementById("clearMaskBtn");
   const doneMaskBtn = document.getElementById("doneMaskBtn");
   const maskActiveBadge = document.getElementById("maskActiveBadge");
@@ -157,6 +165,8 @@
   let maskBrushSize = 35;
   let maskHasExclusions = false;
   let lastMaskPaintPos = null;
+  let maskPaintMode = "brush";
+  let smartSelectTolerance = 20;
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -1033,6 +1043,12 @@
     return "Large";
   }
 
+  function maskToleranceDescription(value) {
+    if (value <= 12) return "Tight";
+    if (value <= 30) return "Medium";
+    return "Loose";
+  }
+
   function paintMaskAt(x, y, tool) {
     const radius = maskBrushSize * (maskCanvas.width / window.innerWidth);
     const grad = maskCtx.createRadialGradient(x, y, 0, x, y, radius);
@@ -1061,14 +1077,18 @@
   function handleMaskPointerDown(e) {
     if (!maskModeActive) return;
     e.preventDefault();
-    if (maskCanvas.setPointerCapture) maskCanvas.setPointerCapture(e.pointerId);
     const [x, y] = maskPointerToCanvasCoords(e);
+    if (maskPaintMode === "smart") {
+      runSmartSelect(x, y);
+      return;
+    }
+    if (maskCanvas.setPointerCapture) maskCanvas.setPointerCapture(e.pointerId);
     lastMaskPaintPos = [x, y];
     paintMaskAt(x, y, currentMaskTool);
   }
 
   function handleMaskPointerMove(e) {
-    if (!maskModeActive || !lastMaskPaintPos) return;
+    if (!maskModeActive || maskPaintMode !== "brush" || !lastMaskPaintPos) return;
     e.preventDefault();
     const [x, y] = maskPointerToCanvasCoords(e);
     const [lx, ly] = lastMaskPaintPos;
@@ -1096,6 +1116,119 @@
     currentMaskTool = tool;
     maskExcludeBtn.setAttribute("aria-pressed", String(tool === "exclude"));
     maskRestoreBtn.setAttribute("aria-pressed", String(tool === "restore"));
+  }
+
+  function setMaskPaintMode(mode) {
+    maskPaintMode = mode;
+    lastMaskPaintPos = null;
+    maskModeBrushBtn.setAttribute("aria-pressed", String(mode === "brush"));
+    maskModeSmartBtn.setAttribute("aria-pressed", String(mode === "smart"));
+    maskBrushWrap.classList.toggle("hide", mode !== "brush");
+    maskToleranceWrap.classList.toggle("hide", mode !== "smart");
+    maskHint.textContent = mode === "smart"
+      ? "Tap once inside a surface (like a ceiling) to auto-select the whole area — it follows real edges, not just colour."
+      : "Paint over areas to exclude them from any correction — dark areas are protected. The view is paused while you paint.";
+  }
+
+  // Draws the current paused frame into the analysis canvas at a reduced
+  // resolution, applying the same 180° flip as rotate180 so its pixel grid
+  // lines up with what's actually on screen (and therefore with mask
+  // canvas coordinates) without needing to reverse-engineer the shader's
+  // own UV math.
+  function captureAnalysisFrame() {
+    const maxDim = 260;
+    const aspect = video.videoWidth / video.videoHeight || 1;
+    const aw = aspect >= 1 ? maxDim : Math.max(1, Math.round(maxDim * aspect));
+    const ah = aspect >= 1 ? Math.max(1, Math.round(maxDim / aspect)) : maxDim;
+    maskAnalysisCanvas.width = aw;
+    maskAnalysisCanvas.height = ah;
+    const actx = maskAnalysisCanvas.getContext("2d", { willReadFrequently: true });
+    actx.save();
+    if (rotate180) {
+      actx.translate(aw, ah);
+      actx.rotate(Math.PI);
+    }
+    actx.drawImage(video, 0, 0, aw, ah);
+    actx.restore();
+    return { ctx: actx, width: aw, height: ah };
+  }
+
+  // Classic flood-fill / "magic wand" selection: each candidate pixel is
+  // compared to its already-included NEIGHBOUR (not the original seed
+  // colour), in Lab space for a perceptually meaningful distance. That
+  // local comparison is what lets it follow a smooth gradient across one
+  // surface (a shadow falling across the same wall) while still stopping
+  // at a real edge (the wall-to-ceiling boundary), rather than either
+  // fragmenting on every shadow or spilling across onto a similar colour
+  // that happens to be a different surface.
+  function floodFillFromPoint(imageData, w, h, startX, startY, toleranceLab) {
+    const data = imageData.data;
+    const visited = new Uint8Array(w * h);
+    const included = new Uint8Array(w * h);
+    const labCache = new Map();
+
+    function labAt(idx, x, y) {
+      let v = labCache.get(idx);
+      if (!v) {
+        const i = idx * 4;
+        v = rgb2lab(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
+        labCache.set(idx, v);
+      }
+      return v;
+    }
+
+    const startIdx = startY * w + startX;
+    visited[startIdx] = 1;
+    included[startIdx] = 1;
+    const stack = [[startX, startY]];
+
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      const cLab = labAt(cy * w + cx, cx, cy);
+      const neighbors = [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]];
+      for (const [nx, ny] of neighbors) {
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        const nIdx = ny * w + nx;
+        if (visited[nIdx]) continue;
+        visited[nIdx] = 1;
+        const nLab = labAt(nIdx, nx, ny);
+        const d = Math.hypot(nLab[0] - cLab[0], nLab[1] - cLab[1], nLab[2] - cLab[2]);
+        if (d <= toleranceLab) {
+          included[nIdx] = 1;
+          stack.push([nx, ny]);
+        }
+      }
+    }
+    return included;
+  }
+
+  function applySmartSelection(included, aw, ah, tool) {
+    const scaleX = maskCanvas.width / aw;
+    const scaleY = maskCanvas.height / ah;
+    maskCtx.fillStyle = tool === "exclude" ? "#000000" : "#ffffff";
+    for (let y = 0; y < ah; y++) {
+      for (let x = 0; x < aw; x++) {
+        if (included[y * aw + x]) {
+          maskCtx.fillRect(
+            Math.floor(x * scaleX), Math.floor(y * scaleY),
+            Math.ceil(scaleX), Math.ceil(scaleY)
+          );
+        }
+      }
+    }
+    maskDirty = true;
+    if (tool === "exclude") maskHasExclusions = true;
+    updateMaskActiveBadge();
+  }
+
+  function runSmartSelect(canvasX, canvasY) {
+    if (video.readyState < video.HAVE_CURRENT_DATA) return;
+    const { ctx: actx, width: aw, height: ah } = captureAnalysisFrame();
+    const seedX = Math.min(aw - 1, Math.max(0, Math.round((canvasX / maskCanvas.width) * aw)));
+    const seedY = Math.min(ah - 1, Math.max(0, Math.round((canvasY / maskCanvas.height) * ah)));
+    const imageData = actx.getImageData(0, 0, aw, ah);
+    const included = floodFillFromPoint(imageData, aw, ah, seedX, seedY, smartSelectTolerance);
+    applySmartSelection(included, aw, ah, currentMaskTool);
   }
 
   function clearMask() {
@@ -1575,6 +1708,12 @@
     maskBrushSize = parseFloat(maskBrushSlider.value);
     maskBrushLabel.textContent = maskBrushDescription(maskBrushSize);
   });
+  maskModeBrushBtn.addEventListener("click", () => setMaskPaintMode("brush"));
+  maskModeSmartBtn.addEventListener("click", () => setMaskPaintMode("smart"));
+  maskToleranceSlider.addEventListener("input", () => {
+    smartSelectTolerance = parseFloat(maskToleranceSlider.value);
+    maskToleranceLabel.textContent = maskToleranceDescription(smartSelectTolerance);
+  });
   clearMaskBtn.addEventListener("click", clearMask);
   maskCanvas.addEventListener("pointerdown", handleMaskPointerDown);
   maskCanvas.addEventListener("pointermove", handleMaskPointerMove);
@@ -1700,4 +1839,6 @@
   sampleAreaLabel.textContent = sampleAreaDescription(sampleArea);
   maskBrushSlider.value = String(maskBrushSize);
   maskBrushLabel.textContent = maskBrushDescription(maskBrushSize);
+  maskToleranceSlider.value = String(smartSelectTolerance);
+  maskToleranceLabel.textContent = maskToleranceDescription(smartSelectTolerance);
 })();

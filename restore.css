@@ -215,14 +215,17 @@ video#cameraFeed, canvas#sampleCanvas {
   padding: 14px 16px;
 }
 
-#maskToolGroup {
+#maskToolGroup,
+#maskModeGroup {
   display: flex;
   gap: 8px;
 }
 
-#maskToolGroup .hud-btn { flex: 1 1 auto; }
+#maskToolGroup .hud-btn,
+#maskModeGroup .hud-btn { flex: 1 1 auto; }
 
-#maskToolGroup .hud-btn[aria-pressed="true"] {
+#maskToolGroup .hud-btn[aria-pressed="true"],
+#maskModeGroup .hud-btn[aria-pressed="true"] {
   background: rgba(125, 211, 252, 0.25);
   border-color: rgba(125, 211, 252, 0.6);
 }
