@@ -52,6 +52,17 @@
   const closeViewerPanelBtn = document.getElementById("closeViewerPanelBtn");
   const viewerConnectedBadge = document.getElementById("viewerConnectedBadge");
 
+  const maskBtn = document.getElementById("maskBtn");
+  const maskCanvas = document.getElementById("maskCanvas");
+  const maskLayer = document.getElementById("maskLayer");
+  const maskExcludeBtn = document.getElementById("maskExcludeBtn");
+  const maskRestoreBtn = document.getElementById("maskRestoreBtn");
+  const maskBrushSlider = document.getElementById("maskBrushSlider");
+  const maskBrushLabel = document.getElementById("maskBrushLabel");
+  const clearMaskBtn = document.getElementById("clearMaskBtn");
+  const doneMaskBtn = document.getElementById("doneMaskBtn");
+  const maskActiveBadge = document.getElementById("maskActiveBadge");
+
   const reticleLayer = document.getElementById("reticleLayer");
   const reticle = document.getElementById("reticle");
   const reticleSwatch = document.getElementById("reticleSwatch");
@@ -138,6 +149,14 @@
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
   let sampleArea = loadSampleAreaPref();
+  const maskCtx = maskCanvas.getContext("2d");
+  let maskTexture = null;
+  let maskDirty = true;
+  let maskModeActive = false;
+  let currentMaskTool = "exclude";
+  let maskBrushSize = 35;
+  let maskHasExclusions = false;
+  let lastMaskPaintPos = null;
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -374,6 +393,7 @@
     uniform vec3 uSourceLab[${MAX_POINTS}];
     uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
     uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
+    uniform sampler2D uMaskTex;                // painted correction mask: white=apply, black=protect
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -458,7 +478,8 @@
       float expMul = pow(2.0, correction2.y);
       corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
-      gl_FragColor = vec4(mix(original, corrected, uBlend), 1.0);
+      float maskFactor = texture2D(uMaskTex, vUv).r;
+      gl_FragColor = vec4(mix(original, corrected, uBlend * maskFactor), 1.0);
     }
   `;
 
@@ -511,6 +532,17 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
+    maskTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // A 1x1 fully-white pixel is a no-op mask (uMaskTex sampled anywhere
+    // returns 1.0) so correction behaves exactly as before until the real
+    // mask canvas gets uploaded.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+
     uniforms = {
       uTex: gl.getUniformLocation(program, "uTex"),
       uBlend: gl.getUniformLocation(program, "uBlend"),
@@ -519,7 +551,8 @@
       uPointCount: gl.getUniformLocation(program, "uPointCount"),
       uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
       uCorrection: gl.getUniformLocation(program, "uCorrection"),
-      uCorrection2: gl.getUniformLocation(program, "uCorrection2")
+      uCorrection2: gl.getUniformLocation(program, "uCorrection2"),
+      uMaskTex: gl.getUniformLocation(program, "uMaskTex")
     };
   }
 
@@ -528,6 +561,31 @@
     stage.width = Math.round(window.innerWidth * dpr);
     stage.height = Math.round(window.innerHeight * dpr);
     if (gl) gl.viewport(0, 0, stage.width, stage.height);
+  }
+
+  // Resizing a canvas clears its bitmap, which would silently wipe a
+  // painted mask on orientation change or window resize — so the
+  // existing content is snapshotted and rescaled onto the new size
+  // instead of just wiped.
+  function resizeMaskCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const newW = Math.round(window.innerWidth * dpr);
+    const newH = Math.round(window.innerHeight * dpr);
+    if (maskCanvas.width === newW && maskCanvas.height === newH) return;
+    const hadContent = maskCanvas.width > 0 && maskCanvas.height > 0;
+    let snapshot = null;
+    if (hadContent) {
+      snapshot = document.createElement("canvas");
+      snapshot.width = maskCanvas.width;
+      snapshot.height = maskCanvas.height;
+      snapshot.getContext("2d").drawImage(maskCanvas, 0, 0);
+    }
+    maskCanvas.width = newW;
+    maskCanvas.height = newH;
+    maskCtx.fillStyle = "#ffffff";
+    maskCtx.fillRect(0, 0, newW, newH);
+    if (snapshot) maskCtx.drawImage(snapshot, 0, 0, newW, newH);
+    maskDirty = true;
   }
 
   function uploadPointUniforms() {
@@ -551,9 +609,22 @@
 
   function renderLoop() {
     if (!paused && video.readyState >= video.HAVE_CURRENT_DATA) {
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.uniform1i(uniforms.uTex, 0);
+
+      // Only re-uploaded when the mask has actually changed (maskDirty),
+      // to avoid paying a texture upload every single frame for a canvas
+      // that usually isn't being painted on.
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+      if (maskDirty) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas);
+        maskDirty = false;
+      }
+      gl.uniform1i(uniforms.uMaskTex, 1);
+
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
@@ -575,6 +646,7 @@
       overlay.classList.add("hide");
       hud.classList.remove("hide");
       resizeStage();
+      resizeMaskCanvas();
       initGL();
       uploadPointUniforms();
       renderLoop();
@@ -945,6 +1017,120 @@
     connectTabletBtn.focus();
   }
 
+  // ---- Correction mask ----
+  // Colour-proximity blending alone can't separate two physically
+  // different surfaces that happen to be similar shades (e.g. a wall and
+  // a similarly off-white ceiling) — the mask adds a spatial layer on top:
+  // paint over an area to protect it from any correction regardless of
+  // colour. The mask canvas itself doubles as both the paint surface and
+  // the WebGL mask texture source (white = corrected normally, painted
+  // dark = protected), and is displayed directly over the stage via
+  // mix-blend-mode while painting so the darkened areas are the preview.
+
+  function maskBrushDescription(value) {
+    if (value <= 25) return "Small";
+    if (value <= 60) return "Medium";
+    return "Large";
+  }
+
+  function paintMaskAt(x, y, tool) {
+    const radius = maskBrushSize * (maskCanvas.width / window.innerWidth);
+    const grad = maskCtx.createRadialGradient(x, y, 0, x, y, radius);
+    if (tool === "exclude") {
+      grad.addColorStop(0, "rgba(0,0,0,0.35)");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      maskHasExclusions = true;
+    } else {
+      grad.addColorStop(0, "rgba(255,255,255,0.4)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+    }
+    maskCtx.fillStyle = grad;
+    maskCtx.beginPath();
+    maskCtx.arc(x, y, radius, 0, Math.PI * 2);
+    maskCtx.fill();
+    maskDirty = true;
+  }
+
+  function maskPointerToCanvasCoords(e) {
+    const rect = maskCanvas.getBoundingClientRect();
+    const scaleX = maskCanvas.width / rect.width;
+    const scaleY = maskCanvas.height / rect.height;
+    return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+  }
+
+  function handleMaskPointerDown(e) {
+    if (!maskModeActive) return;
+    e.preventDefault();
+    if (maskCanvas.setPointerCapture) maskCanvas.setPointerCapture(e.pointerId);
+    const [x, y] = maskPointerToCanvasCoords(e);
+    lastMaskPaintPos = [x, y];
+    paintMaskAt(x, y, currentMaskTool);
+  }
+
+  function handleMaskPointerMove(e) {
+    if (!maskModeActive || !lastMaskPaintPos) return;
+    e.preventDefault();
+    const [x, y] = maskPointerToCanvasCoords(e);
+    const [lx, ly] = lastMaskPaintPos;
+    const radiusPx = maskBrushSize * (maskCanvas.width / window.innerWidth);
+    const dist = Math.hypot(x - lx, y - ly);
+    const step = Math.max(4, radiusPx / 4);
+    const steps = Math.max(1, Math.floor(dist / step));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      paintMaskAt(lx + (x - lx) * t, ly + (y - ly) * t, currentMaskTool);
+    }
+    lastMaskPaintPos = [x, y];
+  }
+
+  function handleMaskPointerUp() {
+    lastMaskPaintPos = null;
+    updateMaskActiveBadge();
+  }
+
+  function updateMaskActiveBadge() {
+    maskActiveBadge.classList.toggle("hide", !maskHasExclusions);
+  }
+
+  function setMaskTool(tool) {
+    currentMaskTool = tool;
+    maskExcludeBtn.setAttribute("aria-pressed", String(tool === "exclude"));
+    maskRestoreBtn.setAttribute("aria-pressed", String(tool === "restore"));
+  }
+
+  function clearMask() {
+    maskCtx.fillStyle = "#ffffff";
+    maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskDirty = true;
+    maskHasExclusions = false;
+    updateMaskActiveBadge();
+  }
+
+  function enterMaskMode() {
+    hideOverlayPanels();
+    maskModeActive = true;
+    // Painting only makes sense against a held-steady frame — a moving
+    // live feed underneath would make the mask's alignment meaningless
+    // the moment the camera shifts.
+    if (!paused) {
+      paused = true;
+      pauseBtn.textContent = "Resume";
+      pauseBtn.setAttribute("aria-pressed", "true");
+    }
+    resizeMaskCanvas();
+    maskCanvas.classList.add("mask-active");
+    maskLayer.classList.remove("hide");
+    maskExcludeBtn.focus();
+  }
+
+  function exitMaskMode() {
+    maskModeActive = false;
+    lastMaskPaintPos = null;
+    maskCanvas.classList.remove("mask-active");
+    maskLayer.classList.add("hide");
+    maskBtn.focus();
+  }
+
   // ---- Sampling for calibration ----
   // Averages a patch from the raw video frame (not the shader's corrected
   // output) so matching is always anchored to the real colour. The patch
@@ -1014,6 +1200,7 @@
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
     viewerPanel.classList.add("hide");
+    if (maskModeActive) exitMaskMode();
   }
 
   function openTuneForNewPoint(sourceColor) {
@@ -1380,6 +1567,20 @@
   disconnectViewerBtn.addEventListener("click", disconnectViewer);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
 
+  maskBtn.addEventListener("click", enterMaskMode);
+  doneMaskBtn.addEventListener("click", exitMaskMode);
+  maskExcludeBtn.addEventListener("click", () => setMaskTool("exclude"));
+  maskRestoreBtn.addEventListener("click", () => setMaskTool("restore"));
+  maskBrushSlider.addEventListener("input", () => {
+    maskBrushSize = parseFloat(maskBrushSlider.value);
+    maskBrushLabel.textContent = maskBrushDescription(maskBrushSize);
+  });
+  clearMaskBtn.addEventListener("click", clearMask);
+  maskCanvas.addEventListener("pointerdown", handleMaskPointerDown);
+  maskCanvas.addEventListener("pointermove", handleMaskPointerMove);
+  maskCanvas.addEventListener("pointerup", handleMaskPointerUp);
+  maskCanvas.addEventListener("pointercancel", handleMaskPointerUp);
+
   // Best-effort hardware shutter: most browsers never forward physical
   // volume-button presses to page JavaScript at all (iOS Safari and
   // desktop never do), and even where a browser does — mainly some
@@ -1460,6 +1661,8 @@
       closeChoosePanel();
     } else if (!viewerPanel.classList.contains("hide")) {
       closeViewerPanel();
+    } else if (maskModeActive) {
+      exitMaskMode();
     } else if (aiming) {
       stopAiming();
     }
@@ -1469,6 +1672,9 @@
   window.addEventListener("resize", () => {
     if (aiming) updateReticleSize();
   });
+  window.addEventListener("resize", () => {
+    if (gl) resizeMaskCanvas();
+  });
 
   // Tap the empty camera view to hide/show the HUD — same pattern as the
   // main Sound Nebula page: taps on any button, panel, or status readout
@@ -1476,7 +1682,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #maskCanvas, #maskLayer"
     ));
   }
 
@@ -1492,4 +1698,6 @@
   rotateBtn.classList.toggle("active", rotate180);
   sampleAreaSlider.value = String(sampleArea);
   sampleAreaLabel.textContent = sampleAreaDescription(sampleArea);
+  maskBrushSlider.value = String(maskBrushSize);
+  maskBrushLabel.textContent = maskBrushDescription(maskBrushSize);
 })();

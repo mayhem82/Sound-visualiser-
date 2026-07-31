@@ -41,11 +41,30 @@
   <button id="photoBtn" class="hud-btn" title="Take a photo of the corrected view. On some Android browsers, the phone's volume-down button works as a shutter too.">&#128247; Photo</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a client's tablet) as a read-only viewer.">Connect tablet</button>
+  <button id="maskBtn" class="hud-btn" title="Paint over an area (like a ceiling) to protect it from a correction, regardless of how close its colour is to the reference.">&#128396; Mask</button>
 </div>
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
 <p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
 <p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
+<p id="maskActiveBadge" class="hide" aria-hidden="true">&#128396; Mask active</p>
+
+<canvas id="maskCanvas"></canvas>
+<div id="maskLayer" class="hide">
+  <div id="maskToolbar">
+    <div id="maskToolGroup" role="group" aria-label="Mask tool">
+      <button id="maskExcludeBtn" class="hud-btn" aria-pressed="true">Exclude</button>
+      <button id="maskRestoreBtn" class="hud-btn" aria-pressed="false">Restore</button>
+    </div>
+    <label id="maskBrushWrap" class="hud-slider" title="How large a brush to paint the mask with.">
+      Brush size: <span id="maskBrushLabel">Medium</span>
+      <input id="maskBrushSlider" type="range" min="10" max="100" value="35">
+    </label>
+    <button id="clearMaskBtn" class="hud-btn reticle-btn-secondary">Clear mask</button>
+  </div>
+  <p id="maskHint" class="hint">Paint over areas to exclude them from any correction — dark areas are protected. The view is paused while you paint.</p>
+  <button id="doneMaskBtn" class="hud-btn reticle-btn">Done</button>
+</div>
 
 <div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
   <div id="viewerPanelInner">
