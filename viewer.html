@@ -14,22 +14,14 @@
 <div id="overlay">
   <div id="panel">
     <h1>Viewer mode</h1>
-    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get a connection code from that device's "Connect tablet" panel, paste it below, then copy the reply code back to finish pairing.</p>
+    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get the room code from that device's "Connect tablet" panel, type it in below, and tap Connect.</p>
 
     <label class="field-label">
-      Code from the other device
-      <textarea id="offerInput" rows="4" placeholder="Paste the code shown on the other device here"></textarea>
+      Room code
+      <input id="roomInput" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
     </label>
     <button id="connectBtn">Connect</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
-
-    <div id="replyBlock" class="hide">
-      <label class="field-label">
-        Your reply code — copy this back to the other device
-        <textarea id="answerOutput" rows="4" readonly></textarea>
-      </label>
-      <button id="copyAnswerBtn" class="hud-btn">Copy reply code</button>
-    </div>
 
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
   </div>

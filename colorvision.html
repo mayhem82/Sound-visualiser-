@@ -63,24 +63,19 @@
 <div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
   <div id="viewerPanelInner">
     <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
-    <p class="hint">On the other device, open <strong>viewer.html</strong> from this site. It shows a read-only view of this corrected feed — no camera or controls of its own.</p>
+    <p class="hint">On the other device, open <a href="viewer.html" target="_blank" rel="noopener">viewer.html</a> from this site, then type in the room code below and tap Connect.</p>
 
-    <label class="hud-slider">
-      Step 1 — code for the other device
-      <textarea id="broadcastOfferOutput" rows="4" readonly></textarea>
-    </label>
-    <button id="copyOfferBtn" class="hud-btn">Copy code</button>
+    <button id="startShareBtn" class="hud-btn">Start live sharing</button>
 
-    <label class="hud-slider">
-      Step 2 — paste the reply code from that device
-      <textarea id="broadcastAnswerInput" rows="4" placeholder="Paste the reply code here"></textarea>
-    </label>
-    <button id="completeConnectBtn" class="hud-btn">Connect</button>
+    <div id="shareCodeBlock" class="hide">
+      <div class="room-code-label">Room code</div>
+      <div id="shareRoomCode" class="room-code" aria-live="polite"></div>
+      <p class="hint">Or open this link directly on the other device:<br><span id="shareViewUrlText" class="share-url"></span></p>
+    </div>
 
     <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
 
     <div class="tune-actions">
-      <button id="disconnectViewerBtn" class="hud-btn reticle-btn-secondary hide">Disconnect</button>
       <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
     </div>
   </div>
