@@ -393,10 +393,24 @@
   const VERT_SRC = `
     attribute vec2 aPos;
     varying vec2 vUv;
+    varying vec2 vMaskUv;
     uniform float uRotate180;
+    // Crops the video to fill the canvas without distortion ("object-fit:
+    // cover") — without this, whenever the camera's native aspect ratio
+    // doesn't match the screen's (routinely the case in landscape), the
+    // frame gets stretched non-uniformly to fill the quad and looks
+    // squished. uUvScale/uUvOffset are computed in JS from the actual
+    // video and canvas dimensions each frame. The mask is painted directly
+    // onto the on-screen canvas (screen-space pointer coordinates), not
+    // tied to the video's own pixel aspect, so it keeps sampling the
+    // uncropped UV (vMaskUv) — only the video texture crops.
+    uniform vec2 uUvScale;
+    uniform vec2 uUvOffset;
     void main() {
       vec2 uv = aPos * 0.5 + 0.5;
-      vUv = uRotate180 > 0.5 ? (1.0 - uv) : uv;
+      vec2 croppedUv = uv * uUvScale + uUvOffset;
+      vUv = uRotate180 > 0.5 ? (1.0 - croppedUv) : croppedUv;
+      vMaskUv = uRotate180 > 0.5 ? (1.0 - uv) : uv;
       gl_Position = vec4(aPos, 0.0, 1.0);
     }
   `;
@@ -404,6 +418,7 @@
   const FRAG_SRC = `
     precision mediump float;
     varying vec2 vUv;
+    varying vec2 vMaskUv;
     uniform sampler2D uTex;
     uniform float uBlend;
     uniform float uSpread;
@@ -496,7 +511,7 @@
       float expMul = pow(2.0, correction2.y);
       corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
-      float maskFactor = texture2D(uMaskTex, vUv).r;
+      float maskFactor = texture2D(uMaskTex, vMaskUv).r;
       gl_FragColor = vec4(mix(original, corrected, uBlend * maskFactor), 1.0);
     }
   `;
@@ -574,6 +589,8 @@
       uBlend: glCtx.getUniformLocation(prog, "uBlend"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
+      uUvScale: glCtx.getUniformLocation(prog, "uUvScale"),
+      uUvOffset: glCtx.getUniformLocation(prog, "uUvOffset"),
       uPointCount: glCtx.getUniformLocation(prog, "uPointCount"),
       uSourceLab: glCtx.getUniformLocation(prog, "uSourceLab"),
       uCorrection: glCtx.getUniformLocation(prog, "uCorrection"),
@@ -701,6 +718,24 @@
     if (fixedGl) uploadPointUniformsTo(fixedGl, fixedProgram, fixedUniforms);
   }
 
+  // "object-fit: cover" for the video-in-canvas draws below: crops
+  // whichever axis the video overhangs on, so the frame always fills the
+  // canvas without distorting — otherwise a camera aspect ratio that
+  // doesn't match the screen's (routinely the case in landscape) gets
+  // stretched non-uniformly and looks squished. Only applied to the video
+  // texture, not the mask (see uMaskTex/vMaskUv above).
+  function computeCoverUv(videoW, videoH, canvasW, canvasH) {
+    if (!videoW || !videoH || !canvasW || !canvasH) return { sx: 1, sy: 1, ox: 0, oy: 0 };
+    const videoAspect = videoW / videoH;
+    const canvasAspect = canvasW / canvasH;
+    if (videoAspect > canvasAspect) {
+      const sx = canvasAspect / videoAspect;
+      return { sx, sy: 1, ox: (1 - sx) / 2, oy: 0 };
+    }
+    const sy = videoAspect / canvasAspect;
+    return { sx: 1, sy, ox: 0, oy: (1 - sy) / 2 };
+  }
+
   function renderLoop() {
     if (!paused && video.readyState >= video.HAVE_CURRENT_DATA) {
       // Captured once so both the main and fixed-correction contexts (if
@@ -708,6 +743,7 @@
       // frame it changed — maskDirty itself is only cleared once, below,
       // after both have had that chance.
       const shouldUploadMask = maskDirty;
+      const cover = computeCoverUv(video.videoWidth, video.videoHeight, stage.width, stage.height);
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
@@ -727,28 +763,41 @@
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
+      gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
+      gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       if (originalCtx) {
-        // Same rotate180 handling as the corrected view above, so the two
-        // stay in matching orientation — otherwise "original" vs
-        // "corrected" side by side would be comparing a sideways/upside-
-        // down frame against a right-way-up one on phones that need it.
+        // Same cover-crop as the main draw above, computed directly as a
+        // source rect in video pixels since this is a 2D canvas rather
+        // than a shader — and same rotate180 handling, so the two stay in
+        // matching orientation and framing side by side.
+        const vw = video.videoWidth, vh = video.videoHeight;
+        let sx = 0, sy = 0, sw = vw, sh = vh;
+        const videoAspect = vw / vh;
+        const canvasAspect = originalCanvas.width / originalCanvas.height;
+        if (videoAspect > canvasAspect) {
+          sw = vh * canvasAspect;
+          sx = (vw - sw) / 2;
+        } else {
+          sh = vw / canvasAspect;
+          sy = (vh - sh) / 2;
+        }
         originalCtx.save();
         if (rotate180) {
           originalCtx.translate(originalCanvas.width, originalCanvas.height);
           originalCtx.rotate(Math.PI);
         }
-        originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
+        originalCtx.drawImage(video, sx, sy, sw, sh, 0, 0, originalCanvas.width, originalCanvas.height);
         originalCtx.restore();
       }
 
       if (fixedGl) {
         // Same correction as the main draw above (points, mask, spread,
-        // rotation) — the only deliberate difference is uBlend pinned to
-        // 1.0 instead of following the local blendSlider, so what's shared
-        // to a viewer is always the full correction regardless of what the
-        // operator is locally previewing.
+        // rotation, cover-crop) — the only deliberate difference is uBlend
+        // pinned to 1.0 instead of following the local blendSlider, so
+        // what's shared to a viewer is always the full correction
+        // regardless of what the operator is locally previewing.
         fixedGl.activeTexture(fixedGl.TEXTURE0);
         fixedGl.bindTexture(fixedGl.TEXTURE_2D, fixedVideoTexture);
         fixedGl.texImage2D(fixedGl.TEXTURE_2D, 0, fixedGl.RGBA, fixedGl.RGBA, fixedGl.UNSIGNED_BYTE, video);
@@ -764,6 +813,8 @@
         fixedGl.uniform1f(fixedUniforms.uBlend, 1);
         fixedGl.uniform1f(fixedUniforms.uSpread, spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
+        fixedGl.uniform2f(fixedUniforms.uUvScale, cover.sx, cover.sy);
+        fixedGl.uniform2f(fixedUniforms.uUvOffset, cover.ox, cover.oy);
         fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
 
@@ -1116,6 +1167,11 @@
     if (!msg || msg.from === broadcastShare.deviceId) return;
     if (msg.type === "viewer-here") { ensureBroadcastPeerFor(msg.from); return; }
     if (msg.type === "answer" && msg.to === broadcastShare.deviceId) handleBroadcastAnswer(msg);
+    // Lets a connected viewer remote-control the camera-switch button —
+    // useful when the phone is mounted or otherwise out of easy reach.
+    // switchCamera() already no-ops if there's only one camera or a
+    // switch is already in progress.
+    if (msg.type === "switch-camera" && msg.to === broadcastShare.deviceId) switchCamera();
   }
 
   function updateViewerConnectedBadge() {

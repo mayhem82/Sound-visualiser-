@@ -35,6 +35,7 @@
   const badge2 = document.getElementById("badge2");
   const hud = document.getElementById("hud");
   const splitToggleBtn = document.getElementById("splitToggleBtn");
+  const switchCameraBtn = document.getElementById("switchCameraBtn");
   const photoBtn = document.getElementById("photoBtn");
   const recordBtn = document.getElementById("recordBtn");
   const recordingIndicator = document.getElementById("recordingIndicator");
@@ -104,6 +105,7 @@
     let torn = false;
     let pendingIds = null;
     let dual = false;
+    let hostId = null;
 
     function publish(fields, opts) {
       opts = opts || {};
@@ -147,6 +149,7 @@
 
       pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
       dual = !!(pendingIds.corrected && pendingIds.original);
+      hostId = msg.from;
       applySplitVisibility(dual);
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -244,6 +247,14 @@
 
     return {
       ready,
+      // Remote-controls the broadcaster's own camera-switch button — for
+      // when the phone is mounted or otherwise out of easy reach and
+      // whoever's watching on the tablet wants to cycle lenses without
+      // walking over to it. A no-op on the broadcaster's end if it only
+      // has one camera.
+      switchCamera() {
+        publish({ type: "switch-camera", to: hostId });
+      },
       teardown() {
         torn = true;
         stopHeartbeat();
@@ -311,6 +322,9 @@
   }
 
   connectBtn.addEventListener("click", connect);
+  switchCameraBtn.addEventListener("click", () => {
+    if (activeRoom) activeRoom.switchCamera();
+  });
   roomInput.addEventListener("keypress", (e) => { if (e.key === "Enter") connect(); });
 
   // ---- Photo + video capture of whatever's currently on screen ----
