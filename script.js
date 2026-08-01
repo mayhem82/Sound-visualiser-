@@ -31,6 +31,7 @@
   const sampleCanvas = document.getElementById("sampleCanvas");
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
   const colourVisionBtn = document.getElementById("colourVisionBtn");
+  const colourVisionFlashBtn = document.getElementById("colourVisionFlashBtn");
   const blendWrap = document.getElementById("blendWrap");
   const blendSlider = document.getElementById("blendSlider");
   const blendLabel = document.getElementById("blendLabel");
@@ -264,7 +265,7 @@
         (bandEnergy[band.name] - bandEnergySmoothed[band.name]) * 0.2;
     }
 
-    if (flashEnabled || screenFlashEnabled) detectBeat();
+    if (flashEnabled || screenFlashEnabled || colourVisionFlashEnabled) detectBeat();
   }
 
   function detectBeat() {
@@ -311,6 +312,9 @@
       const duration = lerp(minFlashMs, maxFlashMs, strength) + 60;
       flashScreen(beatColor(strength), duration, strength);
     }
+    if (colourVisionFlashEnabled) {
+      fireColourVisionFlash(strength);
+    }
   }
 
   function beatColor(strength) {
@@ -323,6 +327,11 @@
     // means darker colours would barely register against the scene.
     const light = lerp(65, 92, strength);
     const sat = lerp(90, 45, strength);
+    if (colourVisionFlashEnabled && correctionGl) {
+      const rgb = cvHsl2rgb(hue, sat / 100, light / 100);
+      const corrected = correctColorViaShader(rgb, 1);
+      if (corrected) return cvRgbToCss(corrected);
+    }
     return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
   }
 
@@ -687,6 +696,11 @@
   let spread = loadSpreadPref();
   let cvdType = loadCvdTypePref();
   let cvdStrength = loadCvdStrengthPref();
+
+  let colourVisionFlashEnabled = false;
+  let cvFlashRevertTimer = null;
+  let cvFlashCycleIndex = 0;
+  const CVD_FLASH_CYCLE = ["protan", "deutan", "tritan", "none"];
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
 
@@ -1180,6 +1194,7 @@
   }
 
   function disableColourVision() {
+    if (colourVisionFlashEnabled) disableColourVisionFlash();
     colourVisionEnabled = false;
     colourVisionBtn.textContent = "Colour vision: Off";
     colourVisionBtn.classList.remove("active");
@@ -1191,6 +1206,107 @@
   function toggleColourVision() {
     if (colourVisionEnabled) disableColourVision();
     else enableColourVision();
+  }
+
+  // ---- Colour vision flash mode ----
+  // On each beat: strobes the correction blend full-on then back off,
+  // cycles the CVD simulation type, and routes the beat screen-flash
+  // colour through the same correction shader — all synced to the beat
+  // detector that already drives the torch/vibrate/screen-flash effects.
+
+  async function enableColourVisionFlash() {
+    if (!colourVisionEnabled) {
+      await enableColourVision();
+      if (!colourVisionEnabled) return; // colour vision failed to start
+    }
+    colourVisionFlashEnabled = true;
+    cvFlashCycleIndex = 0;
+    colourVisionFlashBtn.textContent = "Colour vision flash mode: On";
+    colourVisionFlashBtn.classList.add("active");
+    colourVisionFlashBtn.setAttribute("aria-pressed", "true");
+  }
+
+  function disableColourVisionFlash() {
+    colourVisionFlashEnabled = false;
+    colourVisionFlashBtn.textContent = "Colour vision flash mode: Off";
+    colourVisionFlashBtn.classList.remove("active");
+    colourVisionFlashBtn.setAttribute("aria-pressed", "false");
+    if (cvFlashRevertTimer) {
+      clearTimeout(cvFlashRevertTimer);
+      cvFlashRevertTimer = null;
+    }
+    // Restore the persisted, user-chosen values the strobe was
+    // transiently overriding.
+    cvdType = loadCvdTypePref();
+    cvdTypeSelect.value = cvdType;
+    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+    blendSlider.value = "0";
+    blendLabel.textContent = "0%";
+  }
+
+  function toggleColourVisionFlash() {
+    if (colourVisionFlashEnabled) disableColourVisionFlash();
+    else enableColourVisionFlash();
+  }
+
+  function fireColourVisionFlash(strength) {
+    if (!colourVisionFlashEnabled || !correctionGl) return;
+
+    // Cycle the CVD simulation type. Assigned directly (not via the
+    // <select>'s change event) so it doesn't get persisted as the user's
+    // chosen preference — this is a transient strobe effect, not a
+    // setting change.
+    cvFlashCycleIndex = (cvFlashCycleIndex + 1) % CVD_FLASH_CYCLE.length;
+    cvdType = CVD_FLASH_CYCLE[cvFlashCycleIndex];
+    cvdTypeSelect.value = cvdType;
+    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+
+    // Strobe the correction blend full-on, then let it fall back to 0
+    // (true colour) once the beat's flash effects have finished.
+    if (cvFlashRevertTimer) clearTimeout(cvFlashRevertTimer);
+    blendSlider.value = "100";
+    blendLabel.textContent = "100%";
+    const duration = lerp(minFlashMs, maxFlashMs, strength);
+    cvFlashRevertTimer = setTimeout(() => {
+      cvFlashRevertTimer = null;
+      blendSlider.value = "0";
+      blendLabel.textContent = "0%";
+    }, duration);
+  }
+
+  // Runs a single RGB colour through the same correction/CVD shader used
+  // for the live camera feed, via a 1x1 texture — this avoids
+  // reimplementing the daltonize matrix math a second time in JS, where a
+  // transcription slip would silently produce wrong colours.
+  function correctColorViaShader([r, g, b], blendOverride) {
+    if (!correctionGl) return null;
+    const glCtx = correctionGl;
+    glCtx.useProgram(correctionProgram);
+    glCtx.bindTexture(glCtx.TEXTURE_2D, correctionVideoTexture);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, false);
+    const px = new Uint8Array([
+      Math.round(cvClamp01(r) * 255),
+      Math.round(cvClamp01(g) * 255),
+      Math.round(cvClamp01(b) * 255),
+      255
+    ]);
+    glCtx.texImage2D(glCtx.TEXTURE_2D, 0, glCtx.RGBA, 1, 1, 0, glCtx.RGBA, glCtx.UNSIGNED_BYTE, px);
+    glCtx.uniform1i(correctionUniforms.uTex, 0);
+    glCtx.uniform1f(correctionUniforms.uBlend, blendOverride);
+    glCtx.uniform1f(correctionUniforms.uSpread, spread);
+    glCtx.uniform1f(correctionUniforms.uRotate180, 0);
+    glCtx.uniform2f(correctionUniforms.uUvScale, 1, 1);
+    glCtx.uniform2f(correctionUniforms.uUvOffset, 0, 0);
+    glCtx.uniform1i(correctionUniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
+    glCtx.uniform1f(correctionUniforms.uCvdStrength, cvdStrength);
+    glCtx.drawArrays(glCtx.TRIANGLE_STRIP, 0, 4);
+
+    const out = new Uint8Array(4);
+    glCtx.readPixels(0, 0, 1, 1, glCtx.RGBA, glCtx.UNSIGNED_BYTE, out);
+    // Reset for renderCorrectionFrame(), which relies on flipped Y for
+    // the real camera texture.
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    return [out[0] / 255, out[1] / 255, out[2] / 255];
   }
 
   // ---- Sampling for calibration ----
@@ -2029,6 +2145,7 @@
   // ---- Colour vision wiring ----
 
   colourVisionBtn.addEventListener("click", toggleColourVision);
+  colourVisionFlashBtn.addEventListener("click", toggleColourVisionFlash);
 
   blendSlider.addEventListener("input", () => {
     blendLabel.textContent = `${blendSlider.value}%`;
