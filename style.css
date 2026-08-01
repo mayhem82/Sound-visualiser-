@@ -138,7 +138,16 @@ html, body {
      overflow:hidden. Capping it and scrolling internally instead keeps
      everything reachable. */
   max-height: calc(100vh - 32px);
+  /* 100vh on mobile browsers is the *largest* possible viewport (as if the
+     address bar were hidden), so with it alone the cap can end up taller
+     than what's actually visible on screen — the last row of buttons sits
+     behind the browser's own UI chrome and staying scrolled-down doesn't
+     reliably keep it in view. dvh tracks the real visible viewport instead;
+     unsupported browsers just ignore this line and keep the vh value above. */
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   z-index: 2;
 }
 
