@@ -28,6 +28,8 @@
   const syncDelayLabel = document.getElementById("syncDelayLabel");
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const cameraBgBtn = document.getElementById("cameraBgBtn");
+  const cameraSelectWrap = document.getElementById("cameraSelectWrap");
+  const cameraSelect = document.getElementById("cameraSelect");
   const nebulaBtn = document.getElementById("nebulaBtn");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
@@ -126,6 +128,8 @@
   let cameraBackgroundEnabled = false;
   let nebulaEnabled = true;
   let cameraStream = null;
+  const CAMERA_DEVICE_KEY = "cameraDeviceId_v1";
+  let selectedCameraId = localStorage.getItem(CAMERA_DEVICE_KEY) || "";
   // Declared up here (not down with the rest of the colour-vision state,
   // near where it's used) because resize() — called immediately below —
   // already calls resizeCorrectionCanvas(), which reads correctionCanvas.
@@ -655,12 +659,61 @@
     ctx.drawImage(cameraFeed, sx, sy, sw, sh, 0, 0, width, height);
   }
 
+  function cameraConstraints() {
+    // A specific saved camera wins; otherwise fall back to "any
+    // environment-facing camera", same as before device selection existed.
+    return selectedCameraId
+      ? { deviceId: { exact: selectedCameraId } }
+      : { facingMode: { ideal: "environment" } };
+  }
+
+  function onCameraTrackEnded() {
+    // Commonly fires when the screen locks or the tab loses focus,
+    // which can end the camera connection outright.
+    disableCameraBackground();
+    appendFlashStatus("Camera background stopped — the camera connection ended.");
+    flashStatus.classList.remove("hide");
+  }
+
+  async function refreshCameraDeviceList() {
+    if (!("mediaDevices" in navigator) || !navigator.mediaDevices.enumerateDevices) return;
+    let devices;
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (_) {
+      return;
+    }
+    const cameras = devices.filter((d) => d.kind === "videoinput");
+    // Labels are only populated once camera permission has been granted at
+    // least once — before that every entry is blank, so there's nothing
+    // useful to show yet.
+    if (cameras.length < 2 || !cameras[0].label) {
+      cameraSelectWrap.classList.add("hide");
+      return;
+    }
+    cameraSelect.innerHTML = "";
+    cameras.forEach((d, i) => {
+      const opt = document.createElement("option");
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Camera ${i + 1}`;
+      cameraSelect.appendChild(opt);
+    });
+    if (!cameras.some((d) => d.deviceId === selectedCameraId)) {
+      // Previously saved camera is gone (or nothing saved yet) — fall back
+      // to whichever one actually started, so the dropdown reflects reality
+      // instead of silently defaulting to the browser's first list entry.
+      selectedCameraId = cameraStream ? cameraStream.getVideoTracks()[0].getSettings().deviceId || "" : "";
+    }
+    if (selectedCameraId) cameraSelect.value = selectedCameraId;
+    cameraSelectWrap.classList.remove("hide");
+  }
+
   async function enableCameraBackground() {
     cameraBgBtn.disabled = true;
     cameraBgBtn.textContent = "Camera background: Starting…";
     try {
       cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: cameraConstraints(),
         audio: false
       });
       cameraFeed.srcObject = cameraStream;
@@ -669,13 +722,8 @@
       cameraBgBtn.textContent = "Camera background: On";
       cameraBgBtn.classList.add("active");
       cameraBgBtn.setAttribute("aria-pressed", "true");
-      cameraStream.getVideoTracks()[0].addEventListener("ended", () => {
-        // Commonly fires when the screen locks or the tab loses focus,
-        // which can end the camera connection outright.
-        disableCameraBackground();
-        appendFlashStatus("Camera background stopped — the camera connection ended.");
-        flashStatus.classList.remove("hide");
-      });
+      cameraStream.getVideoTracks()[0].addEventListener("ended", onCameraTrackEnded);
+      refreshCameraDeviceList();
     } catch (err) {
       cameraBgBtn.textContent = "Camera background: Off";
       appendFlashStatus("Couldn't start the camera background: " + (err.message || err.name || "unknown error"));
@@ -695,6 +743,30 @@
     cameraBgBtn.textContent = "Camera background: Off";
     cameraBgBtn.classList.remove("active");
     cameraBgBtn.setAttribute("aria-pressed", "false");
+  }
+
+  async function switchCamera(deviceId) {
+    selectedCameraId = deviceId;
+    localStorage.setItem(CAMERA_DEVICE_KEY, selectedCameraId);
+    if (!cameraBackgroundEnabled) return; // applies next time the camera starts
+
+    cameraSelect.disabled = true;
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: cameraConstraints(),
+        audio: false
+      });
+      cameraStream.getTracks().forEach((t) => t.stop());
+      cameraStream = newStream;
+      cameraFeed.srcObject = cameraStream;
+      await cameraFeed.play();
+      cameraStream.getVideoTracks()[0].addEventListener("ended", onCameraTrackEnded);
+    } catch (err) {
+      appendFlashStatus("Couldn't switch camera: " + (err.message || err.name || "unknown error"));
+      flashStatus.classList.remove("hide");
+    } finally {
+      cameraSelect.disabled = false;
+    }
   }
 
   function toggleCameraBackground() {
@@ -1817,6 +1889,8 @@
       }
     }
 
+    refreshCameraDeviceList(); // permission just granted — labels may now be readable
+
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     if (caps && caps.torch) {
       torchTrack = track;
@@ -2218,6 +2292,10 @@
   });
   syncDelaySlider.addEventListener("input", updateSyncDelay);
   cameraBgBtn.addEventListener("click", toggleCameraBackground);
+  cameraSelect.addEventListener("change", () => switchCamera(cameraSelect.value));
+  if ("mediaDevices" in navigator && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", refreshCameraDeviceList);
+  }
   nebulaBtn.addEventListener("click", toggleNebula);
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
