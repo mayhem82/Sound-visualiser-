@@ -27,6 +27,7 @@
   const syncDelayLabel = document.getElementById("syncDelayLabel");
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const cameraBgBtn = document.getElementById("cameraBgBtn");
+  const nebulaBtn = document.getElementById("nebulaBtn");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
@@ -116,6 +117,7 @@
 
   let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
   let cameraBackgroundEnabled = false;
+  let nebulaEnabled = true;
   let cameraStream = null;
   // Declared up here (not down with the rest of the colour-vision state,
   // near where it's used) because resize() — called immediately below —
@@ -329,7 +331,7 @@
     const sat = lerp(90, 45, strength);
     if (colourVisionFlashEnabled && correctionGl) {
       const rgb = cvHsl2rgb(hue, sat / 100, light / 100);
-      const corrected = correctColorViaShader(rgb, 1);
+      const corrected = correctColorViaShader(rgb, cvFlashShowTrue ? 0 : 1);
       if (corrected) return cvRgbToCss(corrected);
     }
     return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
@@ -439,50 +441,59 @@
       // never changes on its own; a live camera feed already does that, and
       // redrawing it full-opacity each frame means it never gets muddied by
       // leftover particle glow, only ever the newest frame. Still dimmed
-      // over so the particles read clearly against whatever's in view.
+      // over so the particles read clearly against whatever's in view —
+      // unless the nebula's hidden, in which case skip the dimming too so
+      // the camera (and any colour vision correction on it) shows clean.
       drawCameraBackground();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = "rgba(5, 5, 10, 0.35)";
-      ctx.fillRect(0, 0, width, height);
+      if (nebulaEnabled) {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(5, 5, 10, 0.35)";
+        ctx.fillRect(0, 0, width, height);
+      }
     } else {
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = "rgba(5, 5, 10, 0.18)";
       ctx.fillRect(0, 0, width, height);
     }
 
+    // Beat detection and band energy still need to run every frame even
+    // with the nebula hidden — colour vision flash mode and the screen
+    // flash are still beat-synced without the particles visible.
     computeBandEnergy();
 
-    // Pulsing core reacts to overall volume.
-    const coreRadius = Math.min(width, height) * (0.04 + smoothedVolume * 0.12);
-    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadius * 3.2);
-    coreGrad.addColorStop(0, "rgba(255,255,255,0.9)");
-    coreGrad.addColorStop(0.25, "rgba(167,139,250,0.55)");
-    coreGrad.addColorStop(1, "rgba(167,139,250,0)");
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = coreGrad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, coreRadius * 3.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (const p of particles) {
-      const energy = bandEnergySmoothed[p.band.name];
-      p.angle += p.angularSpeed * (1 + energy * 6);
-      const jitter =
-        Math.sin(time * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter;
-      const radius = p.baseRadius * (1 + energy * 1.4) + jitter;
-      const x = cx + Math.cos(p.angle) * radius;
-      const y = cy + Math.sin(p.angle) * radius * 0.72; // slight ellipse flattening
-      const size = p.size * (1 + energy * 3.2);
-      const alpha = 0.25 + energy * 0.65;
-
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
-      const hue = p.band.hue + p.hueOffset;
-      grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha})`);
-      grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
-      ctx.fillStyle = grad;
+    if (nebulaEnabled) {
+      // Pulsing core reacts to overall volume.
+      const coreRadius = Math.min(width, height) * (0.04 + smoothedVolume * 0.12);
+      const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadius * 3.2);
+      coreGrad.addColorStop(0, "rgba(255,255,255,0.9)");
+      coreGrad.addColorStop(0.25, "rgba(167,139,250,0.55)");
+      coreGrad.addColorStop(1, "rgba(167,139,250,0)");
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = coreGrad;
       ctx.beginPath();
-      ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+      ctx.arc(cx, cy, coreRadius * 3.2, 0, Math.PI * 2);
       ctx.fill();
+
+      for (const p of particles) {
+        const energy = bandEnergySmoothed[p.band.name];
+        p.angle += p.angularSpeed * (1 + energy * 6);
+        const jitter =
+          Math.sin(time * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter;
+        const radius = p.baseRadius * (1 + energy * 1.4) + jitter;
+        const x = cx + Math.cos(p.angle) * radius;
+        const y = cy + Math.sin(p.angle) * radius * 0.72; // slight ellipse flattening
+        const size = p.size * (1 + energy * 3.2);
+        const alpha = 0.25 + energy * 0.65;
+
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+        const hue = p.band.hue + p.hueOffset;
+        grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha})`);
+        grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     if (running) rafId = requestAnimationFrame(draw);
@@ -647,6 +658,16 @@
     }
   }
 
+  function toggleNebula() {
+    nebulaEnabled = !nebulaEnabled;
+    nebulaBtn.textContent = nebulaEnabled ? "Nebula: On" : "Nebula: Off";
+    // "Active" here means the particles are hidden — the non-default state
+    // a user deliberately switched to, same as how other HUD toggles light
+    // up when engaged.
+    nebulaBtn.classList.toggle("active", !nebulaEnabled);
+    nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
+  }
+
   // ---- Colour Vision Assist, live on the camera background ----
   // The full correction engine from colorvision.html/colorvision.js —
   // calibrated points, colour-blindness-type simulation, blend — applied
@@ -700,6 +721,7 @@
   let colourVisionFlashEnabled = false;
   let cvFlashRevertTimer = null;
   let cvFlashCycleIndex = 0;
+  let cvFlashShowTrue = false;
   const CVD_FLASH_CYCLE = ["protan", "deutan", "tritan", "none"];
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
@@ -1221,6 +1243,7 @@
     }
     colourVisionFlashEnabled = true;
     cvFlashCycleIndex = 0;
+    cvFlashShowTrue = false;
     colourVisionFlashBtn.textContent = "Colour vision flash mode: On";
     colourVisionFlashBtn.classList.add("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "true");
@@ -1257,6 +1280,15 @@
     // chosen preference — this is a transient strobe effect, not a
     // setting change.
     cvFlashCycleIndex = (cvFlashCycleIndex + 1) % CVD_FLASH_CYCLE.length;
+    // Flip which version of the beat colour beatColor() hands back to the
+    // screen flash — true colour for a full lap of the type cycle, then
+    // colour-vision-corrected for the next lap — only when the type cycle
+    // wraps, not every beat. Flipping every beat instead would permanently
+    // lock each CVD type to only ever appearing as true OR only ever as
+    // corrected (2 divides 4 evenly, so the two counters would stay in
+    // permanent lockstep) — flipping on wrap instead means every
+    // (type, true/corrected) combination actually gets shown over time.
+    if (cvFlashCycleIndex === 0) cvFlashShowTrue = !cvFlashShowTrue;
     cvdType = CVD_FLASH_CYCLE[cvFlashCycleIndex];
     cvdTypeSelect.value = cvdType;
     cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
@@ -2134,6 +2166,7 @@
   });
   syncDelaySlider.addEventListener("input", updateSyncDelay);
   cameraBgBtn.addEventListener("click", toggleCameraBackground);
+  nebulaBtn.addEventListener("click", toggleNebula);
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
