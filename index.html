@@ -78,6 +78,22 @@
     True &harr; Corrected: <span id="blendLabel">100%</span>
     <input id="blendSlider" type="range" min="0" max="100" value="100">
   </label>
+  <button id="maskModeBtn" class="hud-btn hide" aria-pressed="false" title="Paint true vision or corrected vision into specific areas instead of one global blend. Pick a base below, then brush/shape the opposite into just the areas you want — mutually exclusive with Colour vision flash mode. The rest of the HUD hides while you're actively drawing so nothing blocks the view.">Mask mode: Off</button>
+  <div id="maskToolsWrap" class="hud-slider mask-tools hide">
+    <div class="mask-tool-row">
+      <button id="maskToolBrush" class="hud-btn mask-tool-btn active" aria-pressed="true" title="Freehand paint.">Brush</button>
+      <button id="maskToolRect" class="hud-btn mask-tool-btn" aria-pressed="false" title="Drag out a rectangle.">Rect</button>
+      <button id="maskToolCircle" class="hud-btn mask-tool-btn" aria-pressed="false" title="Drag out a circle/ellipse.">Circle</button>
+    </div>
+    <div class="mask-tool-row">
+      Brush size: <span id="maskBrushSizeLabel">40px</span>
+      <input id="maskBrushSizeSlider" type="range" min="10" max="150" value="40">
+    </div>
+    <div class="mask-tool-row">
+      <button id="maskBaseBtn" class="hud-btn" aria-pressed="false" title="Which view fills the whole screen before you paint anything. Brush/shape strokes always paint the opposite of this into the area you draw — so you can remove/restore either true or corrected vision from specific areas.">Base: Corrected</button>
+      <button id="maskClearBtn" class="hud-btn reticle-btn-secondary" title="Reset the mask back to the current base, discarding anything painted.">Clear mask</button>
+    </div>
+  </div>
   <label id="cvdTypeWrap" class="hud-slider hide" title="Applies a whole-frame correction tuned to a diagnosed colour vision deficiency type, independent of any colours you calibrate by hand below.">
     Colour blindness type:
     <select id="cvdTypeSelect">

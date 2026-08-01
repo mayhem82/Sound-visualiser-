@@ -37,6 +37,15 @@
   const colourVisionBtn = document.getElementById("colourVisionBtn");
   const colourVisionFlashBtn = document.getElementById("colourVisionFlashBtn");
   const blendWrap = document.getElementById("blendWrap");
+  const maskModeBtn = document.getElementById("maskModeBtn");
+  const maskToolsWrap = document.getElementById("maskToolsWrap");
+  const maskToolBrush = document.getElementById("maskToolBrush");
+  const maskToolRect = document.getElementById("maskToolRect");
+  const maskToolCircle = document.getElementById("maskToolCircle");
+  const maskBrushSizeSlider = document.getElementById("maskBrushSizeSlider");
+  const maskBrushSizeLabel = document.getElementById("maskBrushSizeLabel");
+  const maskBaseBtn = document.getElementById("maskBaseBtn");
+  const maskClearBtn = document.getElementById("maskClearBtn");
   const blendSlider = document.getElementById("blendSlider");
   const blendLabel = document.getElementById("blendLabel");
   const cvdTypeWrap = document.getElementById("cvdTypeWrap");
@@ -137,7 +146,21 @@
   // throws (temporal dead zone), even though the *function* referencing it
   // is safely hoisted; only actually needs to exist as null this early.
   let correctionCanvas = null, correctionGl = null, correctionProgram = null,
-    correctionUniforms = null, correctionQuadBuffer = null, correctionVideoTexture = null;
+    correctionUniforms = null, correctionQuadBuffer = null, correctionVideoTexture = null,
+    correctionMaskTexture = null;
+  // Mask mode state — declared this early for the same reason as
+  // correctionCanvas above: resize() (called immediately below) calls
+  // resizeMaskCanvas(), which reads maskCanvas.
+  let maskModeEnabled = false;
+  let maskBaseTrue = false; // false = starts fully corrected, true = starts fully true/raw
+  let maskTool = "brush"; // "brush" | "rect" | "circle"
+  let maskBrushRadius = 40; // CSS px; scaled by dpr when drawing
+  let maskCanvas = null, maskCtx = null;
+  let maskDirty = false;
+  let maskDrawing = false;
+  let maskLastX = null, maskLastY = null;
+  let maskShapeStart = null;
+  let maskShapeSnapshot = null;
   let width, height, cx, cy, dpr;
   let particles = [];
   let running = false;
@@ -225,6 +248,7 @@
     cx = width / 2;
     cy = height / 2;
     resizeCorrectionCanvas();
+    resizeMaskCanvas();
   }
   window.addEventListener("resize", resize);
   resize();
@@ -1039,12 +1063,17 @@
   const CV_VERT_SRC = `
     attribute vec2 aPos;
     varying vec2 vUv;
+    varying vec2 vScreenUv;
     uniform float uRotate180;
     uniform vec2 uUvScale;
     uniform vec2 uUvOffset;
     void main() {
-      vec2 uv = aPos * 0.5 + 0.5;
-      uv = uv * uUvScale + uUvOffset;
+      vec2 screenUv = aPos * 0.5 + 0.5;
+      // Plain screen-space uv (no cover-crop, no rotate180) — the mask is
+      // painted in on-screen coordinates, not the camera's native/cropped
+      // frame, so it needs its own uncropped varying to sample correctly.
+      vScreenUv = screenUv;
+      vec2 uv = screenUv * uUvScale + uUvOffset;
       vUv = uRotate180 > 0.5 ? (1.0 - uv) : uv;
       gl_Position = vec4(aPos, 0.0, 1.0);
     }
@@ -1053,8 +1082,11 @@
   const CV_FRAG_SRC = `
     precision mediump float;
     varying vec2 vUv;
+    varying vec2 vScreenUv;
     uniform sampler2D uTex;
     uniform float uBlend;
+    uniform float uUseMask;
+    uniform sampler2D uMaskTex;
     uniform float uSpread;
     uniform int uPointCount;
     uniform vec3 uSourceLab[${MAX_POINTS}];
@@ -1177,7 +1209,8 @@
       float expMul = pow(2.0, correction2.y);
       corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
-      gl_FragColor = vec4(mix(original, corrected, uBlend), 1.0);
+      float blendAmt = uUseMask > 0.5 ? texture2D(uMaskTex, vScreenUv).r : uBlend;
+      gl_FragColor = vec4(mix(original, corrected, blendAmt), 1.0);
     }
   `;
 
@@ -1237,13 +1270,29 @@
     glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
     glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
 
+    // Second texture unit, holding the user-painted mask (see "Mask mode"
+    // below) — same upload convention (flipped Y) as the video texture
+    // above, since both are ordinary top-down 2D raster sources.
+    const maskTex = glCtx.createTexture();
+    glCtx.activeTexture(glCtx.TEXTURE1);
+    glCtx.bindTexture(glCtx.TEXTURE_2D, maskTex);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+    glCtx.activeTexture(glCtx.TEXTURE0);
+
     correctionGl = glCtx;
     correctionProgram = prog;
     correctionQuadBuffer = qBuf;
     correctionVideoTexture = tex;
+    correctionMaskTexture = maskTex;
     correctionUniforms = {
       uTex: glCtx.getUniformLocation(prog, "uTex"),
       uBlend: glCtx.getUniformLocation(prog, "uBlend"),
+      uUseMask: glCtx.getUniformLocation(prog, "uUseMask"),
+      uMaskTex: glCtx.getUniformLocation(prog, "uMaskTex"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
       uUvScale: glCtx.getUniformLocation(prog, "uUvScale"),
@@ -1303,9 +1352,24 @@
 
   function renderCorrectionFrame(vw, vh) {
     const cover = computeCoverUv(vw, vh, correctionCanvas.width, correctionCanvas.height);
+    correctionGl.activeTexture(correctionGl.TEXTURE0);
     correctionGl.bindTexture(correctionGl.TEXTURE_2D, correctionVideoTexture);
     correctionGl.texImage2D(correctionGl.TEXTURE_2D, 0, correctionGl.RGBA, correctionGl.RGBA, correctionGl.UNSIGNED_BYTE, cameraFeed);
     correctionGl.uniform1i(correctionUniforms.uTex, 0);
+
+    const useMask = maskModeEnabled && !!maskCanvas;
+    correctionGl.uniform1f(correctionUniforms.uUseMask, useMask ? 1 : 0);
+    if (useMask) {
+      correctionGl.activeTexture(correctionGl.TEXTURE1);
+      correctionGl.bindTexture(correctionGl.TEXTURE_2D, correctionMaskTexture);
+      if (maskDirty) {
+        correctionGl.texImage2D(correctionGl.TEXTURE_2D, 0, correctionGl.RGBA, correctionGl.RGBA, correctionGl.UNSIGNED_BYTE, maskCanvas);
+        maskDirty = false;
+      }
+      correctionGl.uniform1i(correctionUniforms.uMaskTex, 1);
+      correctionGl.activeTexture(correctionGl.TEXTURE0);
+    }
+
     correctionGl.uniform1f(correctionUniforms.uBlend, parseFloat(blendSlider.value) / 100);
     correctionGl.uniform1f(correctionUniforms.uSpread, spread);
     correctionGl.uniform1f(correctionUniforms.uRotate180, rotate180 ? 1 : 0);
@@ -1327,17 +1391,18 @@
     colourVisionBtn.textContent = "Colour vision: On";
     colourVisionBtn.classList.add("active");
     colourVisionBtn.setAttribute("aria-pressed", "true");
-    [blendWrap, cvdTypeWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.remove("hide"));
+    [blendWrap, maskModeBtn, cvdTypeWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.remove("hide"));
     cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
   }
 
   function disableColourVision() {
     if (colourVisionFlashEnabled) disableColourVisionFlash();
+    if (maskModeEnabled) disableMaskMode();
     colourVisionEnabled = false;
     colourVisionBtn.textContent = "Colour vision: Off";
     colourVisionBtn.classList.remove("active");
     colourVisionBtn.setAttribute("aria-pressed", "false");
-    [blendWrap, cvdTypeWrap, cvdStrengthWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.add("hide"));
+    [blendWrap, maskModeBtn, cvdTypeWrap, cvdStrengthWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.add("hide"));
     hideCvOverlayPanels();
   }
 
@@ -1383,6 +1448,7 @@
       cvStatus("Calibrate at least one colour point first — flash mode alternates between them.");
       return;
     }
+    if (maskModeEnabled) disableMaskMode(); // mutually exclusive — flash mode's "never true" guarantee can't coexist with a manual true-vision mask
     colourVisionFlashEnabled = true;
     cvFlashPointIndex = 0;
     uploadSinglePointUniforms(points[cvFlashPointIndex]);
@@ -1432,6 +1498,188 @@
     blendLabel.textContent = "100%";
   }
 
+  // ---- Mask mode ----
+  // Overrides the single global blend slider with a per-pixel one, painted
+  // by hand: pick a base (everything starts fully true or fully
+  // corrected), then brush or drag shapes to paint the opposite into just
+  // the areas you want — e.g. carve a "true colour" window into an
+  // otherwise fully corrected view, or the reverse. Mutually exclusive
+  // with Colour vision flash mode (see enableColourVisionFlash), since
+  // that mode's whole point is guaranteeing true vision is never shown.
+
+  function fillMaskBase() {
+    if (!maskCtx) return;
+    maskCtx.globalCompositeOperation = "source-over";
+    maskCtx.fillStyle = maskBaseTrue ? "#000000" : "#ffffff"; // black=true(0), white=corrected(1) — sampled via the mask texture's red channel
+    maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskDirty = true;
+  }
+
+  function ensureMaskCanvas() {
+    if (maskCanvas) return;
+    maskCanvas = document.createElement("canvas");
+    maskCanvas.width = canvas.width;
+    maskCanvas.height = canvas.height;
+    maskCtx = maskCanvas.getContext("2d");
+    fillMaskBase();
+  }
+
+  function resizeMaskCanvas() {
+    if (!maskCanvas) return;
+    maskCanvas.width = canvas.width;
+    maskCanvas.height = canvas.height;
+    // A resize (e.g. orientation change) resets to the current base rather
+    // than trying to stretch/preserve painted content into the new size.
+    fillMaskBase();
+  }
+
+  function updateMaskBaseBtn() {
+    maskBaseBtn.textContent = maskBaseTrue ? "Base: True" : "Base: Corrected";
+    maskBaseBtn.setAttribute("aria-pressed", String(maskBaseTrue));
+    maskBaseBtn.classList.toggle("active", maskBaseTrue);
+  }
+
+  function setMaskTool(tool) {
+    maskTool = tool;
+    [[maskToolBrush, "brush"], [maskToolRect, "rect"], [maskToolCircle, "circle"]].forEach(([btn, name]) => {
+      const active = name === tool;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", String(active));
+    });
+  }
+
+  function updateMaskBrushSize() {
+    const diameter = parseInt(maskBrushSizeSlider.value, 10);
+    maskBrushRadius = diameter / 2;
+    maskBrushSizeLabel.textContent = `${diameter}px`;
+  }
+
+  function maskCanvasCoords(e) {
+    // canvas covers the full viewport at (0,0), so client coords map
+    // straight onto it — just scale CSS px up to the canvas's backing
+    // (device-pixel) resolution, same scale factor resize() uses.
+    return { x: e.clientX * dpr, y: e.clientY * dpr };
+  }
+
+  function maskPaintAt(x, y, prevX, prevY) {
+    const paintColor = maskBaseTrue ? "#ffffff" : "#000000"; // always the opposite of the base
+    maskCtx.fillStyle = paintColor;
+    maskCtx.strokeStyle = paintColor;
+    maskCtx.lineWidth = maskBrushRadius * 2 * dpr;
+    maskCtx.lineCap = "round";
+    maskCtx.lineJoin = "round";
+    if (prevX != null) {
+      maskCtx.beginPath();
+      maskCtx.moveTo(prevX, prevY);
+      maskCtx.lineTo(x, y);
+      maskCtx.stroke();
+    } else {
+      maskCtx.beginPath();
+      maskCtx.arc(x, y, maskBrushRadius * dpr, 0, Math.PI * 2);
+      maskCtx.fill();
+    }
+    maskDirty = true;
+  }
+
+  function maskShapePreview(x, y) {
+    if (!maskShapeStart || !maskShapeSnapshot) return;
+    // Redraw from the pre-shape snapshot each move instead of accumulating,
+    // so dragging the shape smaller/back doesn't leave old preview marks.
+    maskCtx.putImageData(maskShapeSnapshot, 0, 0);
+    maskCtx.fillStyle = maskBaseTrue ? "#ffffff" : "#000000";
+    const { x: sx, y: sy } = maskShapeStart;
+    if (maskTool === "rect") {
+      maskCtx.fillRect(Math.min(sx, x), Math.min(sy, y), Math.abs(x - sx), Math.abs(y - sy));
+    } else if (maskTool === "circle") {
+      const rx = Math.abs(x - sx), ry = Math.abs(y - sy);
+      if (rx > 0 && ry > 0) {
+        maskCtx.beginPath();
+        maskCtx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
+        maskCtx.fill();
+      }
+    }
+    maskDirty = true;
+  }
+
+  async function enableMaskMode() {
+    if (!colourVisionEnabled) {
+      await enableColourVision();
+      if (!colourVisionEnabled) return;
+    }
+    if (colourVisionFlashEnabled) disableColourVisionFlash(); // mutually exclusive, see enableColourVisionFlash()
+    ensureMaskCanvas();
+    maskModeEnabled = true;
+    maskModeBtn.textContent = "Mask mode: On";
+    maskModeBtn.classList.add("active");
+    maskModeBtn.setAttribute("aria-pressed", "true");
+    maskToolsWrap.classList.remove("hide");
+    blendSlider.disabled = true; // the mask replaces the single global blend while it's on
+    canvas.style.touchAction = "none"; // stop scroll/pinch-zoom fighting with drawing
+  }
+
+  function disableMaskMode() {
+    maskModeEnabled = false;
+    maskDrawing = false;
+    maskLastX = null;
+    maskLastY = null;
+    maskShapeStart = null;
+    maskShapeSnapshot = null;
+    maskModeBtn.textContent = "Mask mode: Off";
+    maskModeBtn.classList.remove("active");
+    maskModeBtn.setAttribute("aria-pressed", "false");
+    maskToolsWrap.classList.add("hide");
+    blendSlider.disabled = false;
+    canvas.style.touchAction = "";
+    hud.classList.remove("hide");
+  }
+
+  function toggleMaskMode() {
+    if (maskModeEnabled) disableMaskMode();
+    else enableMaskMode();
+  }
+
+  function maskPointerDown(e) {
+    if (!maskModeEnabled || aiming) return; // don't paint while positioning the calibration reticle
+    e.preventDefault();
+    if (canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* capture is a nicety, not required for painting to work */ }
+    }
+    maskDrawing = true;
+    hud.classList.add("hide"); // no overlays while actively drawing
+    const { x, y } = maskCanvasCoords(e);
+    if (maskTool === "brush") {
+      maskLastX = x;
+      maskLastY = y;
+      maskPaintAt(x, y, null, null);
+    } else {
+      maskShapeStart = { x, y };
+      maskShapeSnapshot = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    }
+  }
+
+  function maskPointerMove(e) {
+    if (!maskModeEnabled || !maskDrawing) return;
+    e.preventDefault();
+    const { x, y } = maskCanvasCoords(e);
+    if (maskTool === "brush") {
+      maskPaintAt(x, y, maskLastX, maskLastY);
+      maskLastX = x;
+      maskLastY = y;
+    } else {
+      maskShapePreview(x, y);
+    }
+  }
+
+  function maskPointerUp() {
+    if (!maskModeEnabled || !maskDrawing) return;
+    maskDrawing = false;
+    maskLastX = null;
+    maskLastY = null;
+    maskShapeStart = null;
+    maskShapeSnapshot = null;
+    hud.classList.remove("hide");
+  }
+
   // Runs a single RGB colour through the same correction/CVD shader used
   // for the live camera feed, via a 1x1 texture — this avoids
   // reimplementing the daltonize matrix math a second time in JS, where a
@@ -1451,6 +1699,10 @@
     glCtx.texImage2D(glCtx.TEXTURE_2D, 0, glCtx.RGBA, 1, 1, 0, glCtx.RGBA, glCtx.UNSIGNED_BYTE, px);
     glCtx.uniform1i(correctionUniforms.uTex, 0);
     glCtx.uniform1f(correctionUniforms.uBlend, blendOverride);
+    // Always the plain global blend here, never the spatial mask — this
+    // draws a single solid-colour swatch, not the live camera frame, so a
+    // per-pixel mask sampled across it would be meaningless.
+    glCtx.uniform1f(correctionUniforms.uUseMask, 0);
     glCtx.uniform1f(correctionUniforms.uSpread, spread);
     glCtx.uniform1f(correctionUniforms.uRotate180, 0);
     glCtx.uniform2f(correctionUniforms.uUvScale, 1, 1);
@@ -2318,6 +2570,26 @@
     blendLabel.textContent = `${blendSlider.value}%`;
   });
 
+  // ---- Mask mode wiring ----
+
+  maskModeBtn.addEventListener("click", toggleMaskMode);
+  maskToolBrush.addEventListener("click", () => setMaskTool("brush"));
+  maskToolRect.addEventListener("click", () => setMaskTool("rect"));
+  maskToolCircle.addEventListener("click", () => setMaskTool("circle"));
+  maskBrushSizeSlider.addEventListener("input", updateMaskBrushSize);
+  maskBaseBtn.addEventListener("click", () => {
+    maskBaseTrue = !maskBaseTrue;
+    updateMaskBaseBtn();
+    fillMaskBase(); // starting a new base always clears any painted strokes
+  });
+  maskClearBtn.addEventListener("click", fillMaskBase);
+  canvas.addEventListener("pointerdown", maskPointerDown);
+  canvas.addEventListener("pointermove", maskPointerMove);
+  canvas.addEventListener("pointerup", maskPointerUp);
+  canvas.addEventListener("pointercancel", maskPointerUp);
+  updateMaskBaseBtn();
+  updateMaskBrushSize();
+
   spreadSlider.addEventListener("input", () => {
     spread = parseFloat(spreadSlider.value);
     spreadLabel.textContent = spreadDescription(spread);
@@ -2438,6 +2710,7 @@
 
   document.body.addEventListener("click", (e) => {
     if (isMenuTarget(e.target)) return;
+    if (maskModeEnabled) return; // taps on the canvas are for painting, not the show/hide-menu gesture
     const now = Date.now();
     if (now - lastTapAt < DOUBLE_TAP_MS) {
       clearTimeout(singleTapTimer);
