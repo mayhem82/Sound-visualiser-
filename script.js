@@ -9,6 +9,7 @@
   const hud = document.getElementById("hud");
   const pauseBtn = document.getElementById("pauseBtn");
   const restartBtn = document.getElementById("restartBtn");
+  const micModeBtn = document.getElementById("micModeBtn");
   const flashBtn = document.getElementById("flashBtn");
   const flashStatus = document.getElementById("flashStatus");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
@@ -116,6 +117,12 @@
   const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
   let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
+  // Default getUserMedia constraints apply echo cancellation & noise
+  // suppression tuned for speech, which treats music playing from this
+  // device's own speaker as "echo" and suppresses it — so it picks up a
+  // voice fine but not Spotify played out loud. Music mode disables those.
+  const MIC_MODE_KEY = "micMusicMode_v1";
+  let musicMode = localStorage.getItem(MIC_MODE_KEY) === "1";
   let cameraBackgroundEnabled = false;
   let nebulaEnabled = true;
   let cameraStream = null;
@@ -503,7 +510,7 @@
     startBtn.disabled = true;
     statusEl.textContent = "";
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
     } catch (err) {
       statusEl.textContent =
         err && err.name === "NotAllowedError"
@@ -539,6 +546,46 @@
     overlay.classList.add("hide");
     hud.classList.remove("hide");
     rafId = requestAnimationFrame(draw);
+  }
+
+  function micConstraints() {
+    return musicMode
+      ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      : true;
+  }
+
+  function updateMicModeBtn() {
+    micModeBtn.textContent = musicMode ? "Mic mode: Music (Spotify)" : "Mic mode: Voice";
+    micModeBtn.classList.toggle("active", musicMode);
+    micModeBtn.setAttribute("aria-pressed", String(musicMode));
+  }
+
+  async function toggleMicMode() {
+    musicMode = !musicMode;
+    localStorage.setItem(MIC_MODE_KEY, musicMode ? "1" : "0");
+    updateMicModeBtn();
+
+    if (!stream) return; // not started yet — the new mode applies when startAudio() runs
+
+    // Already running: re-request the mic with the new constraints and
+    // swap the live stream in, instead of requiring a full restart.
+    micModeBtn.disabled = true;
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: micConstraints(),
+        video: false
+      });
+      stream.getTracks().forEach((t) => t.stop());
+      stream = newStream;
+      source.disconnect();
+      source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+    } catch (err) {
+      flashStatus.classList.remove("hide");
+      appendFlashStatus("Couldn't switch mic mode: " + (err && err.message ? err.message : err));
+    } finally {
+      micModeBtn.disabled = false;
+    }
   }
 
   function togglePause() {
@@ -2132,6 +2179,8 @@
   startBtn.addEventListener("click", startAudio);
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
+  micModeBtn.addEventListener("click", toggleMicMode);
+  updateMicModeBtn();
   flashBtn.addEventListener("click", toggleFlash);
   sensitivitySlider.addEventListener("input", updateSensitivity);
   speedSlider.addEventListener("input", updateFlashSpeed);
