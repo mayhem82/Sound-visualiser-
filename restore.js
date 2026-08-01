@@ -34,6 +34,16 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
+  const exposureModeBtn = document.getElementById("exposureModeBtn");
+  const shutterWrap = document.getElementById("shutterWrap");
+  const shutterSlider = document.getElementById("shutterSlider");
+  const shutterLabel = document.getElementById("shutterLabel");
+  const isoWrap = document.getElementById("isoWrap");
+  const isoSlider = document.getElementById("isoSlider");
+  const isoLabel = document.getElementById("isoLabel");
+  const evWrap = document.getElementById("evWrap");
+  const evSlider = document.getElementById("evSlider");
+  const evLabel = document.getElementById("evLabel");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
   const photoBtn = document.getElementById("photoBtn");
   const recordBtn = document.getElementById("recordBtn");
@@ -169,6 +179,9 @@
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
+  let exposureTrack = null;
+  let currentExposureMode = "continuous";
+  let exposureModeSupported = false;
   let currentStream = null;
   let videoDevices = [];
   let currentDeviceIndex = -1;
@@ -850,7 +863,9 @@
     currentStream = stream;
     video.srcObject = stream;
     await video.play();
-    setupTorch(stream.getVideoTracks()[0]);
+    const track = stream.getVideoTracks()[0];
+    setupTorch(track);
+    setupExposure(track);
   }
 
   function stopCurrentStream() {
@@ -967,6 +982,116 @@
       torchSupported = false;
       torchBtn.classList.add("hide");
     }
+  }
+
+  // ---- Manual exposure ----
+  // Auto-exposure constantly re-adjusts brightness in response to the
+  // scene, which can shift how a colour reads from one moment to the next
+  // — locking it down keeps the corrected view (and the reference colour
+  // it's matched against) consistent instead of drifting as the camera
+  // hunts for exposure. Same capability-detection pattern as the torch:
+  // only exposed on some Android/Chrome-based cameras, not iOS Safari.
+
+  function setupExposure(track) {
+    exposureTrack = track;
+    currentExposureMode = "continuous";
+    exposureModeSupported = false;
+    exposureModeBtn.classList.add("hide");
+    exposureModeBtn.classList.remove("active");
+    exposureModeBtn.setAttribute("aria-pressed", "false");
+    exposureModeBtn.textContent = "Exposure: Auto";
+    shutterWrap.classList.add("hide");
+    isoWrap.classList.add("hide");
+    evWrap.classList.add("hide");
+
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const settings = track.getSettings ? track.getSettings() : {};
+
+    exposureModeSupported = Array.isArray(caps.exposureMode) && caps.exposureMode.includes("manual");
+    exposureModeBtn.classList.toggle("hide", !exposureModeSupported);
+
+    if (caps.exposureTime) {
+      shutterSlider.min = caps.exposureTime.min;
+      shutterSlider.max = caps.exposureTime.max;
+      shutterSlider.step = caps.exposureTime.step || 1;
+      shutterSlider.value = settings.exposureTime != null ? settings.exposureTime : caps.exposureTime.min;
+      shutterLabel.textContent = shutterSlider.value;
+      shutterWrap.classList.remove("hide");
+    }
+    if (caps.iso) {
+      isoSlider.min = caps.iso.min;
+      isoSlider.max = caps.iso.max;
+      isoSlider.step = caps.iso.step || 1;
+      isoSlider.value = settings.iso != null ? settings.iso : caps.iso.min;
+      isoLabel.textContent = isoSlider.value;
+      isoWrap.classList.remove("hide");
+    }
+    if (caps.exposureCompensation) {
+      evSlider.min = caps.exposureCompensation.min;
+      evSlider.max = caps.exposureCompensation.max;
+      evSlider.step = caps.exposureCompensation.step || 0.1;
+      evSlider.value = settings.exposureCompensation != null ? settings.exposureCompensation : 0;
+      evLabel.textContent = evSlider.value;
+      evWrap.classList.remove("hide");
+    }
+
+    track.addEventListener("ended", () => {
+      // Same reasoning as the torch's own "ended" handler — the controls
+      // go with the track that stops backing them.
+      exposureModeSupported = false;
+      exposureModeBtn.classList.add("hide");
+      shutterWrap.classList.add("hide");
+      isoWrap.classList.add("hide");
+      evWrap.classList.add("hide");
+    });
+  }
+
+  async function setExposureMode(mode) {
+    if (!exposureTrack) return;
+    try {
+      await exposureTrack.applyConstraints({ advanced: [{ exposureMode: mode }] });
+      currentExposureMode = mode;
+    } catch (err) {
+      // Device advertised the mode but rejected switching to it — leave
+      // the UI reflecting whatever actually took effect below.
+    }
+    exposureModeBtn.textContent = "Exposure: " + (currentExposureMode === "manual" ? "Manual" : "Auto");
+    exposureModeBtn.classList.toggle("active", currentExposureMode === "manual");
+    exposureModeBtn.setAttribute("aria-pressed", String(currentExposureMode === "manual"));
+  }
+
+  function toggleExposureMode() {
+    if (!exposureModeSupported) return;
+    setExposureMode(currentExposureMode === "manual" ? "continuous" : "manual");
+  }
+
+  async function applyShutter() {
+    shutterLabel.textContent = shutterSlider.value;
+    if (!exposureTrack) return;
+    if (currentExposureMode !== "manual") await setExposureMode("manual");
+    try {
+      await exposureTrack.applyConstraints({ advanced: [{ exposureTime: parseFloat(shutterSlider.value) }] });
+    } catch (err) {}
+  }
+
+  async function applyIso() {
+    isoLabel.textContent = isoSlider.value;
+    if (!exposureTrack) return;
+    if (currentExposureMode !== "manual") await setExposureMode("manual");
+    try {
+      await exposureTrack.applyConstraints({ advanced: [{ iso: parseFloat(isoSlider.value) }] });
+    } catch (err) {}
+  }
+
+  async function applyExposureCompensation() {
+    evLabel.textContent = evSlider.value;
+    if (!exposureTrack) return;
+    // Unlike shutter/ISO, exposure compensation is meaningful in auto mode
+    // too (it's what an EV +/- dial does on a regular camera), so this one
+    // doesn't force a switch to manual.
+    try {
+      await exposureTrack.applyConstraints({ advanced: [{ exposureCompensation: parseFloat(evSlider.value) }] });
+    } catch (err) {}
   }
 
   // ---- Photo & video capture ----
@@ -2005,6 +2130,10 @@
   });
 
   torchBtn.addEventListener("click", toggleTorch);
+  exposureModeBtn.addEventListener("click", toggleExposureMode);
+  shutterSlider.addEventListener("input", applyShutter);
+  isoSlider.addEventListener("input", applyIso);
+  evSlider.addEventListener("input", applyExposureCompensation);
   switchCameraBtn.addEventListener("click", switchCamera);
   photoBtn.addEventListener("click", takePhoto);
   recordBtn.addEventListener("click", toggleRecording);

@@ -50,6 +50,19 @@
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
+  <button id="exposureModeBtn" class="hud-btn hide" aria-pressed="false" title="Lock the camera's exposure so it stops auto-adjusting brightness — colours read more consistently when the camera isn't hunting for exposure.">Exposure: Auto</button>
+  <label id="shutterWrap" class="hud-slider hide" title="Manual shutter speed. Lower is faster/darker, higher is slower/brighter.">
+    Shutter: <span id="shutterLabel"></span>
+    <input id="shutterSlider" type="range">
+  </label>
+  <label id="isoWrap" class="hud-slider hide" title="Manual ISO (sensor sensitivity). Higher brightens the image but can add noise.">
+    ISO: <span id="isoLabel"></span>
+    <input id="isoSlider" type="range">
+  </label>
+  <label id="evWrap" class="hud-slider hide" title="Exposure compensation — nudges brightness up or down without leaving auto exposure.">
+    EV: <span id="evLabel"></span>
+    <input id="evSlider" type="range">
+  </label>
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
   <button id="photoBtn" class="hud-btn" title="Take a photo of the corrected view. On some Android browsers, the phone's volume-down button works as a shutter too.">&#128247; Photo</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
