@@ -338,7 +338,7 @@
     const sat = lerp(90, 45, strength);
     if (colourVisionFlashEnabled && correctionGl) {
       const rgb = cvHsl2rgb(hue, sat / 100, light / 100);
-      const corrected = correctColorViaShader(rgb, cvFlashShowTrue ? 0 : 1);
+      const corrected = correctColorViaShader(rgb, 1);
       if (corrected) return cvRgbToCss(corrected);
     }
     return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
@@ -767,7 +767,6 @@
 
   let colourVisionFlashEnabled = false;
   let cvFlashPointIndex = 0;
-  let cvFlashShowTrue = false;
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
 
@@ -1314,7 +1313,6 @@
     }
     colourVisionFlashEnabled = true;
     cvFlashPointIndex = 0;
-    cvFlashShowTrue = false; // false => corrected (see beatColor())
     uploadSinglePointUniforms(points[cvFlashPointIndex]);
     // Show the corrected view immediately, not whichever value the blend
     // slider was left at (e.g. 0/true from a previous disableColourVisionFlash)
@@ -1346,18 +1344,16 @@
   }
 
   function fireColourVisionFlash(strength) {
-    if (!colourVisionFlashEnabled || !correctionGl) return;
+    if (!colourVisionFlashEnabled || !correctionGl || points.length === 0) return;
 
-    cvFlashShowTrue = !cvFlashShowTrue;
-    if (!cvFlashShowTrue && points.length > 0) {
-      // Moving to a correction beat — advance to the next saved point so
-      // consecutive correction beats never repeat the same one.
-      cvFlashPointIndex = (cvFlashPointIndex + 1) % points.length;
-      uploadSinglePointUniforms(points[cvFlashPointIndex]);
-    }
+    // Advance to the next saved point on every beat so consecutive beats
+    // never repeat the same one — always shown corrected/isolated, never
+    // alternating back to the true/raw camera view.
+    cvFlashPointIndex = (cvFlashPointIndex + 1) % points.length;
+    uploadSinglePointUniforms(points[cvFlashPointIndex]);
 
-    blendSlider.value = cvFlashShowTrue ? "0" : "100";
-    blendLabel.textContent = cvFlashShowTrue ? "0%" : "100%";
+    blendSlider.value = "100";
+    blendLabel.textContent = "100%";
   }
 
   // Runs a single RGB colour through the same correction/CVD shader used
