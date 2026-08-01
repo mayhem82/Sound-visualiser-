@@ -62,8 +62,31 @@
       <button id="freqAllBtn" class="hud-btn freq-all-btn" title="Sets the range to its full extent (20-2000 Hz), so beat detection reacts to the whole spectrum instead of just bass.">All Hz</button>
     </div>
   </div>
+  <button id="connectTabletBtn" class="hud-btn" title="Stream this visualisation to another device (e.g. a tablet or TV) as a read-only viewer.">Connect tablet</button>
 </div>
 <p id="flashStatus" class="flash-status hide"></p>
+<p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
+
+<div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
+  <div id="viewerPanelInner">
+    <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
+    <p class="hint">On the other device, open <a href="viewer.html" target="_blank" rel="noopener">viewer.html</a> from this site, then type in the room code below and tap Connect.</p>
+
+    <button id="startShareBtn" class="hud-btn">Start live sharing</button>
+
+    <div id="shareCodeBlock" class="hide">
+      <div class="room-code-label">Room code</div>
+      <div id="shareRoomCode" class="room-code" aria-live="polite"></div>
+      <p class="hint">Or open this link directly on the other device:<br><span id="shareViewUrlText" class="share-url"></span></p>
+    </div>
+
+    <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="tune-actions">
+      <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
 
 <script src="script.js"></script>
 </body>

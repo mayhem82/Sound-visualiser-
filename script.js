@@ -25,6 +25,15 @@
   const blackoutEl = document.getElementById("blackout");
   const syncDelaySlider = document.getElementById("syncDelaySlider");
   const syncDelayLabel = document.getElementById("syncDelayLabel");
+  const connectTabletBtn = document.getElementById("connectTabletBtn");
+  const viewerPanel = document.getElementById("viewerPanel");
+  const startShareBtn = document.getElementById("startShareBtn");
+  const shareCodeBlock = document.getElementById("shareCodeBlock");
+  const shareRoomCode = document.getElementById("shareRoomCode");
+  const shareViewUrlText = document.getElementById("shareViewUrlText");
+  const viewerStatus = document.getElementById("viewerStatus");
+  const closeViewerPanelBtn = document.getElementById("closeViewerPanelBtn");
+  const viewerConnectedBadge = document.getElementById("viewerConnectedBadge");
 
   // Band edges are real Hz, not raw bin fractions — a fixed bin fraction
   // (e.g. "first 8% of bins") stretches up past 1.5kHz and picks up guitar
@@ -36,6 +45,12 @@
     { name: "mid", fromHz: 150, toHz: 2000, hue: 189, count: 90 }, // cyan — guitars, vocals, snare body
     { name: "treble", fromHz: 2000, toHz: 9000, hue: 330, count: 90 } // pink — cymbals, presence
   ];
+
+  // Public, no-signup STUN server — needed for NAT traversal even between
+  // devices on the same wifi network in many router configurations. No
+  // TURN relay is configured, so very restrictive networks can still
+  // block the connection.
+  const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
   let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
   let width, height, cx, cy, dpr;
@@ -608,6 +623,249 @@
     syncDelayLabel.textContent = `${syncDelayMs} ms`;
   }
 
+  // ---- Tablet viewer (WebRTC, signaled over public MQTT relays) ----
+  // Streams this same stage canvas to a second device (e.g. a tablet or
+  // TV) as a read-only viewer — same room-code pairing pattern as
+  // colorvision.js/restore.js's "Connect tablet" feature (and viewer.html
+  // is the same generic viewer page; a single stream here just lands in
+  // its plain single-pane fallback, since there's no original/corrected
+  // pair to compare for a visualiser).
+
+  const LIVE_BROKERS = [
+    "wss://broker.emqx.io:8084/mqtt",
+    "wss://broker.hivemq.com:8884/mqtt",
+    "wss://test.mosquitto.org:8081/mqtt",
+  ];
+
+  function makeRoomCode() {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  }
+
+  function makeDeviceId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "dev-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+
+  function signalTopic(room) {
+    return `sound-visualiser-pair/${room}/signal`;
+  }
+
+  const broadcastShare = {
+    active: false,
+    room: null,
+    deviceId: makeDeviceId(),
+    clients: [],
+    peers: new Map(), // viewerId -> { pc }
+  };
+
+  function loadMqttLib() {
+    return new Promise((resolve, reject) => {
+      if (window.mqtt) { resolve(); return; }
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/mqtt@5/dist/mqtt.min.js";
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Could not load the live-pairing library — check your internet connection."));
+      document.head.appendChild(s);
+    });
+  }
+
+  function publishSignal(fields, opts) {
+    opts = opts || {};
+    if (!broadcastShare.room) return;
+    const msg = Object.assign({ v: 1, from: broadcastShare.deviceId, to: null, ts: Date.now() }, fields);
+    const payload = JSON.stringify(msg);
+    const topic = signalTopic(broadcastShare.room);
+    broadcastShare.clients.forEach((c) => {
+      if (c.connected) c.publish(topic, payload, { retain: !!opts.retain, qos: opts.qos != null ? opts.qos : 0 });
+    });
+  }
+
+  function connectBroadcastSignaling(room) {
+    return loadMqttLib().then(() => new Promise((resolve, reject) => {
+      let resolved = false;
+      const topic = signalTopic(room);
+      LIVE_BROKERS.forEach((url) => {
+        try {
+          const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
+          client.on("connect", () => {
+            client.subscribe(topic, { qos: 1 });
+            if (!resolved) { resolved = true; resolve(); }
+          });
+          client.on("message", (t, payload) => {
+            if (t === topic) handleBroadcastSignal(payload.toString());
+          });
+          broadcastShare.clients.push(client);
+        } catch (e) { /* other relays may still work */ }
+      });
+      setTimeout(() => { if (!resolved) reject(new Error("Couldn't reach a relay.")); }, 9000);
+    }));
+  }
+
+  function handleBroadcastSignal(raw) {
+    let msg;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    if (!msg || msg.from === broadcastShare.deviceId) return;
+    if (msg.type === "viewer-here") { ensureBroadcastPeerFor(msg.from); return; }
+    if (msg.type === "answer" && msg.to === broadcastShare.deviceId) handleBroadcastAnswer(msg);
+  }
+
+  function updateViewerConnectedBadge() {
+    const anyConnected = Array.from(broadcastShare.peers.values()).some(
+      (entry) => entry.pc && entry.pc.connectionState === "connected"
+    );
+    viewerConnectedBadge.classList.toggle("hide", !anyConnected);
+    if (anyConnected) viewerStatus.textContent = "Tablet connected.";
+  }
+
+  async function ensureBroadcastPeerFor(viewerId) {
+    if (broadcastShare.peers.has(viewerId)) return; // dedupe repeated viewer-here / multi-broker echoes
+    if (typeof canvas.captureStream !== "function") {
+      viewerStatus.textContent = "Viewer streaming isn't supported in this browser.";
+      return;
+    }
+    const entry = { pc: null };
+    broadcastShare.peers.set(viewerId, entry);
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    entry.pc = pc;
+    const canvasStream = canvas.captureStream(30);
+    canvasStream.getTracks().forEach((t) => pc.addTrack(t, canvasStream));
+
+    pc.addEventListener("connectionstatechange", () => {
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+        if (broadcastShare.peers.get(viewerId) === entry) broadcastShare.peers.delete(viewerId);
+      }
+      updateViewerConnectedBadge();
+    });
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitForIceGatheringComplete(pc);
+      publishSignal({
+        type: "offer",
+        to: viewerId,
+        sdp: pc.localDescription.sdp,
+        correctedStreamId: canvasStream.id
+      }, { qos: 1 });
+    } catch (err) {
+      broadcastShare.peers.delete(viewerId);
+      viewerStatus.textContent = "Couldn't connect to the other device: " + (err.message || err.name || "unknown error");
+    }
+  }
+
+  async function handleBroadcastAnswer(msg) {
+    const entry = broadcastShare.peers.get(msg.from);
+    if (!entry || !entry.pc) return;
+    if (entry.pc.signalingState !== "have-local-offer") return; // dedupe: already answered / stale
+    try {
+      await entry.pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+    } catch (e) {}
+  }
+
+  // Waiting for ICE gathering to finish before sending the offer means
+  // every candidate is already embedded in the SDP — no separate ICE
+  // candidate exchange needed over the relay.
+  function waitForIceGatheringComplete(peer) {
+    if (peer.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        peer.removeEventListener("icegatheringstatechange", check);
+        resolve();
+      }
+      function check() {
+        if (peer.iceGatheringState === "complete") finish();
+      }
+      peer.addEventListener("icegatheringstatechange", check);
+      setTimeout(finish, 3500);
+    });
+  }
+
+  function stopTabletShare(message) {
+    broadcastShare.active = false;
+    broadcastShare.peers.forEach((entry) => { try { if (entry.pc) entry.pc.close(); } catch (e) {} });
+    broadcastShare.peers.clear();
+    broadcastShare.clients.forEach((c) => { try { c.end(true); } catch (e) {} });
+    broadcastShare.clients = [];
+    broadcastShare.room = null;
+    shareCodeBlock.classList.add("hide");
+    viewerConnectedBadge.classList.add("hide");
+    viewerStatus.textContent = message || "";
+    startShareBtn.textContent = "Start live sharing";
+    startShareBtn.disabled = false;
+  }
+
+  async function startTabletShare() {
+    startShareBtn.disabled = true;
+    viewerStatus.textContent = "Connecting to relay…";
+    const room = makeRoomCode();
+    broadcastShare.room = room;
+
+    try {
+      await connectBroadcastSignaling(room);
+    } catch (err) {
+      viewerStatus.textContent = err.message || "Couldn't start live sharing.";
+      broadcastShare.room = null;
+      startShareBtn.disabled = false;
+      return;
+    }
+
+    broadcastShare.active = true;
+    shareRoomCode.textContent = room;
+    const viewUrl = new URL("viewer.html", location.href);
+    viewUrl.searchParams.set("room", room);
+    shareViewUrlText.textContent = viewUrl.toString();
+    shareCodeBlock.classList.remove("hide");
+    viewerStatus.textContent = "Waiting for the other device to connect…";
+    startShareBtn.textContent = "Stop live sharing";
+    startShareBtn.disabled = false;
+  }
+
+  function toggleTabletShare() {
+    if (broadcastShare.active) {
+      stopTabletShare("Sharing stopped.");
+    } else {
+      startTabletShare();
+    }
+  }
+
+  // Mobile browsers throttle requestAnimationFrame hard (often to ~1fps or
+  // less) in a tab that isn't the active/foreground one — which is exactly
+  // the render loop that feeds the shared canvas, so backgrounding this
+  // tab (e.g. switching to the viewer in a second tab on the same phone)
+  // makes the connected viewer's screen freeze or go blank even though the
+  // WebRTC connection itself is still "connected". Surfacing that here is
+  // the most this page can do about it — there's no way for a background
+  // tab to force full-rate rendering.
+  document.addEventListener("visibilitychange", () => {
+    if (!broadcastShare.active) return;
+    if (document.hidden) {
+      viewerStatus.textContent = "This tab is in the background — the shared view will freeze until it's active again.";
+    } else {
+      const anyConnected = Array.from(broadcastShare.peers.values()).some(
+        (entry) => entry.pc && entry.pc.connectionState === "connected"
+      );
+      viewerStatus.textContent = anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…";
+      updateViewerConnectedBadge();
+    }
+  });
+
+  function openViewerPanel() {
+    viewerPanel.classList.remove("hide");
+    closeViewerPanelBtn.focus();
+  }
+
+  function closeViewerPanel() {
+    viewerPanel.classList.add("hide");
+    connectTabletBtn.focus();
+  }
+
   startBtn.addEventListener("click", startAudio);
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
@@ -651,6 +909,9 @@
     updateFreqRange("low");
   });
   syncDelaySlider.addEventListener("input", updateSyncDelay);
+  connectTabletBtn.addEventListener("click", openViewerPanel);
+  startShareBtn.addEventListener("click", toggleTabletShare);
+  closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");
@@ -664,7 +925,7 @@
   let lastTapAt = 0;
 
   function isMenuTarget(el) {
-    return !!(el && el.closest && el.closest("#hud, #overlay, .flash-status"));
+    return !!(el && el.closest && el.closest("#hud, #overlay, .flash-status, #viewerPanel"));
   }
 
   function toggleHud() {

@@ -216,6 +216,109 @@ html, body {
   margin: 0;
 }
 
+/* Tablet-viewer pairing panel — colorvision.css/restore.css each define an
+   equivalent block for their own pages; this is the same thing for
+   index.html, which has no page-specific stylesheet of its own. Living
+   here means it's also the one colorvision.html/restore.html would fall
+   back on if their own copies were ever removed, since style.css loads
+   before those files and their rules win on ties. */
+#viewerPanel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+}
+
+#viewerPanel.hide {
+  display: none;
+}
+
+#viewerPanelInner {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(15, 15, 25, 0.92);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 18px 18px 0 0;
+  padding: 24px 24px 32px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+#viewerPanelInner h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+#viewerPanelInner #startShareBtn {
+  width: 100%;
+}
+
+#shareCodeBlock {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.room-code-label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(242, 242, 247, 0.6);
+}
+
+.room-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+  margin: 4px 0 10px;
+}
+
+.share-url {
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.6);
+}
+
+.tune-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.tune-actions .hud-btn { flex: 1 1 auto; }
+
+.reticle-btn-secondary {
+  background: rgba(15, 15, 25, 0.55);
+  border-color: rgba(242, 242, 247, 0.2);
+  color: rgba(242, 242, 247, 0.75);
+}
+
+#viewerConnectedBadge {
+  position: fixed;
+  top: 60px;
+  left: 16px;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(15, 15, 25, 0.55);
+  color: #86efac;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#viewerConnectedBadge.hide {
+  display: none;
+}
+
 @media (prefers-color-scheme: light) {
   /* This project is intentionally dark-only; a bright nebula on white
      washes out the glow blending, so we keep the dark theme fixed. */
