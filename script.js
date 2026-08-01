@@ -26,6 +26,8 @@
   const syncDelaySlider = document.getElementById("syncDelaySlider");
   const syncDelayLabel = document.getElementById("syncDelayLabel");
   const connectTabletBtn = document.getElementById("connectTabletBtn");
+  const cameraBgBtn = document.getElementById("cameraBgBtn");
+  const cameraFeed = document.getElementById("cameraFeed");
   const viewerPanel = document.getElementById("viewerPanel");
   const startShareBtn = document.getElementById("startShareBtn");
   const shareCodeBlock = document.getElementById("shareCodeBlock");
@@ -53,6 +55,8 @@
   const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
   let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
+  let cameraBackgroundEnabled = false;
+  let cameraStream = null;
   let width, height, cx, cy, dpr;
   let particles = [];
   let running = false;
@@ -352,9 +356,22 @@
   }
 
   function draw(time) {
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "rgba(5, 5, 10, 0.18)";
-    ctx.fillRect(0, 0, width, height);
+    if (cameraBackgroundEnabled) {
+      // A fresh camera frame every draw, rather than the plain background's
+      // fade trail — the trail effect is for a background that otherwise
+      // never changes on its own; a live camera feed already does that, and
+      // redrawing it full-opacity each frame means it never gets muddied by
+      // leftover particle glow, only ever the newest frame. Still dimmed
+      // over so the particles read clearly against whatever's in view.
+      drawCameraBackground();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "rgba(5, 5, 10, 0.35)";
+      ctx.fillRect(0, 0, width, height);
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "rgba(5, 5, 10, 0.18)";
+      ctx.fillRect(0, 0, width, height);
+    }
 
     computeBandEnergy();
 
@@ -457,6 +474,86 @@
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "#05050a";
     ctx.fillRect(0, 0, width, height);
+  }
+
+  // ---- Camera background ("party mode") ----
+  // Shows the live camera feed behind the particles instead of a plain
+  // dark background — independent of the mic/audio flow, and independent
+  // of the separate camera stream requestFlashCapability() opens for the
+  // torch (that one never touches a <video> element or gets drawn; this
+  // one does).
+
+  function drawCameraBackground() {
+    if (!cameraFeed || cameraFeed.readyState < cameraFeed.HAVE_CURRENT_DATA) return;
+    const vw = cameraFeed.videoWidth, vh = cameraFeed.videoHeight;
+    if (!vw || !vh) return;
+    // "object-fit: cover" crop, same technique as colorvision.js/restore.js
+    // use for their own camera view, so the feed fills the screen without
+    // stretching regardless of how its aspect ratio compares to the
+    // screen's (routinely mismatched in landscape).
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    const videoAspect = vw / vh;
+    const canvasAspect = width / height;
+    if (videoAspect > canvasAspect) {
+      sw = vh * canvasAspect;
+      sx = (vw - sw) / 2;
+    } else {
+      sh = vw / canvasAspect;
+      sy = (vh - sh) / 2;
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.drawImage(cameraFeed, sx, sy, sw, sh, 0, 0, width, height);
+  }
+
+  async function enableCameraBackground() {
+    cameraBgBtn.disabled = true;
+    cameraBgBtn.textContent = "Camera background: Starting…";
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+      cameraFeed.srcObject = cameraStream;
+      await cameraFeed.play();
+      cameraBackgroundEnabled = true;
+      cameraBgBtn.textContent = "Camera background: On";
+      cameraBgBtn.classList.add("active");
+      cameraBgBtn.setAttribute("aria-pressed", "true");
+      cameraStream.getVideoTracks()[0].addEventListener("ended", () => {
+        // Commonly fires when the screen locks or the tab loses focus,
+        // which can end the camera connection outright.
+        disableCameraBackground();
+        appendFlashStatus("Camera background stopped — the camera connection ended.");
+        flashStatus.classList.remove("hide");
+      });
+    } catch (err) {
+      cameraBgBtn.textContent = "Camera background: Off";
+      appendFlashStatus("Couldn't start the camera background: " + (err.message || err.name || "unknown error"));
+      flashStatus.classList.remove("hide");
+    } finally {
+      cameraBgBtn.disabled = false;
+    }
+  }
+
+  function disableCameraBackground() {
+    cameraBackgroundEnabled = false;
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((t) => t.stop());
+      cameraStream = null;
+    }
+    cameraFeed.srcObject = null;
+    cameraBgBtn.textContent = "Camera background: Off";
+    cameraBgBtn.classList.remove("active");
+    cameraBgBtn.setAttribute("aria-pressed", "false");
+  }
+
+  function toggleCameraBackground() {
+    if (cameraBackgroundEnabled) {
+      disableCameraBackground();
+    } else {
+      enableCameraBackground();
+    }
   }
 
   function isTransientCameraError(err) {
@@ -909,6 +1006,7 @@
     updateFreqRange("low");
   });
   syncDelaySlider.addEventListener("input", updateSyncDelay);
+  cameraBgBtn.addEventListener("click", toggleCameraBackground);
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);

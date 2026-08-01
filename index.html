@@ -9,6 +9,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+<video id="cameraFeed" playsinline muted hidden></video>
 <div id="blackout" aria-hidden="true"></div>
 <div id="screenFlash" aria-hidden="true"></div>
 
@@ -62,6 +63,7 @@
       <button id="freqAllBtn" class="hud-btn freq-all-btn" title="Sets the range to its full extent (20-2000 Hz), so beat detection reacts to the whole spectrum instead of just bass.">All Hz</button>
     </div>
   </div>
+  <button id="cameraBgBtn" class="hud-btn" aria-pressed="false" title="Show the live camera feed behind the particles instead of a plain dark background — party mode.">Camera background: Off</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this visualisation to another device (e.g. a tablet or TV) as a read-only viewer.">Connect tablet</button>
   <a href="colorvision.html" class="hud-btn">Colour Vision &rarr;</a>
   <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
