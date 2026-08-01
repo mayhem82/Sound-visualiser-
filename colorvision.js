@@ -159,6 +159,11 @@
   // handling included) so the viewer can show "what the camera really
   // sees" alongside the corrected view instead of just the corrected one.
   let originalCanvas = null, originalCtx = null;
+  // Lazily created alongside originalCanvas — a second WebGL context
+  // rendering the exact same correction pinned to full strength (blend 1.0)
+  // for viewers, decoupled from the operator's own adjustable local view.
+  let fixedCorrectionCanvas = null, fixedGl = null, fixedProgram = null,
+    fixedUniforms = null, fixedQuadBuffer = null, fixedVideoTexture = null;
   let rafId = null;
   let aimIntervalId = null;
 
@@ -519,67 +524,85 @@
     }
   `;
 
-  function compileShader(type, src) {
-    const sh = gl.createShader(type);
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-      const log = gl.getShaderInfoLog(sh);
-      gl.deleteShader(sh);
+  function compileShaderFor(glCtx, type, src) {
+    const sh = glCtx.createShader(type);
+    glCtx.shaderSource(sh, src);
+    glCtx.compileShader(sh);
+    if (!glCtx.getShaderParameter(sh, glCtx.COMPILE_STATUS)) {
+      const log = glCtx.getShaderInfoLog(sh);
+      glCtx.deleteShader(sh);
       throw new Error("Shader compile error: " + log);
     }
     return sh;
   }
 
-  function initGL() {
+  // Builds a fresh WebGL context + compiled program + quad + video texture
+  // on the given canvas, running the same correction shader as the main
+  // stage. Used both for the main on-screen stage and for a second,
+  // off-screen context that always renders at full correction (see
+  // ensureFixedCorrectionCanvas) — a canvas.captureStream() can only ever
+  // reflect one canvas's content, so showing the operator's own live
+  // (adjustable) view and sending a fixed one to viewers means rendering
+  // to two separate canvases, each with its own WebGL context.
+  function initGLContext(canvas) {
     // preserveDrawingBuffer is needed for the photo/video capture buttons:
     // without it the browser is free to clear the backbuffer right after
     // compositing, and a toDataURL()/toBlob() call outside the render loop
     // (or captureStream() picking up a stale frame) can read back nothing.
-    gl = stage.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
-      stage.getContext("experimental-webgl", { preserveDrawingBuffer: true });
-    if (!gl) throw new Error("WebGL not supported on this device/browser.");
+    const glCtx = canvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
+      canvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
+    if (!glCtx) throw new Error("WebGL not supported on this device/browser.");
 
-    const vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
-    const fs = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
-    program = gl.createProgram();
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error("Program link error: " + gl.getProgramInfoLog(program));
+    const vs = compileShaderFor(glCtx, glCtx.VERTEX_SHADER, VERT_SRC);
+    const fs = compileShaderFor(glCtx, glCtx.FRAGMENT_SHADER, FRAG_SRC);
+    const prog = glCtx.createProgram();
+    glCtx.attachShader(prog, vs);
+    glCtx.attachShader(prog, fs);
+    glCtx.linkProgram(prog);
+    if (!glCtx.getProgramParameter(prog, glCtx.LINK_STATUS)) {
+      throw new Error("Program link error: " + glCtx.getProgramInfoLog(prog));
     }
-    gl.useProgram(program);
+    glCtx.useProgram(prog);
 
-    quadBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const aPos = gl.getAttribLocation(program, "aPos");
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    const qBuf = glCtx.createBuffer();
+    glCtx.bindBuffer(glCtx.ARRAY_BUFFER, qBuf);
+    glCtx.bufferData(glCtx.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), glCtx.STATIC_DRAW);
+    const aPos = glCtx.getAttribLocation(prog, "aPos");
+    glCtx.enableVertexAttribArray(aPos);
+    glCtx.vertexAttribPointer(aPos, 2, glCtx.FLOAT, false, 0, 0);
 
-    videoTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+    const tex = glCtx.createTexture();
+    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
     // Video frames upload top-row-first, but WebGL texture space has its
     // origin at the bottom-left, so without this every frame renders upside-down.
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
 
-    uniforms = {
-      uTex: gl.getUniformLocation(program, "uTex"),
-      uBlend: gl.getUniformLocation(program, "uBlend"),
-      uSpread: gl.getUniformLocation(program, "uSpread"),
-      uRotate180: gl.getUniformLocation(program, "uRotate180"),
-      uPointCount: gl.getUniformLocation(program, "uPointCount"),
-      uSourceLab: gl.getUniformLocation(program, "uSourceLab"),
-      uCorrection: gl.getUniformLocation(program, "uCorrection"),
-      uCorrection2: gl.getUniformLocation(program, "uCorrection2"),
-      uCvdType: gl.getUniformLocation(program, "uCvdType"),
-      uCvdStrength: gl.getUniformLocation(program, "uCvdStrength")
+    const uni = {
+      uTex: glCtx.getUniformLocation(prog, "uTex"),
+      uBlend: glCtx.getUniformLocation(prog, "uBlend"),
+      uSpread: glCtx.getUniformLocation(prog, "uSpread"),
+      uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
+      uPointCount: glCtx.getUniformLocation(prog, "uPointCount"),
+      uSourceLab: glCtx.getUniformLocation(prog, "uSourceLab"),
+      uCorrection: glCtx.getUniformLocation(prog, "uCorrection"),
+      uCorrection2: glCtx.getUniformLocation(prog, "uCorrection2"),
+      uCvdType: glCtx.getUniformLocation(prog, "uCvdType"),
+      uCvdStrength: glCtx.getUniformLocation(prog, "uCvdStrength")
     };
+    return { gl: glCtx, program: prog, uniforms: uni, quadBuffer: qBuf, videoTexture: tex };
+  }
+
+  function initGL() {
+    const ctxState = initGLContext(stage);
+    gl = ctxState.gl;
+    program = ctxState.program;
+    uniforms = ctxState.uniforms;
+    quadBuffer = ctxState.quadBuffer;
+    videoTexture = ctxState.videoTexture;
   }
 
   function resizeStage() {
@@ -590,6 +613,11 @@
     if (originalCanvas) {
       originalCanvas.width = stage.width;
       originalCanvas.height = stage.height;
+    }
+    if (fixedCorrectionCanvas) {
+      fixedCorrectionCanvas.width = stage.width;
+      fixedCorrectionCanvas.height = stage.height;
+      fixedGl.viewport(0, 0, fixedCorrectionCanvas.width, fixedCorrectionCanvas.height);
     }
   }
 
@@ -608,7 +636,33 @@
     originalCtx = originalCanvas.getContext("2d");
   }
 
-  function uploadPointUniforms() {
+  // A second, independent render of the exact same correction — same
+  // calibrated points, CVD type, spread, rotation — except uBlend is
+  // always 1.0 here, regardless of the operator's own "True <-> Corrected"
+  // slider on the main stage. That slider is for locally previewing how
+  // strong the correction looks; what gets sent to a viewer as "Modified"
+  // should always be the full correction, not whatever the operator
+  // happens to be locally scrubbing through.
+  function ensureFixedCorrectionCanvas() {
+    if (fixedCorrectionCanvas) return;
+    fixedCorrectionCanvas = document.createElement("canvas");
+    fixedCorrectionCanvas.width = stage.width;
+    fixedCorrectionCanvas.height = stage.height;
+    fixedCorrectionCanvas.style.position = "fixed";
+    fixedCorrectionCanvas.style.left = "-99999px";
+    fixedCorrectionCanvas.style.top = "0";
+    document.body.appendChild(fixedCorrectionCanvas);
+    const ctxState = initGLContext(fixedCorrectionCanvas);
+    fixedGl = ctxState.gl;
+    fixedProgram = ctxState.program;
+    fixedUniforms = ctxState.uniforms;
+    fixedQuadBuffer = ctxState.quadBuffer;
+    fixedVideoTexture = ctxState.videoTexture;
+    fixedGl.viewport(0, 0, fixedCorrectionCanvas.width, fixedCorrectionCanvas.height);
+    uploadPointUniforms();
+  }
+
+  function uploadPointUniformsTo(glCtx, prog, uni) {
     const count = Math.min(points.length, MAX_POINTS);
     const labArr = new Float32Array(MAX_POINTS * 3);
     const corrArr = new Float32Array(MAX_POINTS * 3);
@@ -620,11 +674,16 @@
       corrArr[i * 3] = p.hueShift; corrArr[i * 3 + 1] = p.satAdjust; corrArr[i * 3 + 2] = p.lightAdjust;
       corr2Arr[i * 2] = p.contrastAdjust || 0; corr2Arr[i * 2 + 1] = p.exposureAdjust || 0;
     }
-    gl.useProgram(program);
-    gl.uniform1i(uniforms.uPointCount, count);
-    gl.uniform3fv(uniforms.uSourceLab, labArr);
-    gl.uniform3fv(uniforms.uCorrection, corrArr);
-    gl.uniform2fv(uniforms.uCorrection2, corr2Arr);
+    glCtx.useProgram(prog);
+    glCtx.uniform1i(uni.uPointCount, count);
+    glCtx.uniform3fv(uni.uSourceLab, labArr);
+    glCtx.uniform3fv(uni.uCorrection, corrArr);
+    glCtx.uniform2fv(uni.uCorrection2, corr2Arr);
+  }
+
+  function uploadPointUniforms() {
+    uploadPointUniformsTo(gl, program, uniforms);
+    if (fixedGl) uploadPointUniformsTo(fixedGl, fixedProgram, fixedUniforms);
   }
 
   function renderLoop() {
@@ -651,6 +710,23 @@
         }
         originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
         originalCtx.restore();
+      }
+
+      if (fixedGl) {
+        // Same correction as the main draw above (points, spread, CVD type,
+        // rotation) — the only deliberate difference is uBlend pinned to
+        // 1.0 instead of following the local blendSlider, so what's shared
+        // to a viewer is always the full correction regardless of what the
+        // operator is locally previewing.
+        fixedGl.bindTexture(fixedGl.TEXTURE_2D, fixedVideoTexture);
+        fixedGl.texImage2D(fixedGl.TEXTURE_2D, 0, fixedGl.RGBA, fixedGl.RGBA, fixedGl.UNSIGNED_BYTE, video);
+        fixedGl.uniform1i(fixedUniforms.uTex, 0);
+        fixedGl.uniform1f(fixedUniforms.uBlend, 1);
+        fixedGl.uniform1f(fixedUniforms.uSpread, spread);
+        fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
+        fixedGl.uniform1i(fixedUniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
+        fixedGl.uniform1f(fixedUniforms.uCvdStrength, cvdStrength);
+        fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
     }
     rafId = requestAnimationFrame(renderLoop);
@@ -1016,6 +1092,7 @@
       return;
     }
     ensureOriginalCanvas();
+    ensureFixedCorrectionCanvas();
 
     const entry = { pc: null };
     broadcastShare.peers.set(viewerId, entry);
@@ -1029,7 +1106,11 @@
     // part of the SDP as the track's msid), so that id — sent as plain
     // metadata on the offer below — is what the viewer matches against,
     // rather than guessing from which track event fires first.
-    const correctedStream = stage.captureStream(30);
+    // correctedStream comes from fixedCorrectionCanvas (always full
+    // correction), not the main stage — the stage reflects whatever the
+    // operator's own local blend slider is currently set to, which is for
+    // local preview only and shouldn't affect what a viewer sees.
+    const correctedStream = fixedCorrectionCanvas.captureStream(30);
     const originalStream = originalCanvas.captureStream(30);
     correctedStream.getTracks().forEach((t) => pc.addTrack(t, correctedStream));
     originalStream.getTracks().forEach((t) => pc.addTrack(t, originalStream));
