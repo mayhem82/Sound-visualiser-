@@ -1243,7 +1243,13 @@
     }
     colourVisionFlashEnabled = true;
     cvFlashCycleIndex = 0;
-    cvFlashShowTrue = false;
+    cvFlashShowTrue = false; // false => corrected (see beatColor())
+    // Show the corrected view immediately, not whichever value the blend
+    // slider was left at (e.g. 0/true from a previous disableColourVisionFlash)
+    // — otherwise the live camera stays on the true/raw view until the
+    // first beat's strobe fires.
+    blendSlider.value = "100";
+    blendLabel.textContent = "100%";
     colourVisionFlashBtn.textContent = "Colour vision flash mode: On";
     colourVisionFlashBtn.classList.add("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "true");
