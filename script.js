@@ -719,10 +719,8 @@
   let cvdStrength = loadCvdStrengthPref();
 
   let colourVisionFlashEnabled = false;
-  let cvFlashRevertTimer = null;
-  let cvFlashCycleIndex = 0;
+  let cvFlashPointIndex = 0;
   let cvFlashShowTrue = false;
-  const CVD_FLASH_CYCLE = ["protan", "deutan", "tritan", "none"];
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
 
@@ -1231,23 +1229,50 @@
   }
 
   // ---- Colour vision flash mode ----
-  // On each beat: strobes the correction blend full-on then back off,
-  // cycles the CVD simulation type, and routes the beat screen-flash
-  // colour through the same correction shader — all synced to the beat
-  // detector that already drives the torch/vibrate/screen-flash effects.
+  // On each beat, alternates the camera background (and the beat screen
+  // flash) between the true camera view and one saved calibration point's
+  // correction shown in isolation — a different point each time a
+  // correction beat comes around — so consecutive corrected beats are
+  // never the same point twice in a row and every point gets its own
+  // dedicated true-colour beat as a break in between.
+
+  // Re-uploads the correction shader's point uniforms restricted to a
+  // single point (uPointCount=1) instead of the full calibrated set, so
+  // its correction applies uniformly across the frame with no blending
+  // against any other point — isolating exactly what that one point does.
+  function uploadSinglePointUniforms(point) {
+    if (!correctionGl) return;
+    const [L, A, B] = cvRgb2lab(point.sourceColor[0], point.sourceColor[1], point.sourceColor[2]);
+    const labArr = new Float32Array(MAX_POINTS * 3);
+    const corrArr = new Float32Array(MAX_POINTS * 3);
+    const corr2Arr = new Float32Array(MAX_POINTS * 2);
+    labArr[0] = L; labArr[1] = A; labArr[2] = B;
+    corrArr[0] = point.hueShift; corrArr[1] = point.satAdjust; corrArr[2] = point.lightAdjust;
+    corr2Arr[0] = point.contrastAdjust || 0; corr2Arr[1] = point.exposureAdjust || 0;
+    correctionGl.useProgram(correctionProgram);
+    correctionGl.uniform1i(correctionUniforms.uPointCount, 1);
+    correctionGl.uniform3fv(correctionUniforms.uSourceLab, labArr);
+    correctionGl.uniform3fv(correctionUniforms.uCorrection, corrArr);
+    correctionGl.uniform2fv(correctionUniforms.uCorrection2, corr2Arr);
+  }
 
   async function enableColourVisionFlash() {
     if (!colourVisionEnabled) {
       await enableColourVision();
       if (!colourVisionEnabled) return; // colour vision failed to start
     }
+    if (points.length === 0) {
+      cvStatus("Calibrate at least one colour point first — flash mode alternates between them.");
+      return;
+    }
     colourVisionFlashEnabled = true;
-    cvFlashCycleIndex = 0;
+    cvFlashPointIndex = 0;
     cvFlashShowTrue = false; // false => corrected (see beatColor())
+    uploadSinglePointUniforms(points[cvFlashPointIndex]);
     // Show the corrected view immediately, not whichever value the blend
     // slider was left at (e.g. 0/true from a previous disableColourVisionFlash)
     // — otherwise the live camera stays on the true/raw view until the
-    // first beat's strobe fires.
+    // first beat flips it.
     blendSlider.value = "100";
     blendLabel.textContent = "100%";
     colourVisionFlashBtn.textContent = "Colour vision flash mode: On";
@@ -1260,17 +1285,12 @@
     colourVisionFlashBtn.textContent = "Colour vision flash mode: Off";
     colourVisionFlashBtn.classList.remove("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "false");
-    if (cvFlashRevertTimer) {
-      clearTimeout(cvFlashRevertTimer);
-      cvFlashRevertTimer = null;
-    }
-    // Restore the persisted, user-chosen values the strobe was
-    // transiently overriding.
-    cvdType = loadCvdTypePref();
-    cvdTypeSelect.value = cvdType;
-    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
     blendSlider.value = "0";
     blendLabel.textContent = "0%";
+    // Restore the normal calibrated view — every saved point blended
+    // together by Lab distance — instead of leaving the shader pinned to
+    // whichever single point flash mode last isolated.
+    uploadPointUniforms();
   }
 
   function toggleColourVisionFlash() {
@@ -1281,35 +1301,16 @@
   function fireColourVisionFlash(strength) {
     if (!colourVisionFlashEnabled || !correctionGl) return;
 
-    // Cycle the CVD simulation type. Assigned directly (not via the
-    // <select>'s change event) so it doesn't get persisted as the user's
-    // chosen preference — this is a transient strobe effect, not a
-    // setting change.
-    cvFlashCycleIndex = (cvFlashCycleIndex + 1) % CVD_FLASH_CYCLE.length;
-    // Flip which version of the beat colour beatColor() hands back to the
-    // screen flash — true colour for a full lap of the type cycle, then
-    // colour-vision-corrected for the next lap — only when the type cycle
-    // wraps, not every beat. Flipping every beat instead would permanently
-    // lock each CVD type to only ever appearing as true OR only ever as
-    // corrected (2 divides 4 evenly, so the two counters would stay in
-    // permanent lockstep) — flipping on wrap instead means every
-    // (type, true/corrected) combination actually gets shown over time.
-    if (cvFlashCycleIndex === 0) cvFlashShowTrue = !cvFlashShowTrue;
-    cvdType = CVD_FLASH_CYCLE[cvFlashCycleIndex];
-    cvdTypeSelect.value = cvdType;
-    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+    cvFlashShowTrue = !cvFlashShowTrue;
+    if (!cvFlashShowTrue && points.length > 0) {
+      // Moving to a correction beat — advance to the next saved point so
+      // consecutive correction beats never repeat the same one.
+      cvFlashPointIndex = (cvFlashPointIndex + 1) % points.length;
+      uploadSinglePointUniforms(points[cvFlashPointIndex]);
+    }
 
-    // Strobe the correction blend full-on, then let it fall back to 0
-    // (true colour) once the beat's flash effects have finished.
-    if (cvFlashRevertTimer) clearTimeout(cvFlashRevertTimer);
-    blendSlider.value = "100";
-    blendLabel.textContent = "100%";
-    const duration = lerp(minFlashMs, maxFlashMs, strength);
-    cvFlashRevertTimer = setTimeout(() => {
-      cvFlashRevertTimer = null;
-      blendSlider.value = "0";
-      blendLabel.textContent = "0%";
-    }, duration);
+    blendSlider.value = cvFlashShowTrue ? "0" : "100";
+    blendLabel.textContent = cvFlashShowTrue ? "0%" : "100%";
   }
 
   // Runs a single RGB colour through the same correction/CVD shader used
