@@ -1165,6 +1165,27 @@
     }
   }
 
+  // Mobile browsers throttle requestAnimationFrame hard (often to ~1fps or
+  // less) in a tab that isn't the active/foreground one — which is exactly
+  // the render loop that feeds the shared canvases, so backgrounding this
+  // tab (e.g. switching to the viewer in a second tab on the same phone)
+  // makes the connected viewer's screen freeze or go blank even though the
+  // WebRTC connection itself is still "connected". Surfacing that here is
+  // the most this page can do about it — there's no way for a background
+  // tab to force full-rate rendering.
+  document.addEventListener("visibilitychange", () => {
+    if (!broadcastShare.active) return;
+    if (document.hidden) {
+      viewerStatus.textContent = "This tab is in the background — the shared view will freeze until it's active again.";
+    } else {
+      const anyConnected = Array.from(broadcastShare.peers.values()).some(
+        (entry) => entry.pc && entry.pc.connectionState === "connected"
+      );
+      viewerStatus.textContent = anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…";
+      updateViewerConnectedBadge();
+    }
+  });
+
   function openViewerPanel() {
     hideOverlayPanels();
     viewerPanel.classList.remove("hide");

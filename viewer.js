@@ -164,6 +164,12 @@
           target = video1.srcObject ? video2 : video1;
         }
         target.srcObject = e.streams[0];
+        // The autoplay attribute alone isn't reliably enough on every
+        // mobile browser for a stream assigned programmatically after
+        // load — an explicit play() is cheap insurance against a video
+        // element that's connected and receiving frames but just sits
+        // there paused, which looks identical to a blank/frozen screen.
+        target.play().catch(() => {});
       });
 
       pc.addEventListener("connectionstatechange", () => {
