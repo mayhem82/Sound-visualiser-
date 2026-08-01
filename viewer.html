@@ -23,7 +23,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Viewer mode</h1>
-    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get the room code from that device's "Connect tablet" panel, type it in below, and tap Connect. If that device is sending both the original and corrected feed, they'll show here side by side, split screen.</p>
+    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get the room code from that device's "Connect tablet" panel, type it in below, and tap Connect. If that device is sending both the original and corrected feed, a "Compare with original" button lets you split the screen between them.</p>
 
     <label class="field-label">
       Room code
@@ -37,7 +37,7 @@
 </div>
 
 <div id="hud" class="hide">
-  <button id="splitToggleBtn" class="hud-btn hide" aria-pressed="true" title="Toggle between split view (original + modified) and modified only, full screen.">Split view</button>
+  <button id="splitToggleBtn" class="hud-btn hide" aria-pressed="false" title="Show the original feed alongside the corrected one, split screen.">Compare with original</button>
   <button id="photoBtn" class="hud-btn" title="Take a photo of what's currently shown here.">&#128247; Photo</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of what's currently shown here.">&#9210; Record</button>
 </div>

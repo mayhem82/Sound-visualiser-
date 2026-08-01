@@ -258,7 +258,9 @@
 
   let activeRoom = null;
   let splitAllowed = false;
-  let splitOn = true;
+  // Starts on the plain correction view — showing both is an ability you
+  // reach for with the button, not something forced on you by default.
+  let splitOn = false;
 
   function applySplitVisibility(dual) {
     splitAllowed = dual;
@@ -271,7 +273,7 @@
   splitToggleBtn.addEventListener("click", () => {
     splitOn = !splitOn;
     splitToggleBtn.setAttribute("aria-pressed", String(splitOn));
-    splitToggleBtn.textContent = splitOn ? "Split view" : "Modified only";
+    splitToggleBtn.textContent = splitOn ? "Correction only" : "Compare with original";
     applySplitVisibility(splitAllowed);
   });
 
@@ -283,9 +285,9 @@
     }
 
     if (activeRoom) activeRoom.teardown();
-    splitOn = true;
-    splitToggleBtn.setAttribute("aria-pressed", "true");
-    splitToggleBtn.textContent = "Split view";
+    splitOn = false;
+    splitToggleBtn.setAttribute("aria-pressed", "false");
+    splitToggleBtn.textContent = "Compare with original";
     applySplitVisibility(false);
 
     connectBtn.disabled = true;
