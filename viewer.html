@@ -10,11 +10,11 @@
 </head>
 <body>
 <div id="stage">
-  <div class="pane" id="pane1">
+  <div class="pane hide" id="pane1">
     <video id="video1" playsinline autoplay muted></video>
     <p class="pane-badge hide" id="badge1" aria-live="polite"></p>
   </div>
-  <div class="pane hide" id="pane2">
+  <div class="pane" id="pane2">
     <video id="video2" playsinline autoplay muted></video>
     <p class="pane-badge hide" id="badge2" aria-live="polite"></p>
   </div>
@@ -23,25 +23,25 @@
 <div id="overlay">
   <div id="panel">
     <h1>Viewer mode</h1>
-    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get the room code from that device's "Connect tablet" panel, type it in below, and tap Connect.</p>
+    <p>Shows a live, read-only view of what's being corrected on another device — this page never opens its own camera. Get the room code from that device's "Connect tablet" panel, type it in below, and tap Connect. If that device is sending both the original and corrected feed, they'll show here side by side, split screen.</p>
 
     <label class="field-label">
       Room code
       <input id="roomInput" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
     </label>
-
-    <label class="field-label">
-      Second room code (optional)
-      <input id="roomInput2" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
-    </label>
-    <p class="hint">Watching two devices at once? Add a second room code to see both side by side, split screen.</p>
-
     <button id="connectBtn">Connect</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
   </div>
 </div>
+
+<div id="hud" class="hide">
+  <button id="splitToggleBtn" class="hud-btn hide" aria-pressed="true" title="Toggle between split view (original + modified) and modified only, full screen.">Split view</button>
+  <button id="photoBtn" class="hud-btn" title="Take a photo of what's currently shown here.">&#128247; Photo</button>
+  <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of what's currently shown here.">&#9210; Record</button>
+</div>
+<p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
 
 <script src="viewer.js"></script>
 </body>

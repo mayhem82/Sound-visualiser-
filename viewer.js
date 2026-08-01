@@ -25,15 +25,20 @@
   const overlay = document.getElementById("overlay");
   const stage = document.getElementById("stage");
   const roomInput = document.getElementById("roomInput");
-  const roomInput2 = document.getElementById("roomInput2");
   const connectBtn = document.getElementById("connectBtn");
   const statusEl = document.getElementById("status");
-  const pane1 = document.getElementById("pane1");
-  const pane2 = document.getElementById("pane2");
+  const pane1 = document.getElementById("pane1"); // "Original"
+  const pane2 = document.getElementById("pane2"); // "Modified" — also the single-stream fallback pane
   const video1 = document.getElementById("video1");
   const video2 = document.getElementById("video2");
   const badge1 = document.getElementById("badge1");
   const badge2 = document.getElementById("badge2");
+  const hud = document.getElementById("hud");
+  const splitToggleBtn = document.getElementById("splitToggleBtn");
+  const photoBtn = document.getElementById("photoBtn");
+  const recordBtn = document.getElementById("recordBtn");
+  const recordingIndicator = document.getElementById("recordingIndicator");
+  const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
 
   function makeDeviceId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -80,22 +85,25 @@
     });
   }
 
-  // One independent pairing session per pane — its own device ID, MQTT
-  // connections and RTCPeerConnection — so watching two devices at once
-  // (split screen) is just two of these running side by side, same as this
-  // author's darts scorer app watching two dartboards at once.
-  function connectPane(room, videoEl, badgeEl) {
+  // ---- Single-room pairing, up to two tracks ----
+  // The broadcaster (colorvision.js / restore.js) sends its corrected
+  // canvas feed and, alongside it, a second "original" feed straight from
+  // the camera — same orientation handling, no colour correction — so this
+  // page can show both at once for comparison. Which incoming WebRTC track
+  // is which is carried as plain metadata on the "offer" signaling message
+  // (correctedStreamId / originalStreamId, matched against the MediaStream
+  // id WebRTC preserves end-to-end) rather than guessed from arrival order,
+  // since track event ordering isn't guaranteed. Older/other broadcasters
+  // that only ever send one stream still work — it lands in the "Modified"
+  // pane and the "Original" pane just stays hidden, single full screen.
+  function connectRoom(room) {
     const deviceId = makeDeviceId();
     let clients = [];
     let pc = null;
     let heartbeatTimer = null;
     let torn = false;
-
-    function setBadge(text, ok) {
-      badgeEl.textContent = text || "";
-      badgeEl.classList.toggle("hide", !text);
-      badgeEl.classList.toggle("ok", !!ok);
-    }
+    let pendingIds = null;
+    let dual = false;
 
     function publish(fields, opts) {
       opts = opts || {};
@@ -117,25 +125,54 @@
       heartbeatTimer = setInterval(() => publish({ type: "viewer-here" }), 3000);
     }
 
+    function setBadges(text, ok) {
+      if (dual) {
+        badge1.textContent = `Original — ${text}`;
+        badge2.textContent = `Modified — ${text}`;
+      } else {
+        badge1.textContent = "";
+        badge2.textContent = text;
+      }
+      badge1.classList.toggle("hide", !dual);
+      badge2.classList.remove("hide");
+      badge1.classList.toggle("ok", !!ok);
+      badge2.classList.toggle("ok", !!ok);
+    }
+
     async function handleOffer(msg) {
       // Ignore duplicate delivery of the same offer — it arrives once per
       // connected broker (up to 3x), and would otherwise tear down and
       // restart a negotiation that's already in progress/connected.
       if (pc && ["new", "connecting", "connected"].includes(pc.connectionState)) return;
 
+      pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
+      dual = !!(pendingIds.corrected && pendingIds.original);
+      applySplitVisibility(dual);
+
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
       pc.addEventListener("track", (e) => {
-        videoEl.srcObject = e.streams[0];
+        const streamId = e.streams[0] && e.streams[0].id;
+        let target = video2;
+        if (pendingIds && streamId === pendingIds.original) {
+          target = video1;
+        } else if (pendingIds && streamId === pendingIds.corrected) {
+          target = video2;
+        } else if (dual) {
+          // Metadata didn't match (shouldn't normally happen) — fall back
+          // to arrival order: whichever pane is still empty gets it next.
+          target = video1.srcObject ? video2 : video1;
+        }
+        target.srcObject = e.streams[0];
       });
 
       pc.addEventListener("connectionstatechange", () => {
         if (!pc || torn) return;
         if (pc.connectionState === "connected") {
-          setBadge(`● Room ${room}`, true);
+          setBadges("connected", true);
           stopHeartbeat();
         } else if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-          setBadge(`Room ${room} — connection lost`, false);
+          setBadges("connection lost", false);
         }
       });
 
@@ -145,9 +182,9 @@
         await pc.setLocalDescription(answer);
         await waitForIceGatheringComplete(pc);
         publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
-        setBadge(`Room ${room} — connecting…`, false);
+        setBadges("connecting…", false);
       } catch (err) {
-        setBadge(`Room ${room} — ` + (err.message || err.name || "couldn't connect"), false);
+        setBadges(err.message || err.name || "couldn't connect", false);
       }
     }
 
@@ -158,13 +195,13 @@
       if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
     }
 
-    setBadge(`Room ${room} — connecting to relay…`, false);
+    setBadges("connecting to relay…", false);
 
-    // Resolves once this pane has reached a relay and is waiting to be
+    // Resolves once this room has reached a relay and is waiting to be
     // paired — not once the video itself is flowing, which can take a bit
     // longer. That's enough to know the room code was valid and there's a
-    // real path forward, so the join screen can hand off to this pane's
-    // own on-video status badge instead of blocking further.
+    // real path forward, so the join screen can hand off to the on-video
+    // status badges instead of blocking further.
     const ready = new Promise((resolveReady, rejectReady) => {
       loadMqttLib().then(() => {
         if (torn) { rejectReady(new Error("cancelled")); return; }
@@ -176,7 +213,7 @@
             client.subscribe(topic, { qos: 1 });
             if (!resolved) {
               resolved = true;
-              setBadge(`Room ${room} — waiting for other device…`, false);
+              setBadges("waiting for other device…", false);
               startHeartbeat();
               resolveReady();
             }
@@ -189,12 +226,12 @@
 
         setTimeout(() => {
           if (resolved || torn) return;
-          setBadge(`Room ${room} — couldn't reach a relay`, false);
+          setBadges("couldn't reach a relay", false);
           rejectReady(new Error("Couldn't reach a relay — check your internet connection and try again."));
         }, 9000);
       }).catch((err) => {
         if (torn) return;
-        setBadge(err.message || `Room ${room} — couldn't load pairing library`, false);
+        setBadges(err.message || "couldn't load pairing library", false);
         rejectReady(err);
       });
     });
@@ -207,72 +244,225 @@
         if (pc) { pc.close(); pc = null; }
         clients.forEach((c) => { try { c.end(true); } catch (e) {} });
         clients = [];
-        videoEl.srcObject = null;
+        video1.srcObject = null;
+        video2.srcObject = null;
       }
     };
   }
 
-  let teardownFns = [];
+  let activeRoom = null;
+  let splitAllowed = false;
+  let splitOn = true;
+
+  function applySplitVisibility(dual) {
+    splitAllowed = dual;
+    splitToggleBtn.classList.toggle("hide", !dual);
+    const showSplit = dual && splitOn;
+    stage.classList.toggle("split", showSplit);
+    pane1.classList.toggle("hide", !showSplit);
+  }
+
+  splitToggleBtn.addEventListener("click", () => {
+    splitOn = !splitOn;
+    splitToggleBtn.setAttribute("aria-pressed", String(splitOn));
+    splitToggleBtn.textContent = splitOn ? "Split view" : "Modified only";
+    applySplitVisibility(splitAllowed);
+  });
 
   function connect() {
-    const codes = [roomInput.value.trim().toUpperCase(), roomInput2.value.trim().toUpperCase()]
-      .filter((c) => c.length >= 4);
-    if (!codes.length) {
+    const room = roomInput.value.trim().toUpperCase();
+    if (room.length < 4) {
       setStatus("Enter the room code shown on the other device.");
       return;
     }
 
-    teardownFns.forEach((fn) => fn());
-    teardownFns = [];
+    if (activeRoom) activeRoom.teardown();
+    splitOn = true;
+    splitToggleBtn.setAttribute("aria-pressed", "true");
+    splitToggleBtn.textContent = "Split view";
+    applySplitVisibility(false);
 
     connectBtn.disabled = true;
     setStatus("Connecting…");
 
-    const dual = codes.length > 1;
-    stage.classList.toggle("split", dual);
-    pane2.classList.toggle("hide", !dual);
-
-    const panes = [connectPane(codes[0], video1, badge1)];
-    if (dual) panes.push(connectPane(codes[1], video2, badge2));
-    teardownFns = panes.map((p) => p.teardown);
-
-    Promise.allSettled(panes.map((p) => p.ready)).then((results) => {
-      const anyReached = results.some((r) => r.status === "fulfilled");
-      if (anyReached) {
-        overlay.classList.add("hide");
-        setStatus("");
-      } else {
-        // No pane could even reach a relay — nothing worth watching, so
-        // hand control back instead of leaving a black screen with no way
-        // to retry short of reloading the page.
-        teardownFns.forEach((fn) => fn());
-        teardownFns = [];
-        stage.classList.remove("split");
-        pane2.classList.add("hide");
-        badge1.classList.add("hide");
-        badge2.classList.add("hide");
-        const firstError = results.find((r) => r.status === "rejected");
-        setStatus((firstError && firstError.reason && firstError.reason.message) ||
-          "Couldn't connect. Check your internet connection and try again.");
-        connectBtn.disabled = false;
-      }
+    activeRoom = connectRoom(room);
+    activeRoom.ready.then(() => {
+      overlay.classList.add("hide");
+      setStatus("");
+      hud.classList.remove("hide");
+      startCompositeLoop();
+    }).catch((err) => {
+      // Couldn't even reach a relay — nothing worth watching, so hand
+      // control back instead of leaving a black screen with no way to
+      // retry short of reloading the page.
+      activeRoom = null;
+      applySplitVisibility(false);
+      setStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
+      connectBtn.disabled = false;
     });
   }
 
   connectBtn.addEventListener("click", connect);
   roomInput.addEventListener("keypress", (e) => { if (e.key === "Enter") connect(); });
-  roomInput2.addEventListener("keypress", (e) => { if (e.key === "Enter") connect(); });
+
+  // ---- Photo + video capture of whatever's currently on screen ----
+  // Draws whichever panes are actually visible into an offscreen canvas,
+  // positioned and scaled to match their real on-screen layout (read
+  // straight from getBoundingClientRect, so it stays correct through
+  // split/stacked/single-pane and portrait/landscape without duplicating
+  // the CSS grid logic in JS) — then that canvas is what gets
+  // photographed or recorded, same captureStream()+MediaRecorder pattern
+  // as the broadcaster side (colorvision.js / restore.js).
+  const captureCanvas = document.createElement("canvas");
+  const captureCtx = captureCanvas.getContext("2d", { willReadFrequently: false });
+  let compositeRafId = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordingMimeType = "";
+  let isRecording = false;
+  let recordingStartedAt = 0;
+  let recordingTimerId = null;
+
+  function resizeCaptureCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    captureCanvas.width = Math.round(window.innerWidth * dpr);
+    captureCanvas.height = Math.round(window.innerHeight * dpr);
+  }
+  resizeCaptureCanvas();
+  window.addEventListener("resize", resizeCaptureCanvas);
+
+  function drawComposite() {
+    const dpr = captureCanvas.width / window.innerWidth;
+    captureCtx.fillStyle = "#000";
+    captureCtx.fillRect(0, 0, captureCanvas.width, captureCanvas.height);
+    [pane1, pane2].forEach((paneEl) => {
+      if (paneEl.classList.contains("hide")) return;
+      const videoEl = paneEl.querySelector("video");
+      if (!videoEl || !videoEl.videoWidth) return;
+      const rect = paneEl.getBoundingClientRect();
+      const dx = rect.left * dpr, dy = rect.top * dpr, dw = rect.width * dpr, dh = rect.height * dpr;
+      // Reproduce the pane's CSS "object-fit: contain" so the capture
+      // matches what's actually visible instead of stretching to fill it.
+      const vAspect = videoEl.videoWidth / videoEl.videoHeight;
+      const rAspect = dw / dh;
+      let drawW, drawH, offX, offY;
+      if (vAspect > rAspect) {
+        drawW = dw; drawH = dw / vAspect; offX = 0; offY = (dh - drawH) / 2;
+      } else {
+        drawH = dh; drawW = dh * vAspect; offY = 0; offX = (dw - drawW) / 2;
+      }
+      captureCtx.drawImage(videoEl, dx + offX, dy + offY, drawW, drawH);
+    });
+  }
+
+  function compositeLoop() {
+    drawComposite();
+    compositeRafId = requestAnimationFrame(compositeLoop);
+  }
+
+  function startCompositeLoop() {
+    if (compositeRafId) return;
+    compositeLoop();
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function timestampForFilename() {
+    return new Date().toISOString().replace(/[:.]/g, "-");
+  }
+
+  function takePhoto() {
+    drawComposite();
+    captureCanvas.toBlob((blob) => {
+      if (!blob) { setStatus("Couldn't capture a photo — try again."); return; }
+      downloadBlob(blob, `colour-vision-viewer-photo-${timestampForFilename()}.png`);
+    }, "image/png");
+  }
+
+  function pickRecordingMimeType() {
+    if (typeof MediaRecorder === "undefined") return "";
+    const candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
+    return candidates.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+  }
+
+  function updateRecordingLabel() {
+    const secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+    const ss = String(secs % 60).padStart(2, "0");
+    recordBtn.textContent = `⏹ ${mm}:${ss}`;
+    recordingIndicatorTime.textContent = `${mm}:${ss}`;
+  }
+
+  function startRecording() {
+    if (isRecording) return;
+    recordingMimeType = pickRecordingMimeType();
+    if (!recordingMimeType) {
+      setStatus("Video recording isn't supported in this browser.");
+      return;
+    }
+    let stream;
+    try {
+      stream = captureCanvas.captureStream(30);
+    } catch (err) {
+      setStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
+      return;
+    }
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: recordingMimeType });
+    mediaRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+    mediaRecorder.addEventListener("stop", () => {
+      const ext = recordingMimeType.includes("mp4") ? "mp4" : "webm";
+      const blob = new Blob(recordedChunks, { type: recordingMimeType });
+      recordedChunks = [];
+      if (blob.size > 0) {
+        downloadBlob(blob, `colour-vision-viewer-video-${timestampForFilename()}.${ext}`);
+      } else {
+        setStatus("Recording produced no data — try again.");
+      }
+    });
+    mediaRecorder.start();
+    isRecording = true;
+    recordingStartedAt = Date.now();
+    recordBtn.classList.add("recording");
+    recordBtn.setAttribute("aria-pressed", "true");
+    recordingIndicator.classList.remove("hide");
+    updateRecordingLabel();
+    recordingTimerId = setInterval(updateRecordingLabel, 500);
+  }
+
+  function stopRecording() {
+    if (!isRecording || !mediaRecorder) return;
+    mediaRecorder.stop();
+    isRecording = false;
+    recordBtn.classList.remove("recording");
+    recordBtn.setAttribute("aria-pressed", "false");
+    recordBtn.textContent = "⏺ Record";
+    recordingIndicator.classList.add("hide");
+    if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
+  }
+
+  photoBtn.addEventListener("click", takePhoto);
+  recordBtn.addEventListener("click", () => {
+    if (isRecording) stopRecording();
+    else startRecording();
+  });
 
   // A "Start live sharing" link on the broadcaster side can embed the room
   // code as ?room=CODE so opening it is enough — no typing needed at all.
-  // Two comma-separated codes (?room=CODE1,CODE2) prefill both fields and
-  // connect straight to split screen, same convention as the darts
-  // scorer's dual-board live view.
-  const prefilledRooms = (new URLSearchParams(location.search).get("room") || "")
-    .split(",").map((r) => r.trim().toUpperCase()).filter((r) => r.length >= 4).slice(0, 2);
-  if (prefilledRooms.length) {
-    roomInput.value = prefilledRooms[0];
-    if (prefilledRooms[1]) roomInput2.value = prefilledRooms[1];
+  const prefilledRoom = new URLSearchParams(location.search).get("room");
+  if (prefilledRoom) {
+    roomInput.value = prefilledRoom.trim().toUpperCase();
     connect();
   }
 })();

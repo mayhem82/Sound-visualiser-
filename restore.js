@@ -180,6 +180,11 @@
   let recordingStartedAt = 0;
   let recordingTimerId = null;
   let gl, program, uniforms, quadBuffer, videoTexture;
+  // Lazily created only once a viewer actually connects — a second,
+  // colour-correction-free feed of the same camera view (orientation
+  // handling included) so the viewer can show "what the camera really
+  // sees" alongside the corrected view instead of just the corrected one.
+  let originalCanvas = null, originalCtx = null;
   let rafId = null;
   let aimIntervalId = null;
 
@@ -569,6 +574,25 @@
     stage.width = Math.round(window.innerWidth * dpr);
     stage.height = Math.round(window.innerHeight * dpr);
     if (gl) gl.viewport(0, 0, stage.width, stage.height);
+    if (originalCanvas) {
+      originalCanvas.width = stage.width;
+      originalCanvas.height = stage.height;
+    }
+  }
+
+  function ensureOriginalCanvas() {
+    if (originalCanvas) return;
+    originalCanvas = document.createElement("canvas");
+    originalCanvas.width = stage.width;
+    originalCanvas.height = stage.height;
+    // Off-screen but still in the document and not display:none — some
+    // browsers (notably WebKit) throttle or stop updating captureStream()
+    // output from a canvas that's display:none or never painted.
+    originalCanvas.style.position = "fixed";
+    originalCanvas.style.left = "-99999px";
+    originalCanvas.style.top = "0";
+    document.body.appendChild(originalCanvas);
+    originalCtx = originalCanvas.getContext("2d");
   }
 
   // Resizing a canvas clears its bitmap, which would silently wipe a
@@ -637,6 +661,20 @@
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      if (originalCtx) {
+        // Same rotate180 handling as the corrected view above, so the two
+        // stay in matching orientation — otherwise "original" vs
+        // "corrected" side by side would be comparing a sideways/upside-
+        // down frame against a right-way-up one on phones that need it.
+        originalCtx.save();
+        if (rotate180) {
+          originalCtx.translate(originalCanvas.width, originalCanvas.height);
+          originalCtx.rotate(Math.PI);
+        }
+        originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
+        originalCtx.restore();
+      }
     }
     rafId = requestAnimationFrame(renderLoop);
   }
@@ -1001,13 +1039,24 @@
       viewerStatus.textContent = "Viewer streaming isn't supported in this browser.";
       return;
     }
+    ensureOriginalCanvas();
+
     const entry = { pc: null };
     broadcastShare.peers.set(viewerId, entry);
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     entry.pc = pc;
-    const stream = stage.captureStream(30);
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    // Two separate MediaStreams (not two tracks on one stream — a <video>
+    // element only ever renders one video track per stream) so the viewer
+    // can tell them apart and show both at once, original alongside
+    // corrected. WebRTC preserves each MediaStream's id end-to-end (it's
+    // part of the SDP as the track's msid), so that id — sent as plain
+    // metadata on the offer below — is what the viewer matches against,
+    // rather than guessing from which track event fires first.
+    const correctedStream = stage.captureStream(30);
+    const originalStream = originalCanvas.captureStream(30);
+    correctedStream.getTracks().forEach((t) => pc.addTrack(t, correctedStream));
+    originalStream.getTracks().forEach((t) => pc.addTrack(t, originalStream));
 
     pc.addEventListener("connectionstatechange", () => {
       if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
@@ -1020,7 +1069,13 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await waitForIceGatheringComplete(pc);
-      publishSignal({ type: "offer", to: viewerId, sdp: pc.localDescription.sdp }, { qos: 1 });
+      publishSignal({
+        type: "offer",
+        to: viewerId,
+        sdp: pc.localDescription.sdp,
+        correctedStreamId: correctedStream.id,
+        originalStreamId: originalStream.id
+      }, { qos: 1 });
     } catch (err) {
       broadcastShare.peers.delete(viewerId);
       viewerStatus.textContent = "Couldn't connect to the other device: " + (err.message || err.name || "unknown error");
