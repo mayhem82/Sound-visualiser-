@@ -33,6 +33,21 @@ are hidden. Double-tap again to bring it back.
 The microphone stream is only analysed, never connected to audio output, so
 there's no feedback loop.
 
+## Mic mode: Voice / Music (Spotify)
+
+By default the mic is requested with the browser's default constraints,
+which turn on echo cancellation and noise suppression tuned for speech.
+That's normally desirable, but on a phone it also treats music playing out
+of the phone's own speaker (e.g. Spotify) as "echo" and suppresses it, so
+the visualiser reacts to your voice but barely to the music.
+
+The **Mic mode** button in the HUD toggles this: switching it to "Music
+(Spotify)" re-requests the microphone with echo cancellation, noise
+suppression, and auto gain control all turned off, so it also picks up
+audio playing out loud. Toggling it while already running swaps the live
+mic stream in place — no need to restart. The choice is remembered for next
+time.
+
 ## Flash + vibrate on beat
 
 The **Flash + vibrate on beat** button arms a simple bass-onset detector
