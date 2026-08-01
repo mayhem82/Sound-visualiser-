@@ -1392,6 +1392,9 @@
     // first beat flips it.
     blendSlider.value = "100";
     blendLabel.textContent = "100%";
+    // Locked while flash mode is on so it can't be manually dragged back to
+    // a true/uncorrected view — flash mode's whole point is never showing it.
+    blendSlider.disabled = true;
     colourVisionFlashBtn.textContent = "Colour vision flash mode: On";
     colourVisionFlashBtn.classList.add("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "true");
@@ -1402,6 +1405,7 @@
     colourVisionFlashBtn.textContent = "Colour vision flash mode: Off";
     colourVisionFlashBtn.classList.remove("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "false");
+    blendSlider.disabled = false;
     blendSlider.value = "0";
     blendLabel.textContent = "0%";
     // Restore the normal calibrated view — every saved point blended

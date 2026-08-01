@@ -199,6 +199,11 @@ html, body {
   accent-color: #7dd3fc;
 }
 
+.hud-slider input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .hud-slider select {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);
