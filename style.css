@@ -131,6 +131,14 @@ html, body {
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: calc(100vw - 32px);
+  /* With enough controls (e.g. the Sound Nebula HUD once camera
+     background + colour vision are both on), this can grow taller than
+     the viewport — without a cap it just keeps extending past the bottom
+     edge with no way to reach what's cut off, since body has
+     overflow:hidden. Capping it and scrolling internally instead keeps
+     everything reachable. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   z-index: 2;
 }
 

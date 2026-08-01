@@ -6,10 +6,12 @@
 <title>Sound Visualiser — Nebula</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="colorvision.css">
 </head>
 <body>
 <canvas id="stage"></canvas>
 <video id="cameraFeed" playsinline muted hidden></video>
+<canvas id="sampleCanvas" hidden></canvas>
 <div id="blackout" aria-hidden="true"></div>
 <div id="screenFlash" aria-hidden="true"></div>
 
@@ -64,6 +66,31 @@
     </div>
   </div>
   <button id="cameraBgBtn" class="hud-btn" aria-pressed="false" title="Show the live camera feed behind the particles instead of a plain dark background — party mode.">Camera background: Off</button>
+  <button id="colourVisionBtn" class="hud-btn" aria-pressed="false" title="Apply Colour Vision Assist's correction to the camera background — turns the camera background on too if it isn't already.">Colour vision: Off</button>
+  <label id="blendWrap" class="hud-slider hide" title="0% shows the true camera image. 100% shows the fully corrected image.">
+    True &harr; Corrected: <span id="blendLabel">100%</span>
+    <input id="blendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="cvdTypeWrap" class="hud-slider hide" title="Applies a whole-frame correction tuned to a diagnosed colour vision deficiency type, independent of any colours you calibrate by hand below.">
+    Colour blindness type:
+    <select id="cvdTypeSelect">
+      <option value="none">None (manual only)</option>
+      <option value="protan">Protanopia (red-weak)</option>
+      <option value="deutan">Deuteranopia (green-weak)</option>
+      <option value="tritan">Tritanopia (blue-yellow)</option>
+    </select>
+  </label>
+  <label id="cvdStrengthWrap" class="hud-slider hide" title="How strongly the type-based correction is applied. Lower it if the full correction looks over-saturated or unnatural for your degree of colour vision deficiency.">
+    Type correction: <span id="cvdStrengthLabel">100%</span>
+    <input id="cvdStrengthSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="spreadWrap" class="hud-slider hide" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
+    Correction spread: <span id="spreadLabel">Medium</span>
+    <input id="spreadSlider" type="range" min="1" max="40" value="4">
+  </label>
+  <button id="calibrateBtn" class="hud-btn hide">Calibrate a colour</button>
+  <button id="pointsBtn" class="hud-btn hide">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="rotateBtn" class="hud-btn hide" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this visualisation to another device (e.g. a tablet or TV) as a read-only viewer.">Connect tablet</button>
   <a href="colorvision.html" class="hud-btn">Colour Vision &rarr;</a>
   <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
@@ -89,6 +116,105 @@
     <div class="tune-actions">
       <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
     </div>
+  </div>
+</div>
+
+<div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
+  <div id="choosePanelInner">
+    <h2 id="choosePanelTitle">Choose a colour to calibrate</h2>
+    <p class="hint">Aim at a real colour with the camera, pick one exactly, or start from a colour commonly confused in colour vision deficiency.</p>
+
+    <div class="choose-actions">
+      <button id="chooseAimBtn" class="hud-btn">Aim with camera</button>
+      <label id="colourPickerWrap" class="hud-btn choose-picker-btn">
+        Colour picker
+        <input id="colourPickerInput" type="color" value="#ff0000" aria-label="Pick an exact colour to calibrate">
+      </label>
+    </div>
+
+    <h3 id="presetGridTitle">Common CVD confusion colours</h3>
+    <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
+
+    <button id="closeChooseBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<div id="reticleLayer" class="hide">
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
+  <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
+  <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
+</div>
+
+<div id="tunePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="tunePanelTitle">
+  <div id="tunePanelInner">
+    <h2 id="tunePanelTitle">Tune until it's recognisable</h2>
+
+    <div class="swatch-row">
+      <div class="swatch-block">
+        <div id="swatchOriginal" class="swatch"></div>
+        <span>What the camera sees</span>
+        <p id="swatchOriginalName" class="color-name"></p>
+      </div>
+      <div class="swatch-block">
+        <div id="swatchCorrected" class="swatch"></div>
+        <span>Your correction</span>
+        <p id="swatchCorrectedName" class="color-name"></p>
+      </div>
+    </div>
+
+    <label class="hud-slider">
+      Hue shift: <span id="hueLabel">0&deg;</span>
+      <input id="hueSlider" type="range" min="-180" max="180" value="0">
+    </label>
+    <label class="hud-slider">
+      Saturation: <span id="satLabel">0%</span>
+      <input id="satSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Lightness: <span id="lightLabel">0%</span>
+      <input id="lightSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Contrast: <span id="contrastLabel">0%</span>
+      <input id="contrastSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Exposure: <span id="exposureLabel">0%</span>
+      <input id="exposureSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Label (optional)
+      <input id="labelInput" type="text" placeholder="e.g. traffic light red" maxlength="40">
+    </label>
+
+    <div class="tune-actions">
+      <button id="savePointBtn" class="hud-btn">Save this colour</button>
+      <button id="deletePointBtn" class="hud-btn reticle-btn-secondary hide">Delete</button>
+      <button id="closeTuneBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="pointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="pointsPanelTitle">
+  <div id="pointsPanelInner">
+    <h2 id="pointsPanelTitle">Saved colours</h2>
+    <p class="hint" id="pointsHint">Tap a colour to review or re-tune it.</p>
+    <div id="pointsGrid"></div>
+    <p id="importExportStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="points-actions">
+      <button id="selectModeBtn" class="hud-btn reticle-btn-secondary" aria-pressed="false">Select</button>
+      <button id="deleteSelectedBtn" class="hud-btn reticle-btn-secondary hide">Delete selected (<span id="selectedCount">0</span>)</button>
+      <button id="clearAllBtn" class="hud-btn reticle-btn-secondary">Clear all</button>
+    </div>
+    <div class="tune-actions">
+      <button id="exportBtn" class="hud-btn reticle-btn-secondary">Export</button>
+      <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden>
+    </div>
+    <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>
 

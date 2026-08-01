@@ -28,6 +28,65 @@
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const cameraBgBtn = document.getElementById("cameraBgBtn");
   const cameraFeed = document.getElementById("cameraFeed");
+  const sampleCanvas = document.getElementById("sampleCanvas");
+  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  const colourVisionBtn = document.getElementById("colourVisionBtn");
+  const blendWrap = document.getElementById("blendWrap");
+  const blendSlider = document.getElementById("blendSlider");
+  const blendLabel = document.getElementById("blendLabel");
+  const cvdTypeWrap = document.getElementById("cvdTypeWrap");
+  const cvdTypeSelect = document.getElementById("cvdTypeSelect");
+  const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
+  const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
+  const cvdStrengthLabel = document.getElementById("cvdStrengthLabel");
+  const spreadWrap = document.getElementById("spreadWrap");
+  const spreadSlider = document.getElementById("spreadSlider");
+  const spreadLabel = document.getElementById("spreadLabel");
+  const calibrateBtn = document.getElementById("calibrateBtn");
+  const pointsBtn = document.getElementById("pointsBtn");
+  const pointsCount = document.getElementById("pointsCount");
+  const rotateBtn = document.getElementById("rotateBtn");
+  const choosePanel = document.getElementById("choosePanel");
+  const chooseAimBtn = document.getElementById("chooseAimBtn");
+  const colourPickerInput = document.getElementById("colourPickerInput");
+  const presetGrid = document.getElementById("presetGrid");
+  const closeChooseBtn = document.getElementById("closeChooseBtn");
+  const reticleLayer = document.getElementById("reticleLayer");
+  const reticleSwatch = document.getElementById("reticleSwatch");
+  const reticleColorName = document.getElementById("reticleColorName");
+  const freezeBtn = document.getElementById("freezeBtn");
+  const cancelAimBtn = document.getElementById("cancelAimBtn");
+  const tunePanel = document.getElementById("tunePanel");
+  const swatchOriginal = document.getElementById("swatchOriginal");
+  const swatchCorrected = document.getElementById("swatchCorrected");
+  const swatchOriginalName = document.getElementById("swatchOriginalName");
+  const swatchCorrectedName = document.getElementById("swatchCorrectedName");
+  const hueSlider = document.getElementById("hueSlider");
+  const satSlider = document.getElementById("satSlider");
+  const lightSlider = document.getElementById("lightSlider");
+  const contrastSlider = document.getElementById("contrastSlider");
+  const exposureSlider = document.getElementById("exposureSlider");
+  const hueLabel = document.getElementById("hueLabel");
+  const satLabel = document.getElementById("satLabel");
+  const lightLabel = document.getElementById("lightLabel");
+  const contrastLabel = document.getElementById("contrastLabel");
+  const exposureLabel = document.getElementById("exposureLabel");
+  const labelInput = document.getElementById("labelInput");
+  const savePointBtn = document.getElementById("savePointBtn");
+  const deletePointBtn = document.getElementById("deletePointBtn");
+  const closeTuneBtn = document.getElementById("closeTuneBtn");
+  const pointsPanel = document.getElementById("pointsPanel");
+  const pointsGrid = document.getElementById("pointsGrid");
+  const pointsHint = document.getElementById("pointsHint");
+  const closePointsBtn = document.getElementById("closePointsBtn");
+  const selectModeBtn = document.getElementById("selectModeBtn");
+  const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
+  const selectedCount = document.getElementById("selectedCount");
+  const clearAllBtn = document.getElementById("clearAllBtn");
+  const exportBtn = document.getElementById("exportBtn");
+  const importBtn = document.getElementById("importBtn");
+  const importFile = document.getElementById("importFile");
+  const importExportStatus = document.getElementById("importExportStatus");
   const viewerPanel = document.getElementById("viewerPanel");
   const startShareBtn = document.getElementById("startShareBtn");
   const shareCodeBlock = document.getElementById("shareCodeBlock");
@@ -57,6 +116,14 @@
   let audioCtx, analyser, freqData, timeData, source, stream, nyquist;
   let cameraBackgroundEnabled = false;
   let cameraStream = null;
+  // Declared up here (not down with the rest of the colour-vision state,
+  // near where it's used) because resize() — called immediately below —
+  // already calls resizeCorrectionCanvas(), which reads correctionCanvas.
+  // A let binding referenced before its own declaration line has run
+  // throws (temporal dead zone), even though the *function* referencing it
+  // is safely hoisted; only actually needs to exist as null this early.
+  let correctionCanvas = null, correctionGl = null, correctionProgram = null,
+    correctionUniforms = null, correctionQuadBuffer = null, correctionVideoTexture = null;
   let width, height, cx, cy, dpr;
   let particles = [];
   let running = false;
@@ -143,6 +210,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cx = width / 2;
     cy = height / 2;
+    resizeCorrectionCanvas();
   }
   window.addEventListener("resize", resize);
   resize();
@@ -487,6 +555,20 @@
     if (!cameraFeed || cameraFeed.readyState < cameraFeed.HAVE_CURRENT_DATA) return;
     const vw = cameraFeed.videoWidth, vh = cameraFeed.videoHeight;
     if (!vw || !vh) return;
+
+    if (colourVisionEnabled && correctionGl) {
+      // Colour Vision Assist's full correction (calibrated points + CVD
+      // simulation + blend), rendered into an off-screen WebGL canvas from
+      // the same cameraFeed, then blitted here — this <video> element only
+      // ever has one raw feed, so the corrected version needs somewhere
+      // else to be composited before it can be drawn as the background.
+      renderCorrectionFrame(vw, vh);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.drawImage(correctionCanvas, 0, 0, width, height);
+      return;
+    }
+
     // "object-fit: cover" crop, same technique as colorvision.js/restore.js
     // use for their own camera view, so the feed fills the screen without
     // stretching regardless of how its aspect ratio compares to the
@@ -554,6 +636,934 @@
     } else {
       enableCameraBackground();
     }
+  }
+
+  // ---- Colour Vision Assist, live on the camera background ----
+  // The full correction engine from colorvision.html/colorvision.js —
+  // calibrated points, colour-blindness-type simulation, blend — applied
+  // to the same camera background above instead of navigating away to a
+  // separate page. Persists to the exact same localStorage keys, so any
+  // colours already calibrated on colorvision.html show up here too, and
+  // vice versa. Renders into its own off-screen WebGL canvas (see
+  // renderCorrectionFrame / drawCameraBackground above) since cameraFeed
+  // only ever holds the one raw feed.
+
+  const MAX_POINTS = 32;
+  const CV_STORAGE_KEY = "cvCalibrationPoints_v1";
+  const CV_ROTATE_KEY = "cvRotate180_v1";
+  const CV_SPREAD_KEY = "cvSpread_v1";
+  const CV_DEFAULT_SPREAD = 4;
+  const CV_CVD_TYPE_KEY = "cvCvdType_v1";
+  const CV_CVD_STRENGTH_KEY = "cvCvdStrength_v1";
+  const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
+
+  // Colours commonly reported as confusable in red-green and blue-yellow CVD.
+  // Starting points, not a diagnosis — the user still verifies each one
+  // against their own vision.
+  const CVD_PRESETS = [
+    { label: "Traffic light red", hex: "#d1352b" },
+    { label: "Traffic light green", hex: "#3a9b5c" },
+    { label: "Ripe tomato red", hex: "#c82f1e" },
+    { label: "Unripe leaf green", hex: "#5c8a3a" },
+    { label: "Amber / brown", hex: "#a5661a" },
+    { label: "Grey (low-sat)", hex: "#8a8a8a" },
+    { label: "Purple", hex: "#7a4fb5" },
+    { label: "Blue", hex: "#2f6fd1" },
+    { label: "Orange", hex: "#e0792a" },
+    { label: "Pink", hex: "#d1668f" }
+  ];
+
+  let colourVisionEnabled = false;
+  let points = loadCvPoints();
+  let editingPointId = null;
+  let frozenColor = null;
+  let tuneReturnFocusEl = null;
+  let choosePanelReturnFocusEl = null;
+  let aiming = false;
+  let aimIntervalId = null;
+  let selectMode = false;
+  let selectedIds = new Set();
+  let rotate180 = loadRotatePref();
+  let spread = loadSpreadPref();
+  let cvdType = loadCvdTypePref();
+  let cvdStrength = loadCvdStrengthPref();
+
+  // ---- Colour math (mirrors the shader's math for JS-side previews) ----
+
+  function cvRgb2hsl(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      switch (max) {
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  }
+
+  function cvHsl2rgb(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r1 = 0, g1 = 0, b1 = 0;
+    if (h < 60) { r1 = c; g1 = x; b1 = 0; }
+    else if (h < 120) { r1 = x; g1 = c; b1 = 0; }
+    else if (h < 180) { r1 = 0; g1 = c; b1 = x; }
+    else if (h < 240) { r1 = 0; g1 = x; b1 = c; }
+    else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
+    else { r1 = c; g1 = 0; b1 = x; }
+    return [r1 + m, g1 + m, b1 + m];
+  }
+
+  function cvSrgbToLinear(c) {
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+
+  function cvRgb2lab(r, g, b) {
+    const rl = cvSrgbToLinear(r);
+    const gl_ = cvSrgbToLinear(g);
+    const bl = cvSrgbToLinear(b);
+    const X = rl * 0.4124564 + gl_ * 0.3575761 + bl * 0.1804375;
+    const Y = rl * 0.2126729 + gl_ * 0.7151522 + bl * 0.0721750;
+    const Z = rl * 0.0193339 + gl_ * 0.1191920 + bl * 0.9503041;
+    const Xn = 0.95047, Yn = 1.0, Zn = 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : t / (3 * 0.20705 * 0.20705) + 4 / 29);
+    const fx = f(X / Xn), fy = f(Y / Yn), fz = f(Z / Zn);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+
+  function cvApplyCorrection([r, g, b], hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust) {
+    let [h, s, l] = cvRgb2hsl(r, g, b);
+    h = (h + hueShift + 360) % 360;
+    s = Math.min(1, Math.max(0, s + satAdjust));
+    l = Math.min(1, Math.max(0, l + lightAdjust));
+    let [r1, g1, b1] = cvHsl2rgb(h, s, l);
+    const expMul = Math.pow(2, exposureAdjust || 0);
+    const contMul = 1 + (contrastAdjust || 0);
+    r1 = (r1 * expMul - 0.5) * contMul + 0.5;
+    g1 = (g1 * expMul - 0.5) * contMul + 0.5;
+    b1 = (b1 * expMul - 0.5) * contMul + 0.5;
+    return [cvClamp01(r1), cvClamp01(g1), cvClamp01(b1)];
+  }
+
+  function cvClamp01(v) {
+    return Math.min(1, Math.max(0, v));
+  }
+
+  function cvRgbToCss([r, g, b]) {
+    return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+  }
+
+  function cvHexToRgb01(hex) {
+    const m = hex.replace("#", "");
+    const r = parseInt(m.substring(0, 2), 16) / 255;
+    const g = parseInt(m.substring(2, 4), 16) / 255;
+    const b = parseInt(m.substring(4, 6), 16) / 255;
+    return [r, g, b];
+  }
+
+  // A colour swatch alone doesn't help the people this is for — the whole
+  // point is that colour perception can't be trusted, so every swatch also
+  // gets a plain-language name from a fixed palette of familiar terms.
+  function cvNearestColorName([r, g, b]) {
+    const [h, s, l] = cvRgb2hsl(r, g, b);
+    if (l < 0.10) return "black";
+    if (l > 0.94 && s < 0.12) return "white";
+    if (s < 0.14) return l < 0.35 ? "dark grey" : l > 0.75 ? "light grey" : "grey";
+    if (l < 0.28 && h >= 15 && h < 55 && s >= 0.25) return "brown";
+    if (h < 15 || h >= 345) return "red";
+    if (h < 45) return "orange";
+    if (h < 70) return "yellow";
+    if (h < 170) return "green";
+    if (h < 195) return "cyan";
+    if (h < 255) return "blue";
+    if (h < 290) return "purple";
+    if (h < 320) return "magenta";
+    return "pink";
+  }
+
+  // ---- Persistence (same keys as colorvision.html) ----
+
+  function loadCvPoints() {
+    try {
+      const raw = localStorage.getItem(CV_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveCvPoints() {
+    try {
+      localStorage.setItem(CV_STORAGE_KEY, JSON.stringify(points));
+    } catch (e) {
+      cvStatus("Could not save (storage full or unavailable).");
+    }
+  }
+
+  function loadRotatePref() {
+    try {
+      return localStorage.getItem(CV_ROTATE_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function saveRotatePref() {
+    try {
+      localStorage.setItem(CV_ROTATE_KEY, rotate180 ? "1" : "0");
+    } catch (e) {}
+  }
+
+  function loadSpreadPref() {
+    try {
+      const raw = parseFloat(localStorage.getItem(CV_SPREAD_KEY));
+      return Number.isFinite(raw) ? raw : CV_DEFAULT_SPREAD;
+    } catch (e) {
+      return CV_DEFAULT_SPREAD;
+    }
+  }
+
+  function saveSpreadPref() {
+    try {
+      localStorage.setItem(CV_SPREAD_KEY, String(spread));
+    } catch (e) {}
+  }
+
+  function spreadDescription(value) {
+    if (value <= 3) return "Tight";
+    if (value <= 10) return "Medium";
+    if (value <= 22) return "Wide";
+    return "Very wide";
+  }
+
+  function loadCvdTypePref() {
+    try {
+      const raw = localStorage.getItem(CV_CVD_TYPE_KEY);
+      return Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, raw) ? raw : "none";
+    } catch (e) {
+      return "none";
+    }
+  }
+
+  function saveCvdTypePref() {
+    try {
+      localStorage.setItem(CV_CVD_TYPE_KEY, cvdType);
+    } catch (e) {}
+  }
+
+  function loadCvdStrengthPref() {
+    try {
+      const raw = parseFloat(localStorage.getItem(CV_CVD_STRENGTH_KEY));
+      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function saveCvdStrengthPref() {
+    try {
+      localStorage.setItem(CV_CVD_STRENGTH_KEY, String(cvdStrength));
+    } catch (e) {}
+  }
+
+  function cvStatus(msg) {
+    appendFlashStatus(msg);
+    flashStatus.classList.remove("hide");
+  }
+
+  // ---- WebGL correction shader (identical to colorvision.js's) ----
+
+  const CV_VERT_SRC = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+    uniform float uRotate180;
+    uniform vec2 uUvScale;
+    uniform vec2 uUvOffset;
+    void main() {
+      vec2 uv = aPos * 0.5 + 0.5;
+      uv = uv * uUvScale + uUvOffset;
+      vUv = uRotate180 > 0.5 ? (1.0 - uv) : uv;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }
+  `;
+
+  const CV_FRAG_SRC = `
+    precision mediump float;
+    varying vec2 vUv;
+    uniform sampler2D uTex;
+    uniform float uBlend;
+    uniform float uSpread;
+    uniform int uPointCount;
+    uniform vec3 uSourceLab[${MAX_POINTS}];
+    uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
+    uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
+    uniform int uCvdType;      // 0=none, 1=protan, 2=deutan, 3=tritan
+    uniform float uCvdStrength;
+
+    float srgbToLinear(float c) {
+      return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    float linearToSrgb(float c) {
+      return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+    }
+
+    vec3 daltonize(vec3 srgbColor, int type, float strength) {
+      if (type == 0 || strength <= 0.0) return srgbColor;
+
+      vec3 lin = vec3(srgbToLinear(srgbColor.r), srgbToLinear(srgbColor.g), srgbToLinear(srgbColor.b));
+      mat3 sim;
+      mat3 errMat;
+      if (type == 1) {
+        sim = mat3(0.152286, 0.114503, -0.003882,  1.052583, 0.786281, -0.048116,  -0.204868, 0.099216, 1.051998);
+        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
+      } else if (type == 2) {
+        sim = mat3(0.367322, 0.280085, -0.011820,  0.860646, 0.672501, 0.042940,  -0.227968, 0.047413, 0.968881);
+        errMat = mat3(0.0, 0.7, 0.7,  0.0, 1.0, 0.0,  0.0, 0.0, 1.0);
+      } else {
+        sim = mat3(1.255528, -0.078411, 0.004733,  -0.076749, 0.930809, 0.691367,  -0.178779, 0.147602, 0.303900);
+        errMat = mat3(1.0, 0.0, 0.0,  0.0, 1.0, 0.0,  0.7, 0.7, 0.0);
+      }
+
+      vec3 simulated = sim * lin;
+      vec3 err = lin - simulated;
+      vec3 correctedLin = clamp(lin + errMat * err, 0.0, 1.0);
+      vec3 correctedSrgb = vec3(
+        linearToSrgb(correctedLin.r), linearToSrgb(correctedLin.g), linearToSrgb(correctedLin.b)
+      );
+      return mix(srgbColor, correctedSrgb, strength);
+    }
+
+    vec3 rgb2lab(vec3 c) {
+      float r = srgbToLinear(c.r);
+      float g = srgbToLinear(c.g);
+      float b = srgbToLinear(c.b);
+      float X = r * 0.4124564 + g * 0.3575761 + b * 0.1804375;
+      float Y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750;
+      float Z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041;
+      float Xn = 0.95047; float Yn = 1.0; float Zn = 1.08883;
+      float fx = X / Xn > 0.008856 ? pow(X / Xn, 1.0 / 3.0) : ((X / Xn) / (3.0 * 0.20705 * 0.20705) + 4.0 / 29.0);
+      float fy = Y / Yn > 0.008856 ? pow(Y / Yn, 1.0 / 3.0) : ((Y / Yn) / (3.0 * 0.20705 * 0.20705) + 4.0 / 29.0);
+      float fz = Z / Zn > 0.008856 ? pow(Z / Zn, 1.0 / 3.0) : ((Z / Zn) / (3.0 * 0.20705 * 0.20705) + 4.0 / 29.0);
+      return vec3(116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz));
+    }
+
+    vec3 rgb2hsl(vec3 c) {
+      float mx = max(max(c.r, c.g), c.b);
+      float mn = min(min(c.r, c.g), c.b);
+      float h = 0.0; float s = 0.0; float l = (mx + mn) * 0.5;
+      float d = mx - mn;
+      if (d > 0.0001) {
+        s = d / (1.0 - abs(2.0 * l - 1.0));
+        if (mx == c.r) { h = mod((c.g - c.b) / d, 6.0); }
+        else if (mx == c.g) { h = (c.b - c.r) / d + 2.0; }
+        else { h = (c.r - c.g) / d + 4.0; }
+        h *= 60.0;
+        if (h < 0.0) h += 360.0;
+      }
+      return vec3(h, s, l);
+    }
+
+    vec3 hsl2rgb(vec3 hsl) {
+      float h = hsl.x; float s = hsl.y; float l = hsl.z;
+      float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+      float x = c * (1.0 - abs(mod(h / 60.0, 2.0) - 1.0));
+      float m = l - c * 0.5;
+      vec3 rgb1;
+      if (h < 60.0) { rgb1 = vec3(c, x, 0.0); }
+      else if (h < 120.0) { rgb1 = vec3(x, c, 0.0); }
+      else if (h < 180.0) { rgb1 = vec3(0.0, c, x); }
+      else if (h < 240.0) { rgb1 = vec3(0.0, x, c); }
+      else if (h < 300.0) { rgb1 = vec3(x, 0.0, c); }
+      else { rgb1 = vec3(c, 0.0, x); }
+      return rgb1 + m;
+    }
+
+    void main() {
+      vec3 original = texture2D(uTex, vUv).rgb;
+      vec3 base = daltonize(original, uCvdType, uCvdStrength);
+      vec3 correction = vec3(0.0);
+      vec2 correction2 = vec2(0.0);
+
+      if (uPointCount > 0) {
+        vec3 labP = rgb2lab(original);
+        float totalWeight = 0.0;
+        vec3 weightedSum = vec3(0.0);
+        vec2 weightedSum2 = vec2(0.0);
+        for (int i = 0; i < ${MAX_POINTS}; i++) {
+          if (i >= uPointCount) break;
+          float d = distance(labP, uSourceLab[i]);
+          float w = 1.0 / (d * d + uSpread);
+          weightedSum += uCorrection[i] * w;
+          weightedSum2 += uCorrection2[i] * w;
+          totalWeight += w;
+        }
+        if (totalWeight > 0.0) {
+          correction = weightedSum / totalWeight;
+          correction2 = weightedSum2 / totalWeight;
+        }
+      }
+
+      vec3 hsl = rgb2hsl(base);
+      hsl.x = mod(hsl.x + correction.x + 360.0, 360.0);
+      hsl.y = clamp(hsl.y + correction.y, 0.0, 1.0);
+      hsl.z = clamp(hsl.z + correction.z, 0.0, 1.0);
+      vec3 corrected = hsl2rgb(hsl);
+
+      float contMul = 1.0 + correction2.x;
+      float expMul = pow(2.0, correction2.y);
+      corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
+
+      gl_FragColor = vec4(mix(original, corrected, uBlend), 1.0);
+    }
+  `;
+
+  function cvCompileShader(glCtx, type, src) {
+    const sh = glCtx.createShader(type);
+    glCtx.shaderSource(sh, src);
+    glCtx.compileShader(sh);
+    if (!glCtx.getShaderParameter(sh, glCtx.COMPILE_STATUS)) {
+      const log = glCtx.getShaderInfoLog(sh);
+      glCtx.deleteShader(sh);
+      throw new Error("Shader compile error: " + log);
+    }
+    return sh;
+  }
+
+  function ensureCorrectionCanvas() {
+    if (correctionCanvas) return;
+    correctionCanvas = document.createElement("canvas");
+    correctionCanvas.width = canvas.width;
+    correctionCanvas.height = canvas.height;
+    correctionCanvas.style.position = "fixed";
+    correctionCanvas.style.left = "-99999px";
+    correctionCanvas.style.top = "0";
+    document.body.appendChild(correctionCanvas);
+
+    const glCtx = correctionCanvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
+      correctionCanvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
+    if (!glCtx) {
+      cvStatus("Colour vision correction isn't supported in this browser.");
+      return;
+    }
+
+    const vs = cvCompileShader(glCtx, glCtx.VERTEX_SHADER, CV_VERT_SRC);
+    const fs = cvCompileShader(glCtx, glCtx.FRAGMENT_SHADER, CV_FRAG_SRC);
+    const prog = glCtx.createProgram();
+    glCtx.attachShader(prog, vs);
+    glCtx.attachShader(prog, fs);
+    glCtx.linkProgram(prog);
+    if (!glCtx.getProgramParameter(prog, glCtx.LINK_STATUS)) {
+      cvStatus("Colour vision correction failed to start: " + glCtx.getProgramInfoLog(prog));
+      return;
+    }
+    glCtx.useProgram(prog);
+
+    const qBuf = glCtx.createBuffer();
+    glCtx.bindBuffer(glCtx.ARRAY_BUFFER, qBuf);
+    glCtx.bufferData(glCtx.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), glCtx.STATIC_DRAW);
+    const aPos = glCtx.getAttribLocation(prog, "aPos");
+    glCtx.enableVertexAttribArray(aPos);
+    glCtx.vertexAttribPointer(aPos, 2, glCtx.FLOAT, false, 0, 0);
+
+    const tex = glCtx.createTexture();
+    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+
+    correctionGl = glCtx;
+    correctionProgram = prog;
+    correctionQuadBuffer = qBuf;
+    correctionVideoTexture = tex;
+    correctionUniforms = {
+      uTex: glCtx.getUniformLocation(prog, "uTex"),
+      uBlend: glCtx.getUniformLocation(prog, "uBlend"),
+      uSpread: glCtx.getUniformLocation(prog, "uSpread"),
+      uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
+      uUvScale: glCtx.getUniformLocation(prog, "uUvScale"),
+      uUvOffset: glCtx.getUniformLocation(prog, "uUvOffset"),
+      uPointCount: glCtx.getUniformLocation(prog, "uPointCount"),
+      uSourceLab: glCtx.getUniformLocation(prog, "uSourceLab"),
+      uCorrection: glCtx.getUniformLocation(prog, "uCorrection"),
+      uCorrection2: glCtx.getUniformLocation(prog, "uCorrection2"),
+      uCvdType: glCtx.getUniformLocation(prog, "uCvdType"),
+      uCvdStrength: glCtx.getUniformLocation(prog, "uCvdStrength")
+    };
+    uploadPointUniforms();
+  }
+
+  function resizeCorrectionCanvas() {
+    if (!correctionCanvas) return;
+    correctionCanvas.width = canvas.width;
+    correctionCanvas.height = canvas.height;
+    correctionGl.viewport(0, 0, correctionCanvas.width, correctionCanvas.height);
+  }
+
+  function uploadPointUniforms() {
+    if (!correctionGl) return;
+    const count = Math.min(points.length, MAX_POINTS);
+    const labArr = new Float32Array(MAX_POINTS * 3);
+    const corrArr = new Float32Array(MAX_POINTS * 3);
+    const corr2Arr = new Float32Array(MAX_POINTS * 2);
+    for (let i = 0; i < count; i++) {
+      const p = points[i];
+      const [L, A, B] = cvRgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
+      labArr[i * 3] = L; labArr[i * 3 + 1] = A; labArr[i * 3 + 2] = B;
+      corrArr[i * 3] = p.hueShift; corrArr[i * 3 + 1] = p.satAdjust; corrArr[i * 3 + 2] = p.lightAdjust;
+      corr2Arr[i * 2] = p.contrastAdjust || 0; corr2Arr[i * 2 + 1] = p.exposureAdjust || 0;
+    }
+    correctionGl.useProgram(correctionProgram);
+    correctionGl.uniform1i(correctionUniforms.uPointCount, count);
+    correctionGl.uniform3fv(correctionUniforms.uSourceLab, labArr);
+    correctionGl.uniform3fv(correctionUniforms.uCorrection, corrArr);
+    correctionGl.uniform2fv(correctionUniforms.uCorrection2, corr2Arr);
+  }
+
+  // "object-fit: cover" — same technique as colorvision.js/restore.js use
+  // for their own camera view, so the feed fills the canvas without
+  // stretching regardless of how its aspect ratio compares to the
+  // canvas's (routinely mismatched in landscape).
+  function computeCoverUv(videoW, videoH, canvasW, canvasH) {
+    if (!videoW || !videoH || !canvasW || !canvasH) return { sx: 1, sy: 1, ox: 0, oy: 0 };
+    const videoAspect = videoW / videoH;
+    const canvasAspect = canvasW / canvasH;
+    if (videoAspect > canvasAspect) {
+      const sx = canvasAspect / videoAspect;
+      return { sx, sy: 1, ox: (1 - sx) / 2, oy: 0 };
+    }
+    const sy = videoAspect / canvasAspect;
+    return { sx: 1, sy, ox: 0, oy: (1 - sy) / 2 };
+  }
+
+  function renderCorrectionFrame(vw, vh) {
+    const cover = computeCoverUv(vw, vh, correctionCanvas.width, correctionCanvas.height);
+    correctionGl.bindTexture(correctionGl.TEXTURE_2D, correctionVideoTexture);
+    correctionGl.texImage2D(correctionGl.TEXTURE_2D, 0, correctionGl.RGBA, correctionGl.RGBA, correctionGl.UNSIGNED_BYTE, cameraFeed);
+    correctionGl.uniform1i(correctionUniforms.uTex, 0);
+    correctionGl.uniform1f(correctionUniforms.uBlend, parseFloat(blendSlider.value) / 100);
+    correctionGl.uniform1f(correctionUniforms.uSpread, spread);
+    correctionGl.uniform1f(correctionUniforms.uRotate180, rotate180 ? 1 : 0);
+    correctionGl.uniform2f(correctionUniforms.uUvScale, cover.sx, cover.sy);
+    correctionGl.uniform2f(correctionUniforms.uUvOffset, cover.ox, cover.oy);
+    correctionGl.uniform1i(correctionUniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
+    correctionGl.uniform1f(correctionUniforms.uCvdStrength, cvdStrength);
+    correctionGl.drawArrays(correctionGl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  async function enableColourVision() {
+    if (!cameraBackgroundEnabled) {
+      await enableCameraBackground();
+      if (!cameraBackgroundEnabled) return; // camera failed to start
+    }
+    ensureCorrectionCanvas();
+    if (!correctionGl) return;
+    colourVisionEnabled = true;
+    colourVisionBtn.textContent = "Colour vision: On";
+    colourVisionBtn.classList.add("active");
+    colourVisionBtn.setAttribute("aria-pressed", "true");
+    [blendWrap, cvdTypeWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.remove("hide"));
+    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+  }
+
+  function disableColourVision() {
+    colourVisionEnabled = false;
+    colourVisionBtn.textContent = "Colour vision: Off";
+    colourVisionBtn.classList.remove("active");
+    colourVisionBtn.setAttribute("aria-pressed", "false");
+    [blendWrap, cvdTypeWrap, cvdStrengthWrap, spreadWrap, calibrateBtn, pointsBtn, rotateBtn].forEach((el) => el.classList.add("hide"));
+    hideCvOverlayPanels();
+  }
+
+  function toggleColourVision() {
+    if (colourVisionEnabled) disableColourVision();
+    else enableColourVision();
+  }
+
+  // ---- Sampling for calibration ----
+  // Averages a small patch from the raw video frame (not the shader's
+  // corrected output) so calibration is always anchored to the real colour.
+
+  const SAMPLE_SIZE = 12;
+
+  function sampleCenterColor() {
+    if (cameraFeed.readyState < cameraFeed.HAVE_CURRENT_DATA) return [0.5, 0.5, 0.5];
+    sampleCanvas.width = 64;
+    sampleCanvas.height = 64;
+    const vw = cameraFeed.videoWidth, vh = cameraFeed.videoHeight;
+    const cropSize = Math.min(vw, vh) * 0.15;
+    const sx = vw / 2 - cropSize / 2;
+    const sy = vh / 2 - cropSize / 2;
+    sampleCtx.drawImage(cameraFeed, sx, sy, cropSize, cropSize, 0, 0, 64, 64);
+    const data = sampleCtx.getImageData(24, 24, SAMPLE_SIZE, SAMPLE_SIZE).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    return [r / n / 255, g / n / 255, b / n / 255];
+  }
+
+  function startAiming() {
+    aiming = true;
+    reticleLayer.classList.remove("hide");
+    aimIntervalId = setInterval(() => {
+      const c = sampleCenterColor();
+      reticleSwatch.style.background = cvRgbToCss(c);
+      reticleColorName.textContent = cvNearestColorName(c);
+    }, 120);
+    cancelAimBtn.focus();
+  }
+
+  function stopAiming() {
+    aiming = false;
+    reticleLayer.classList.add("hide");
+    if (aimIntervalId) { clearInterval(aimIntervalId); aimIntervalId = null; }
+    calibrateBtn.focus();
+  }
+
+  // ---- Tune / choose / saved-colours panels ----
+  // Share a z-index with the tablet-viewer panel and each other, so only
+  // one is ever open at a time.
+
+  function hideCvOverlayPanels() {
+    tunePanel.classList.add("hide");
+    pointsPanel.classList.add("hide");
+    choosePanel.classList.add("hide");
+    viewerPanel.classList.add("hide");
+  }
+
+  function openTuneForNewPoint(sourceColor) {
+    hideCvOverlayPanels();
+    editingPointId = null;
+    frozenColor = sourceColor;
+    hueSlider.value = 0; satSlider.value = 0; lightSlider.value = 0;
+    contrastSlider.value = 0; exposureSlider.value = 0;
+    labelInput.value = "";
+    deletePointBtn.classList.add("hide");
+    refreshTunePreview();
+    tuneReturnFocusEl = calibrateBtn;
+    tunePanel.classList.remove("hide");
+    hueSlider.focus();
+  }
+
+  function openTuneForExistingPoint(point) {
+    hideCvOverlayPanels();
+    editingPointId = point.id;
+    frozenColor = point.sourceColor;
+    hueSlider.value = point.hueShift;
+    satSlider.value = Math.round(point.satAdjust * 100);
+    lightSlider.value = Math.round(point.lightAdjust * 100);
+    contrastSlider.value = Math.round((point.contrastAdjust || 0) * 100);
+    exposureSlider.value = Math.round((point.exposureAdjust || 0) * 100);
+    labelInput.value = point.label || "";
+    deletePointBtn.classList.remove("hide");
+    refreshTunePreview();
+    tuneReturnFocusEl = pointsBtn;
+    tunePanel.classList.remove("hide");
+    hueSlider.focus();
+  }
+
+  function currentTuneValues() {
+    return {
+      hueShift: parseFloat(hueSlider.value),
+      satAdjust: parseFloat(satSlider.value) / 100,
+      lightAdjust: parseFloat(lightSlider.value) / 100,
+      contrastAdjust: parseFloat(contrastSlider.value) / 100,
+      exposureAdjust: parseFloat(exposureSlider.value) / 100
+    };
+  }
+
+  function refreshTunePreview() {
+    if (!frozenColor) return;
+    const { hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust } = currentTuneValues();
+    const corrected = cvApplyCorrection(frozenColor, hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust);
+    swatchOriginal.style.background = cvRgbToCss(frozenColor);
+    swatchCorrected.style.background = cvRgbToCss(corrected);
+    swatchOriginalName.textContent = cvNearestColorName(frozenColor);
+    swatchCorrectedName.textContent = cvNearestColorName(corrected);
+    hueLabel.textContent = `${hueShift}°`;
+    satLabel.textContent = `${satSlider.value}%`;
+    lightLabel.textContent = `${lightSlider.value}%`;
+    contrastLabel.textContent = `${contrastSlider.value}%`;
+    exposureLabel.textContent = `${exposureSlider.value}%`;
+  }
+
+  function closeTunePanel() {
+    tunePanel.classList.add("hide");
+    frozenColor = null;
+    editingPointId = null;
+    if (tuneReturnFocusEl) tuneReturnFocusEl.focus();
+    tuneReturnFocusEl = null;
+  }
+
+  function saveCvPoint() {
+    const { hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust } = currentTuneValues();
+    if (editingPointId) {
+      const p = points.find((pt) => pt.id === editingPointId);
+      if (p) {
+        p.sourceColor = frozenColor;
+        p.hueShift = hueShift;
+        p.satAdjust = satAdjust;
+        p.lightAdjust = lightAdjust;
+        p.contrastAdjust = contrastAdjust;
+        p.exposureAdjust = exposureAdjust;
+        p.label = labelInput.value.trim();
+      }
+    } else {
+      if (points.length >= MAX_POINTS) {
+        cvStatus(`Limit of ${MAX_POINTS} saved colours reached — delete one to add another.`);
+        return;
+      }
+      points.push({
+        id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        label: labelInput.value.trim(),
+        sourceColor: frozenColor,
+        hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust
+      });
+    }
+    saveCvPoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    closeTunePanel();
+  }
+
+  function deleteCurrentCvPoint() {
+    if (!editingPointId) return;
+    points = points.filter((p) => p.id !== editingPointId);
+    saveCvPoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    closeTunePanel();
+  }
+
+  function updatePointsCount() {
+    pointsCount.textContent = String(points.length);
+  }
+
+  function renderPointsGrid() {
+    pointsGrid.innerHTML = "";
+    if (points.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No colours saved yet. Use \"Calibrate a colour\" to add your first one.";
+      pointsGrid.appendChild(empty);
+      return;
+    }
+    points.forEach((p) => {
+      const colorName = cvNearestColorName(p.sourceColor);
+      const selected = selectedIds.has(p.id);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "point-card" + (selectMode ? " selectable" : "") + (selected ? " selected" : "");
+      if (selectMode) {
+        card.setAttribute("aria-pressed", String(selected));
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}${selected ? ", selected" : ""}.`);
+      } else {
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}. Tap to review or re-tune.`);
+      }
+      const sw = document.createElement("div");
+      sw.className = "point-swatch";
+      sw.style.background = cvRgbToCss(p.sourceColor);
+      const label = document.createElement("div");
+      label.className = "point-label";
+      label.textContent = p.label || "untitled";
+      const name = document.createElement("div");
+      name.className = "point-name";
+      name.textContent = colorName;
+      card.appendChild(sw);
+      card.appendChild(label);
+      card.appendChild(name);
+      if (selectMode) {
+        const check = document.createElement("div");
+        check.className = "point-check";
+        check.setAttribute("aria-hidden", "true");
+        check.textContent = selected ? "✓" : "";
+        card.appendChild(check);
+      }
+      card.addEventListener("click", () => {
+        if (selectMode) {
+          toggleSelected(p.id);
+        } else {
+          openTuneForExistingPoint(p);
+        }
+      });
+      pointsGrid.appendChild(card);
+    });
+  }
+
+  function toggleSelected(id) {
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    selectedCount.textContent = String(selectedIds.size);
+    deleteSelectedBtn.classList.toggle("hide", selectedIds.size === 0);
+    renderPointsGrid();
+  }
+
+  function setSelectMode(on) {
+    selectMode = on;
+    selectedIds.clear();
+    selectedCount.textContent = "0";
+    selectModeBtn.textContent = on ? "Cancel select" : "Select";
+    selectModeBtn.setAttribute("aria-pressed", String(on));
+    deleteSelectedBtn.classList.add("hide");
+    pointsHint.textContent = on
+      ? "Tap colours to select, then delete the ones you no longer want."
+      : "Tap a colour to review or re-tune it.";
+    renderPointsGrid();
+  }
+
+  function deleteSelected() {
+    if (selectedIds.size === 0) return;
+    points = points.filter((p) => !selectedIds.has(p.id));
+    saveCvPoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    setSelectMode(false);
+  }
+
+  function clearAllPoints() {
+    if (points.length === 0) return;
+    const ok = window.confirm(`Delete all ${points.length} saved colours? This can't be undone.`);
+    if (!ok) return;
+    points = [];
+    selectedIds.clear();
+    saveCvPoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    setSelectMode(false);
+  }
+
+  function renderPresetGrid() {
+    presetGrid.innerHTML = "";
+    CVD_PRESETS.forEach((preset) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "preset-card";
+      card.setAttribute("aria-label", `${preset.label}. Calibrate this colour.`);
+      const sw = document.createElement("div");
+      sw.className = "preset-swatch";
+      sw.style.background = preset.hex;
+      const label = document.createElement("div");
+      label.className = "preset-label";
+      label.textContent = preset.label;
+      card.appendChild(sw);
+      card.appendChild(label);
+      card.addEventListener("click", () => {
+        choosePanel.classList.add("hide");
+        openTuneForNewPoint(cvHexToRgb01(preset.hex));
+      });
+      presetGrid.appendChild(card);
+    });
+  }
+
+  function openChoosePanel() {
+    hideCvOverlayPanels();
+    renderPresetGrid();
+    choosePanelReturnFocusEl = calibrateBtn;
+    choosePanel.classList.remove("hide");
+    chooseAimBtn.focus();
+  }
+
+  function closeChoosePanel() {
+    choosePanel.classList.add("hide");
+    if (choosePanelReturnFocusEl) choosePanelReturnFocusEl.focus();
+    choosePanelReturnFocusEl = null;
+  }
+
+  function closePointsPanel() {
+    pointsPanel.classList.add("hide");
+    importExportStatus.textContent = "";
+    pointsBtn.focus();
+  }
+
+  // ---- Export / import ----
+
+  function isValidImportedPoint(p) {
+    return p && typeof p === "object" &&
+      Array.isArray(p.sourceColor) && p.sourceColor.length === 3 &&
+      p.sourceColor.every((c) => typeof c === "number" && c >= 0 && c <= 1) &&
+      typeof p.hueShift === "number" &&
+      typeof p.satAdjust === "number" &&
+      typeof p.lightAdjust === "number" &&
+      (p.contrastAdjust === undefined || typeof p.contrastAdjust === "number") &&
+      (p.exposureAdjust === undefined || typeof p.exposureAdjust === "number");
+  }
+
+  function cvDownloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.addEventListener("click", (e) => e.stopPropagation());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPoints() {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved colours to export yet.";
+      return;
+    }
+    const blob = new Blob([JSON.stringify(points, null, 2)], { type: "application/json" });
+    cvDownloadBlob(blob, `colour-vision-calibration-${new Date().toISOString().slice(0, 10)}.json`);
+    importExportStatus.textContent = `Exported ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+  }
+
+  function importPointsFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (e) {
+        importExportStatus.textContent = "Import failed: not a valid JSON file.";
+        return;
+      }
+      const incoming = Array.isArray(parsed) ? parsed : [];
+      const valid = incoming.filter(isValidImportedPoint);
+      if (valid.length === 0) {
+        importExportStatus.textContent = "Import failed: no valid saved colours found in that file.";
+        return;
+      }
+      const room = MAX_POINTS - points.length;
+      const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
+        id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
+        sourceColor: p.sourceColor,
+        hueShift: p.hueShift,
+        satAdjust: p.satAdjust,
+        lightAdjust: p.lightAdjust,
+        contrastAdjust: p.contrastAdjust || 0,
+        exposureAdjust: p.exposureAdjust || 0
+      }));
+      points = points.concat(toAdd);
+      saveCvPoints();
+      uploadPointUniforms();
+      updatePointsCount();
+      renderPointsGrid();
+      const skipped = valid.length - toAdd.length;
+      importExportStatus.textContent = `Imported ${toAdd.length} colour${toAdd.length === 1 ? "" : "s"}.` +
+        (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
+    };
+    reader.onerror = () => {
+      importExportStatus.textContent = "Import failed: could not read that file.";
+    };
+    reader.readAsText(file);
   }
 
   function isTransientCameraError(err) {
@@ -954,6 +1964,7 @@
   });
 
   function openViewerPanel() {
+    hideCvOverlayPanels();
     viewerPanel.classList.remove("hide");
     closeViewerPanelBtn.focus();
   }
@@ -1015,6 +2026,111 @@
   updateFreqRange("low");
   updateSyncDelay();
 
+  // ---- Colour vision wiring ----
+
+  colourVisionBtn.addEventListener("click", toggleColourVision);
+
+  blendSlider.addEventListener("input", () => {
+    blendLabel.textContent = `${blendSlider.value}%`;
+  });
+
+  spreadSlider.addEventListener("input", () => {
+    spread = parseFloat(spreadSlider.value);
+    spreadLabel.textContent = spreadDescription(spread);
+    saveSpreadPref();
+  });
+
+  cvdTypeSelect.addEventListener("change", () => {
+    cvdType = cvdTypeSelect.value;
+    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+    saveCvdTypePref();
+  });
+
+  cvdStrengthSlider.addEventListener("input", () => {
+    cvdStrength = parseFloat(cvdStrengthSlider.value) / 100;
+    cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
+    saveCvdStrengthPref();
+  });
+
+  rotateBtn.addEventListener("click", () => {
+    rotate180 = !rotate180;
+    rotateBtn.classList.toggle("active", rotate180);
+    rotateBtn.setAttribute("aria-pressed", String(rotate180));
+    saveRotatePref();
+  });
+
+  calibrateBtn.addEventListener("click", openChoosePanel);
+  chooseAimBtn.addEventListener("click", () => {
+    choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    startAiming();
+  });
+  colourPickerInput.addEventListener("input", () => {
+    choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    openTuneForNewPoint(cvHexToRgb01(colourPickerInput.value));
+  });
+  closeChooseBtn.addEventListener("click", closeChoosePanel);
+
+  cancelAimBtn.addEventListener("click", stopAiming);
+  freezeBtn.addEventListener("click", () => {
+    const c = sampleCenterColor();
+    stopAiming();
+    openTuneForNewPoint(c);
+  });
+
+  [hueSlider, satSlider, lightSlider, contrastSlider, exposureSlider].forEach((el) => {
+    el.addEventListener("input", refreshTunePreview);
+  });
+  savePointBtn.addEventListener("click", saveCvPoint);
+  deletePointBtn.addEventListener("click", deleteCurrentCvPoint);
+  closeTuneBtn.addEventListener("click", closeTunePanel);
+
+  pointsBtn.addEventListener("click", () => {
+    hideCvOverlayPanels();
+    setSelectMode(false);
+    importExportStatus.textContent = "";
+    pointsPanel.classList.remove("hide");
+    closePointsBtn.focus();
+  });
+  closePointsBtn.addEventListener("click", closePointsPanel);
+  selectModeBtn.addEventListener("click", () => setSelectMode(!selectMode));
+  deleteSelectedBtn.addEventListener("click", deleteSelected);
+  clearAllBtn.addEventListener("click", clearAllPoints);
+
+  exportBtn.addEventListener("click", exportPoints);
+  importBtn.addEventListener("click", () => importFile.click());
+  importFile.addEventListener("change", () => {
+    if (importFile.files && importFile.files[0]) {
+      importPointsFromFile(importFile.files[0]);
+    }
+    importFile.value = "";
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!tunePanel.classList.contains("hide")) {
+      closeTunePanel();
+    } else if (!pointsPanel.classList.contains("hide")) {
+      closePointsPanel();
+    } else if (!choosePanel.classList.contains("hide")) {
+      closeChoosePanel();
+    } else if (!viewerPanel.classList.contains("hide")) {
+      closeViewerPanel();
+    } else if (aiming) {
+      stopAiming();
+    }
+  });
+
+  updatePointsCount();
+  blendLabel.textContent = `${blendSlider.value}%`;
+  spreadSlider.value = String(spread);
+  spreadLabel.textContent = spreadDescription(spread);
+  rotateBtn.classList.toggle("active", rotate180);
+  cvdTypeSelect.value = cvdType;
+  cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
+  cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
+
   // Tap the empty screen to hide/show the menu; double-tap to black out
   // the screen. Beat detection and effects (torch/vibrate/screen flash)
   // keep running underneath either way — only the visuals are hidden.
@@ -1023,7 +2139,9 @@
   let lastTapAt = 0;
 
   function isMenuTarget(el) {
-    return !!(el && el.closest && el.closest("#hud, #overlay, .flash-status, #viewerPanel"));
+    return !!(el && el.closest && el.closest(
+      "#hud, #overlay, .flash-status, #viewerPanel, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel"
+    ));
   }
 
   function toggleHud() {
