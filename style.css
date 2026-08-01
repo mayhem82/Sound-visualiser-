@@ -138,6 +138,7 @@ html, body {
 
 .hud-btn {
   appearance: none;
+  display: inline-block;
   border: 1px solid rgba(242, 242, 247, 0.25);
   background: rgba(15, 15, 25, 0.55);
   color: var(--fg);
@@ -145,6 +146,7 @@ html, body {
   padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .hud-btn:hover { background: rgba(125, 211, 252, 0.18); }
