@@ -9,7 +9,16 @@
 <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
-<video id="remoteVideo" playsinline autoplay muted></video>
+<div id="stage">
+  <div class="pane" id="pane1">
+    <video id="video1" playsinline autoplay muted></video>
+    <p class="pane-badge hide" id="badge1" aria-live="polite"></p>
+  </div>
+  <div class="pane hide" id="pane2">
+    <video id="video2" playsinline autoplay muted></video>
+    <p class="pane-badge hide" id="badge2" aria-live="polite"></p>
+  </div>
+</div>
 
 <div id="overlay">
   <div id="panel">
@@ -20,14 +29,19 @@
       Room code
       <input id="roomInput" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
     </label>
+
+    <label class="field-label">
+      Second room code (optional)
+      <input id="roomInput2" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
+    </label>
+    <p class="hint">Watching two devices at once? Add a second room code to see both side by side, split screen.</p>
+
     <button id="connectBtn">Connect</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
   </div>
 </div>
-
-<p id="connectionBadge" class="hide" aria-live="polite"></p>
 
 <script src="viewer.js"></script>
 </body>
