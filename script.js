@@ -799,9 +799,13 @@
   // (colorvision.js's STORAGE_KEY) — they used to share one calibrated-
   // points list, which meant deleting a colour on one page silently wiped
   // it on the other too. Each page now keeps its own independent set.
+  // loadCvPoints() seeds this new key from the old shared one the first
+  // time it's read (see below), so switching to independent storage
+  // doesn't look like existing colours vanished.
 
   const MAX_POINTS = 32;
   const CV_STORAGE_KEY = "cvCalibrationPoints_soundNebula_v1";
+  const CV_LEGACY_STORAGE_KEY = "cvCalibrationPoints_v1";
   const CV_ROTATE_KEY = "cvRotate180_v1";
   const CV_SPREAD_KEY = "cvSpread_v1";
   const CV_DEFAULT_SPREAD = 4;
@@ -951,11 +955,29 @@
   function loadCvPoints() {
     try {
       const raw = localStorage.getItem(CV_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch (e) {
       return [];
     }
+    // CV_STORAGE_KEY has never been written here — either a first-ever run,
+    // or the first run since Sound Nebula got its own independent storage.
+    // Seed once from whatever's already calibrated under the old shared key
+    // (colorvision.html's), then persist immediately under the new key so
+    // this only ever runs once: later loads use the new key exclusively,
+    // and edits on colorvision.html no longer reach here at all.
+    let seeded = [];
+    try {
+      const legacyRaw = localStorage.getItem(CV_LEGACY_STORAGE_KEY);
+      const legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : [];
+      seeded = Array.isArray(legacyParsed) ? legacyParsed : [];
+    } catch (e) { /* legacy data unreadable — start empty rather than fail */ }
+    try {
+      localStorage.setItem(CV_STORAGE_KEY, JSON.stringify(seeded));
+    } catch (e) { /* storage write failed — still return the in-memory seed */ }
+    return seeded;
   }
 
   function saveCvPoints() {
