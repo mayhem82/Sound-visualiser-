@@ -73,7 +73,8 @@ html, body {
   pointer-events: none;
 }
 
-#panel {
+#panel,
+#cameraOnlyPanel {
   max-width: 420px;
   text-align: center;
   background: rgba(15, 15, 25, 0.7);
@@ -82,22 +83,67 @@ html, body {
   padding: 32px 28px;
 }
 
-#panel h1 {
+#panel h1,
+#cameraOnlyPanel h1 {
   margin: 0 0 12px;
   font-size: 26px;
   letter-spacing: 0.02em;
 }
 
-#panel p {
+#panel p,
+#cameraOnlyPanel p {
   margin: 0 0 20px;
   line-height: 1.5;
   color: rgba(242, 242, 247, 0.75);
   font-size: 15px;
 }
 
-#panel p.hint {
+#panel p.hint,
+#cameraOnlyPanel p.hint {
   font-size: 13px;
   color: rgba(242, 242, 247, 0.55);
+}
+
+#panel.hide,
+#cameraOnlyPanel.hide {
+  display: none;
+}
+
+.camera-only-mode-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.75);
+  cursor: pointer;
+}
+
+#receiveModeSection {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(242, 242, 247, 0.15);
+}
+
+#receiveForm {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#receiveForm input[type="text"] {
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 #startBtn {
@@ -152,6 +198,16 @@ html, body {
 }
 
 #hud.hide { display: none; }
+
+/* Generic fallback for any .hud-btn / .hud-slider toggled with the "hide"
+   class — most conditionally-shown HUD controls across all three pages
+   (calibrate/points buttons, camera picker, outline sliders, etc.) rely
+   on exactly this and had no matching rule until now, so they were never
+   actually hidden despite the class being toggled correctly in JS. */
+.hud-btn.hide,
+.hud-slider.hide {
+  display: none;
+}
 
 .hud-btn {
   appearance: none;

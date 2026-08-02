@@ -409,6 +409,22 @@ video#cameraFeed, canvas#sampleCanvas {
 
 .tune-actions .hud-btn { flex: 1 1 auto; }
 
+.category-picker-buttons {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.category-btn {
+  flex: 1 1 auto;
+}
+
+.category-btn.active {
+  background: rgba(250, 204, 21, 0.2);
+  border-color: rgba(250, 204, 21, 0.55);
+  color: #fde68a;
+}
+
 #pointsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
@@ -445,6 +461,23 @@ video#cameraFeed, canvas#sampleCanvas {
   font-size: 10px;
   color: rgba(242, 242, 247, 0.5);
   padding: 0 4px;
+}
+
+.point-card .point-category {
+  display: inline-block;
+  margin: 4px 4px 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(242, 242, 247, 0.12);
+  color: rgba(242, 242, 247, 0.6);
+}
+
+.point-card .point-category.wall {
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde68a;
 }
 
 .point-card {

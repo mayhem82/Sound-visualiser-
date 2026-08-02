@@ -27,8 +27,18 @@
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
   const overlay = document.getElementById("overlay");
+  const panel = document.getElementById("panel");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
+  const cameraOnlyModeCheckbox = document.getElementById("cameraOnlyModeCheckbox");
+  const cameraOnlyPanel = document.getElementById("cameraOnlyPanel");
+  const cameraOnlyRoomCode = document.getElementById("cameraOnlyRoomCode");
+  const cameraOnlyStatusText = document.getElementById("cameraOnlyStatusText");
+  const cameraOnlyStopBtn = document.getElementById("cameraOnlyStopBtn");
+  const showReceiveBtn = document.getElementById("showReceiveBtn");
+  const receiveForm = document.getElementById("receiveForm");
+  const receiveRoomInput = document.getElementById("receiveRoomInput");
+  const receiveConnectBtn = document.getElementById("receiveConnectBtn");
 
   const hud = document.getElementById("hud");
   const blendSlider = document.getElementById("blendSlider");
@@ -122,6 +132,8 @@
   const contrastLabel = document.getElementById("contrastLabel");
   const exposureLabel = document.getElementById("exposureLabel");
   const labelInput = document.getElementById("labelInput");
+  const categoryWallBtn = document.getElementById("categoryWallBtn");
+  const categoryOtherBtn = document.getElementById("categoryOtherBtn");
   const savePointBtn = document.getElementById("savePointBtn");
   const deletePointBtn = document.getElementById("deletePointBtn");
   const closeTuneBtn = document.getElementById("closeTuneBtn");
@@ -170,6 +182,7 @@
   let points = loadPoints();
   let editingPointId = null;
   let frozenColor = null;
+  let editingCategory = "other"; // "wall" | "other" — which the tune panel's picker is currently set to
   let tuneReturnFocusEl = null;
   let choosePanelReturnFocusEl = null;
   let aiming = false;
@@ -503,6 +516,7 @@
     uniform vec3 uSourceLab[${MAX_POINTS}];
     uniform vec3 uCorrection[${MAX_POINTS}];   // hueShift(deg), satAdjust, lightAdjust
     uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
+    uniform int uCategory[${MAX_POINTS}];      // 0 = wall, 1 = other
     uniform sampler2D uMaskTex;                // painted correction mask: white=apply, black=protect
 
     float srgbToLinear(float c) {
@@ -582,21 +596,48 @@
       vec2 correction2 = vec2(0.0);
 
       if (uPointCount > 0) {
+        // Two independent weighted averages (one per category), each using
+        // the same Lab-distance generalisation as before — then blended
+        // by which category's *nearest* point is closer, using uSpread
+        // again as the softness of that classification. A pixel much
+        // closer to a wall reference than any "other" one gets (almost)
+        // purely the wall group's correction, and vice versa, so a
+        // precisely-tuned wall colour doesn't bleed onto trim/roof/sky
+        // just because a room happens to have a similar tone somewhere
+        // else. With only one category in use this degenerates back to
+        // exactly the original single-group weighted average.
         vec3 labP = rgb2lab(original);
-        float totalWeight = 0.0;
-        vec3 weightedSum = vec3(0.0);
-        vec2 weightedSum2 = vec2(0.0);
+        float wallWeight = 0.0, otherWeight = 0.0;
+        vec3 wallSum = vec3(0.0), otherSum = vec3(0.0);
+        vec2 wallSum2 = vec2(0.0), otherSum2 = vec2(0.0);
+        float wallMinDist = 1.0e6, otherMinDist = 1.0e6;
         for (int i = 0; i < ${MAX_POINTS}; i++) {
           if (i >= uPointCount) break;
           float d = distance(labP, uSourceLab[i]);
           float w = 1.0 / (d * d + uSpread);
-          weightedSum += uCorrection[i] * w;
-          weightedSum2 += uCorrection2[i] * w;
-          totalWeight += w;
+          if (uCategory[i] == 0) {
+            wallSum += uCorrection[i] * w;
+            wallSum2 += uCorrection2[i] * w;
+            wallWeight += w;
+            wallMinDist = min(wallMinDist, d);
+          } else {
+            otherSum += uCorrection[i] * w;
+            otherSum2 += uCorrection2[i] * w;
+            otherWeight += w;
+            otherMinDist = min(otherMinDist, d);
+          }
         }
-        if (totalWeight > 0.0) {
-          correction = weightedSum / totalWeight;
-          correction2 = weightedSum2 / totalWeight;
+        vec3 wallCorr = wallWeight > 0.0 ? wallSum / wallWeight : vec3(0.0);
+        vec3 otherCorr = otherWeight > 0.0 ? otherSum / otherWeight : vec3(0.0);
+        vec2 wallCorr2 = wallWeight > 0.0 ? wallSum2 / wallWeight : vec2(0.0);
+        vec2 otherCorr2 = otherWeight > 0.0 ? otherSum2 / otherWeight : vec2(0.0);
+
+        float wCat = wallWeight > 0.0 ? 1.0 / (wallMinDist * wallMinDist + uSpread) : 0.0;
+        float oCat = otherWeight > 0.0 ? 1.0 / (otherMinDist * otherMinDist + uSpread) : 0.0;
+        float totalCatWeight = wCat + oCat;
+        if (totalCatWeight > 0.0) {
+          correction = (wallCorr * wCat + otherCorr * oCat) / totalCatWeight;
+          correction2 = (wallCorr2 * wCat + otherCorr2 * oCat) / totalCatWeight;
         }
       }
 
@@ -707,6 +748,7 @@
       uSourceLab: glCtx.getUniformLocation(prog, "uSourceLab"),
       uCorrection: glCtx.getUniformLocation(prog, "uCorrection"),
       uCorrection2: glCtx.getUniformLocation(prog, "uCorrection2"),
+      uCategory: glCtx.getUniformLocation(prog, "uCategory"),
       uMaskTex: glCtx.getUniformLocation(prog, "uMaskTex")
     };
     return { gl: glCtx, program: prog, uniforms: uni, quadBuffer: qBuf, videoTexture: tex, maskTexture: maskTex };
@@ -811,18 +853,21 @@
     const labArr = new Float32Array(MAX_POINTS * 3);
     const corrArr = new Float32Array(MAX_POINTS * 3);
     const corr2Arr = new Float32Array(MAX_POINTS * 2);
+    const catArr = new Int32Array(MAX_POINTS);
     for (let i = 0; i < count; i++) {
       const p = points[i];
       const [L, A, B] = rgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
       labArr[i * 3] = L; labArr[i * 3 + 1] = A; labArr[i * 3 + 2] = B;
       corrArr[i * 3] = p.hueShift; corrArr[i * 3 + 1] = p.satAdjust; corrArr[i * 3 + 2] = p.lightAdjust;
       corr2Arr[i * 2] = p.contrastAdjust || 0; corr2Arr[i * 2 + 1] = p.exposureAdjust || 0;
+      catArr[i] = p.category === "wall" ? 0 : 1;
     }
     glCtx.useProgram(prog);
     glCtx.uniform1i(uni.uPointCount, count);
     glCtx.uniform3fv(uni.uSourceLab, labArr);
     glCtx.uniform3fv(uni.uCorrection, corrArr);
     glCtx.uniform2fv(uni.uCorrection2, corr2Arr);
+    glCtx.uniform1iv(uni.uCategory, catArr);
   }
 
   function uploadPointUniforms() {
@@ -955,17 +1000,43 @@
         audio: false
       });
       await attachStream(stream);
-      overlay.classList.add("hide");
-      hud.classList.remove("hide");
       resizeStage();
       resizeMaskCanvas();
       initGL();
       uploadPointUniforms();
       renderLoop();
       refreshVideoDevices();
+      if (cameraOnlyModeCheckbox.checked) {
+        await enterCameraOnlyMode();
+      } else {
+        overlay.classList.add("hide");
+        hud.classList.remove("hide");
+      }
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
+  }
+
+  // ---- Camera-only broadcast mode ----
+  // For a two-device setup: this device just points at the property and
+  // streams its raw feed, with no controls of its own to fumble with once
+  // it's mounted on a tripod. All calibration/correction/control happens
+  // on whichever other device connects via "Receive camera from another
+  // device" (see connectAsReceiver below) — that device gets the raw feed
+  // and runs its own full local correction pipeline against it, same as
+  // if it had its own camera.
+  async function enterCameraOnlyMode() {
+    panel.classList.add("hide");
+    cameraOnlyPanel.classList.remove("hide");
+    cameraOnlyStatusText.textContent = "Connecting to relay…";
+    await startTabletShare();
+  }
+
+  function exitCameraOnlyMode() {
+    stopTabletShare("");
+    cameraOnlyPanel.classList.add("hide");
+    overlay.classList.add("hide");
+    hud.classList.remove("hide");
   }
 
   async function attachStream(stream) {
@@ -1408,18 +1479,27 @@
     if (msg.type === "switch-camera" && msg.to === broadcastShare.deviceId) switchCamera();
   }
 
+  // Mirrors broadcast status into both the normal "Connect tablet" panel
+  // (viewerStatus) and the camera-only mode's own standalone panel
+  // (cameraOnlyStatusText, only ever shown in camera-only mode) — whichever
+  // one the operator is actually looking at stays in sync automatically.
+  function setViewerStatus(text) {
+    viewerStatus.textContent = text;
+    cameraOnlyStatusText.textContent = text;
+  }
+
   function updateViewerConnectedBadge() {
     const anyConnected = Array.from(broadcastShare.peers.values()).some(
       (entry) => entry.pc && entry.pc.connectionState === "connected"
     );
     viewerConnectedBadge.classList.toggle("hide", !anyConnected);
-    if (anyConnected) viewerStatus.textContent = "Tablet connected.";
+    if (anyConnected) setViewerStatus("Tablet connected.");
   }
 
   async function ensureBroadcastPeerFor(viewerId) {
     if (broadcastShare.peers.has(viewerId)) return; // dedupe repeated viewer-here / multi-broker echoes
     if (!gl || typeof stage.captureStream !== "function") {
-      viewerStatus.textContent = "Viewer streaming isn't supported in this browser.";
+      setViewerStatus("Viewer streaming isn't supported in this browser.");
       return;
     }
     ensureOriginalCanvas();
@@ -1466,7 +1546,7 @@
       }, { qos: 1 });
     } catch (err) {
       broadcastShare.peers.delete(viewerId);
-      viewerStatus.textContent = "Couldn't connect to the other device: " + (err.message || err.name || "unknown error");
+      setViewerStatus("Couldn't connect to the other device: " + (err.message || err.name || "unknown error"));
     }
   }
 
@@ -1514,21 +1594,21 @@
     broadcastShare.room = null;
     shareCodeBlock.classList.add("hide");
     viewerConnectedBadge.classList.add("hide");
-    viewerStatus.textContent = message || "";
+    setViewerStatus(message || "");
     startShareBtn.textContent = "Start live sharing";
     startShareBtn.disabled = false;
   }
 
   async function startTabletShare() {
     startShareBtn.disabled = true;
-    viewerStatus.textContent = "Connecting to relay…";
+    setViewerStatus("Connecting to relay…");
     const room = makeRoomCode();
     broadcastShare.room = room;
 
     try {
       await connectBroadcastSignaling(room);
     } catch (err) {
-      viewerStatus.textContent = err.message || "Couldn't start live sharing.";
+      setViewerStatus(err.message || "Couldn't start live sharing.");
       broadcastShare.room = null;
       startShareBtn.disabled = false;
       return;
@@ -1536,11 +1616,12 @@
 
     broadcastShare.active = true;
     shareRoomCode.textContent = room;
+    cameraOnlyRoomCode.textContent = room;
     const viewUrl = new URL("viewer.html", location.href);
     viewUrl.searchParams.set("room", room);
     shareViewUrlText.textContent = viewUrl.toString();
     shareCodeBlock.classList.remove("hide");
-    viewerStatus.textContent = "Waiting for the other device to connect…";
+    setViewerStatus("Waiting for the other device to connect…");
     startShareBtn.textContent = "Stop live sharing";
     startShareBtn.disabled = false;
   }
@@ -1551,6 +1632,190 @@
     } else {
       startTabletShare();
     }
+  }
+
+  // ---- Receiving a camera feed from another device ----
+  // The reverse of "Connect tablet" above: this is the *answerer* side of
+  // the same room-code/WebRTC pairing, but instead of displaying the
+  // incoming video read-only (like viewer.html does), the "original"
+  // (raw, uncorrected) track becomes this page's own video source — so
+  // the whole existing calibration/correction pipeline below runs against
+  // it exactly as if it came from a local camera. Lets one device (e.g. a
+  // phone on a tripod, in camera-only mode above) just point at the
+  // property while another device (e.g. a tablet on a table) does all the
+  // calibration and shows clients the result.
+  let receiverConnection = null;
+  let isReceiverMode = false;
+  let receiverStarted = false;
+
+  function connectAsReceiver(room) {
+    const deviceId = makeDeviceId();
+    let clients = [];
+    let pc = null;
+    let heartbeatTimer = null;
+    let torn = false;
+    let pendingIds = null;
+    let hostId = null;
+
+    function publish(fields, opts) {
+      opts = opts || {};
+      const msg = Object.assign({ v: 1, from: deviceId, to: null, ts: Date.now() }, fields);
+      const payload = JSON.stringify(msg);
+      const topic = signalTopic(room);
+      clients.forEach((c) => {
+        if (c.connected) c.publish(topic, payload, { retain: !!opts.retain, qos: opts.qos != null ? opts.qos : 0 });
+      });
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    }
+    function startHeartbeat() {
+      stopHeartbeat();
+      publish({ type: "viewer-here" });
+      heartbeatTimer = setInterval(() => publish({ type: "viewer-here" }), 3000);
+    }
+
+    async function handleOffer(msg) {
+      if (pc && ["new", "connecting", "connected"].includes(pc.connectionState)) return;
+      pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
+      hostId = msg.from;
+
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      pc.addEventListener("track", (e) => {
+        const streamId = e.streams[0] && e.streams[0].id;
+        // Only the raw/original feed matters — correction happens locally
+        // on this device, not on the camera device's.
+        if (pendingIds && pendingIds.original && streamId !== pendingIds.original) return;
+        video.srcObject = e.streams[0];
+        video.play().catch(() => {});
+        finishReceiverStart();
+      });
+
+      pc.addEventListener("connectionstatechange", () => {
+        if (!pc || torn) return;
+        if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+          setStatus("Connection to the camera device was lost.");
+        }
+      });
+
+      try {
+        await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGatheringComplete(pc);
+        publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
+      } catch (err) {
+        setStatus(err.message || err.name || "Couldn't connect.");
+      }
+    }
+
+    function handleMessage(raw) {
+      let msg;
+      try { msg = JSON.parse(raw); } catch (e) { return; }
+      if (!msg || msg.from === deviceId) return;
+      if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
+    }
+
+    setStatus("Connecting to relay…");
+
+    const ready = new Promise((resolveReady, rejectReady) => {
+      loadMqttLib().then(() => {
+        if (torn) { rejectReady(new Error("cancelled")); return; }
+        let resolved = false;
+        const topic = signalTopic(room);
+        clients = LIVE_BROKERS.map((url) => {
+          const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
+          client.on("connect", () => {
+            client.subscribe(topic, { qos: 1 });
+            if (!resolved) {
+              resolved = true;
+              setStatus("Waiting for the camera device…");
+              startHeartbeat();
+              resolveReady();
+            }
+          });
+          client.on("message", (t, payload) => {
+            if (t === topic) handleMessage(payload.toString());
+          });
+          return client;
+        });
+
+        setTimeout(() => {
+          if (resolved || torn) return;
+          rejectReady(new Error("Couldn't reach a relay — check your internet connection and try again."));
+        }, 9000);
+      }).catch((err) => {
+        if (torn) return;
+        rejectReady(err);
+      });
+    });
+
+    return {
+      ready,
+      // Remote-controls the camera device's own switch-camera button
+      // (already listened for there — see handleBroadcastSignal above) —
+      // useful when it's mounted or otherwise out of easy reach. No-ops on
+      // the other end if it only has one camera.
+      switchRemoteCamera() {
+        publish({ type: "switch-camera", to: hostId });
+      },
+      teardown() {
+        torn = true;
+        stopHeartbeat();
+        if (pc) { pc.close(); pc = null; }
+        clients.forEach((c) => { try { c.end(true); } catch (e) {} });
+        clients = [];
+      }
+    };
+  }
+
+  function finishReceiverStart() {
+    if (receiverStarted) return;
+    receiverStarted = true;
+    isReceiverMode = true;
+    setStatus("");
+    overlay.classList.add("hide");
+    hud.classList.remove("hide");
+    resizeStage();
+    resizeMaskCanvas();
+    initGL();
+    uploadPointUniforms();
+    renderLoop();
+    applyReceiverModeUi();
+  }
+
+  function applyReceiverModeUi() {
+    // No local camera hardware on this device to control — these only
+    // make sense for a camera physically attached to it.
+    torchBtn.classList.add("hide");
+    exposureModeBtn.classList.add("hide");
+    shutterWrap.classList.add("hide");
+    isoWrap.classList.add("hide");
+    evWrap.classList.add("hide");
+    // Broadcasting further from a receiving device isn't supported — keeps
+    // a two-device setup to exactly two devices.
+    connectTabletBtn.classList.add("hide");
+    // Repurposed below to remote-control the camera device's lens instead
+    // of switching this device's own (nonexistent) camera.
+    switchCameraBtn.classList.remove("hide");
+    switchCameraBtn.title = "Remotely switch the camera device's lens (no-op if it only has one).";
+  }
+
+  function startReceiving() {
+    const room = receiveRoomInput.value.trim().toUpperCase();
+    if (room.length < 4) {
+      setStatus("Enter the room code shown on the camera device.");
+      return;
+    }
+    receiveConnectBtn.disabled = true;
+    receiverConnection = connectAsReceiver(room);
+    receiverConnection.ready.catch((err) => {
+      receiverConnection = null;
+      setStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
+      receiveConnectBtn.disabled = false;
+    });
   }
 
   // Mobile browsers throttle requestAnimationFrame hard (often to ~1fps or
@@ -1564,12 +1829,12 @@
   document.addEventListener("visibilitychange", () => {
     if (!broadcastShare.active) return;
     if (document.hidden) {
-      viewerStatus.textContent = "This tab is in the background — the shared view will freeze until it's active again.";
+      setViewerStatus("This tab is in the background — the shared view will freeze until it's active again.");
     } else {
       const anyConnected = Array.from(broadcastShare.peers.values()).some(
         (entry) => entry.pc && entry.pc.connectionState === "connected"
       );
-      viewerStatus.textContent = anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…";
+      setViewerStatus(anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…");
       updateViewerConnectedBadge();
     }
   });
@@ -1894,6 +2159,14 @@
     if (maskModeActive) exitMaskMode();
   }
 
+  function setCategoryPicker(category) {
+    editingCategory = category === "wall" ? "wall" : "other";
+    categoryWallBtn.classList.toggle("active", editingCategory === "wall");
+    categoryWallBtn.setAttribute("aria-pressed", String(editingCategory === "wall"));
+    categoryOtherBtn.classList.toggle("active", editingCategory === "other");
+    categoryOtherBtn.setAttribute("aria-pressed", String(editingCategory === "other"));
+  }
+
   function openTuneForNewPoint(sourceColor) {
     hideOverlayPanels();
     editingPointId = null;
@@ -1901,6 +2174,7 @@
     hueSlider.value = 0; satSlider.value = 0; lightSlider.value = 0;
     contrastSlider.value = 0; exposureSlider.value = 0;
     labelInput.value = "";
+    setCategoryPicker("other");
     deletePointBtn.classList.add("hide");
     refreshTunePreview();
     tuneReturnFocusEl = calibrateBtn;
@@ -1918,6 +2192,7 @@
     contrastSlider.value = Math.round((point.contrastAdjust || 0) * 100);
     exposureSlider.value = Math.round((point.exposureAdjust || 0) * 100);
     labelInput.value = point.label || "";
+    setCategoryPicker(point.category);
     deletePointBtn.classList.remove("hide");
     refreshTunePreview();
     tuneReturnFocusEl = pointsBtn;
@@ -1970,6 +2245,7 @@
         p.contrastAdjust = contrastAdjust;
         p.exposureAdjust = exposureAdjust;
         p.label = labelInput.value.trim();
+        p.category = editingCategory;
       }
     } else {
       if (points.length >= MAX_POINTS) {
@@ -1980,6 +2256,7 @@
         id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         label: labelInput.value.trim(),
         sourceColor: frozenColor,
+        category: editingCategory,
         hueShift, satAdjust, lightAdjust, contrastAdjust, exposureAdjust
       });
     }
@@ -2019,11 +2296,12 @@
       const card = document.createElement("button");
       card.type = "button";
       card.className = "point-card" + (selectMode ? " selectable" : "") + (selected ? " selected" : "");
+      const categoryText = p.category === "wall" ? "Wall" : "Other";
       if (selectMode) {
         card.setAttribute("aria-pressed", String(selected));
-        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}${selected ? ", selected" : ""}.`);
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}, ${categoryText}${selected ? ", selected" : ""}.`);
       } else {
-        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}. Tap to review or re-tune.`);
+        card.setAttribute("aria-label", `${p.label || "untitled"}, ${colorName}, ${categoryText}. Tap to review or re-tune.`);
       }
       const sw = document.createElement("div");
       sw.className = "point-swatch";
@@ -2034,9 +2312,13 @@
       const name = document.createElement("div");
       name.className = "point-name";
       name.textContent = colorName;
+      const category = document.createElement("div");
+      category.className = "point-category" + (p.category === "wall" ? " wall" : "");
+      category.textContent = p.category === "wall" ? "Wall" : "Other";
       card.appendChild(sw);
       card.appendChild(label);
       card.appendChild(name);
+      card.appendChild(category);
       if (selectMode) {
         const check = document.createElement("div");
         check.className = "point-check";
@@ -2267,13 +2549,26 @@
   shutterSlider.addEventListener("input", applyShutter);
   isoSlider.addEventListener("input", applyIso);
   evSlider.addEventListener("input", applyExposureCompensation);
-  switchCameraBtn.addEventListener("click", switchCamera);
+  switchCameraBtn.addEventListener("click", () => {
+    if (isReceiverMode && receiverConnection) receiverConnection.switchRemoteCamera();
+    else switchCamera();
+  });
   photoBtn.addEventListener("click", takePhoto);
   recordBtn.addEventListener("click", toggleRecording);
 
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
+
+  cameraOnlyStopBtn.addEventListener("click", exitCameraOnlyMode);
+  showReceiveBtn.addEventListener("click", () => {
+    receiveForm.classList.remove("hide");
+    showReceiveBtn.classList.add("hide");
+  });
+  receiveConnectBtn.addEventListener("click", startReceiving);
+  receiveRoomInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") startReceiving();
+  });
 
   maskBtn.addEventListener("click", enterMaskMode);
   doneMaskBtn.addEventListener("click", exitMaskMode);
@@ -2334,6 +2629,8 @@
     el.addEventListener("input", refreshTunePreview);
   });
 
+  categoryWallBtn.addEventListener("click", () => setCategoryPicker("wall"));
+  categoryOtherBtn.addEventListener("click", () => setCategoryPicker("other"));
   savePointBtn.addEventListener("click", savePoint);
   deletePointBtn.addEventListener("click", deleteCurrentPoint);
   closeTuneBtn.addEventListener("click", closeTunePanel);

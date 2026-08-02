@@ -18,8 +18,31 @@
     <h1>Property Colour Reference</h1>
     <p>Live camera correction built from a known-true reference colour — a paint chip, swatch, or matched sample — not a generic filter. Aim at the reference, tune the correction until the feed matches its true colour, save it — corrections blend outward across the whole scene so documentation and colour-matching stay accurate under whatever light you're working in.</p>
     <button id="startBtn">Enable camera &amp; start</button>
+    <label id="cameraOnlyModeWrap" class="hud-slider camera-only-mode-wrap" title="For a two-device setup: this device just points at the property and broadcasts, with no controls of its own. Do all the calibration and correction on the other (receiving) device instead.">
+      <input id="cameraOnlyModeCheckbox" type="checkbox">
+      Camera-only mode (broadcast to another device)
+    </label>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
+
+    <div id="receiveModeSection">
+      <p class="hint">Or, on the controlling device of a two-device setup:</p>
+      <button id="showReceiveBtn" class="hud-btn reticle-btn-secondary">Receive camera from another device</button>
+      <div id="receiveForm" class="hide">
+        <p class="hint">On the camera device: open this page, check "Camera-only mode" above, tap "Enable camera &amp; start", then read out the room code shown there.</p>
+        <input id="receiveRoomInput" type="text" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off">
+        <button id="receiveConnectBtn" class="hud-btn">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cameraOnlyPanel" class="hide">
+    <h1>Broadcasting</h1>
+    <p class="hint">Point this device at the property. Do all calibration and correction on the connected device.</p>
+    <div class="room-code-label">Room code</div>
+    <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
+    <p id="cameraOnlyStatusText" class="hint" role="status" aria-live="polite">Starting…</p>
+    <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Stop &amp; show full controls</button>
   </div>
 </div>
 
@@ -199,6 +222,13 @@
       Label (optional)
       <input id="labelInput" type="text" placeholder="e.g. exterior trim white" maxlength="40">
     </label>
+    <div class="hud-slider category-picker" title="Which surface this reference colour is for. Wall references only correct wall-coloured areas; Other references only correct everything else — keeps a precisely-tuned wall colour from bleeding onto trim, roof, or sky.">
+      Applies to
+      <div class="category-picker-buttons">
+        <button type="button" id="categoryWallBtn" class="hud-btn category-btn" aria-pressed="false">Wall</button>
+        <button type="button" id="categoryOtherBtn" class="hud-btn category-btn active" aria-pressed="true">Other</button>
+      </div>
+    </div>
 
     <div class="tune-actions">
       <button id="savePointBtn" class="hud-btn">Save this reference</button>
