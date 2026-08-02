@@ -221,6 +221,24 @@
       <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden>
     </div>
+
+    <div class="profiles-section">
+      <h3 id="profilesTitle">Templates</h3>
+      <p class="hint">Save the current saved colours as a named template, then switch between templates instantly &mdash; handy for different circumstances (e.g. indoor vs outdoor lighting).</p>
+      <div class="profiles-row">
+        <select id="profileSelect" aria-label="Saved templates">
+          <option value="">&mdash; Select a template &mdash;</option>
+        </select>
+        <button id="loadProfileBtn" class="hud-btn reticle-btn-secondary">Load</button>
+        <button id="deleteProfileBtn" class="hud-btn reticle-btn-secondary">Delete</button>
+      </div>
+      <div class="profiles-row">
+        <input id="profileNameInput" type="text" placeholder="Template name" maxlength="40">
+        <button id="saveProfileBtn" class="hud-btn reticle-btn-secondary">Save as template</button>
+      </div>
+      <p id="profileStatus" class="hint" role="status" aria-live="polite"></p>
+    </div>
+
     <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>

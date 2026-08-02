@@ -360,6 +360,42 @@ html, body {
   display: none;
 }
 
+.profiles-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(242, 242, 247, 0.15);
+  text-align: left;
+}
+
+.profiles-section h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.profiles-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.profiles-row select,
+.profiles-row input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.profiles-row .hud-btn {
+  flex: 0 0 auto;
+}
+
 @media (prefers-color-scheme: light) {
   /* This project is intentionally dark-only; a bright nebula on white
      washes out the glow blending, so we keep the dark theme fixed. */

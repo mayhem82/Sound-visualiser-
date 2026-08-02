@@ -92,6 +92,12 @@
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
   const importExportStatus = document.getElementById("importExportStatus");
+  const profileSelect = document.getElementById("profileSelect");
+  const loadProfileBtn = document.getElementById("loadProfileBtn");
+  const deleteProfileBtn = document.getElementById("deleteProfileBtn");
+  const profileNameInput = document.getElementById("profileNameInput");
+  const saveProfileBtn = document.getElementById("saveProfileBtn");
+  const profileStatus = document.getElementById("profileStatus");
   const viewerPanel = document.getElementById("viewerPanel");
   const startShareBtn = document.getElementById("startShareBtn");
   const shareCodeBlock = document.getElementById("shareCodeBlock");
@@ -802,6 +808,7 @@
 
   const MAX_POINTS = 32;
   const CV_STORAGE_KEY = "cvCalibrationPoints_soundNebula_v1";
+  const CV_PROFILES_KEY = "cvProfiles_soundNebula_v1";
   const CV_ROTATE_KEY = "cvRotate180_v1";
   const CV_SPREAD_KEY = "cvSpread_v1";
   const CV_DEFAULT_SPREAD = 4;
@@ -827,6 +834,13 @@
 
   let colourVisionEnabled = false;
   let points = loadCvPoints();
+  // Named snapshots of `points`, saved/loaded on demand so different sets
+  // of calibrated colours can be switched between instantly instead of
+  // manually exporting/importing a file each time (e.g. one template per
+  // lighting condition). Independent of the live `points` array — loading
+  // a template overwrites it, but editing/deleting points afterwards
+  // doesn't touch the saved template until you explicitly save over it.
+  let profiles = loadCvProfiles();
   let editingPointId = null;
   let frozenColor = null;
   let tuneReturnFocusEl = null;
@@ -963,6 +977,24 @@
       localStorage.setItem(CV_STORAGE_KEY, JSON.stringify(points));
     } catch (e) {
       cvStatus("Could not save (storage full or unavailable).");
+    }
+  }
+
+  function loadCvProfiles() {
+    try {
+      const raw = localStorage.getItem(CV_PROFILES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveCvProfiles() {
+    try {
+      localStorage.setItem(CV_PROFILES_KEY, JSON.stringify(profiles));
+    } catch (e) {
+      profileStatus.textContent = "Could not save template (storage full or unavailable).";
     }
   }
 
@@ -1723,6 +1755,89 @@
     setSelectMode(false);
   }
 
+  // ---- Templates (named snapshots of the saved-colours list) ----
+
+  function renderProfileSelect() {
+    const prevValue = profileSelect.value;
+    profileSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Select a template —";
+    profileSelect.appendChild(placeholder);
+    profiles.forEach((prof) => {
+      const opt = document.createElement("option");
+      opt.value = prof.id;
+      opt.textContent = `${prof.name} (${prof.points.length})`;
+      profileSelect.appendChild(opt);
+    });
+    if (profiles.some((p) => p.id === prevValue)) profileSelect.value = prevValue;
+  }
+
+  function saveCurrentAsProfile() {
+    const name = profileNameInput.value.trim();
+    if (!name) {
+      profileStatus.textContent = "Enter a name for the template first.";
+      return;
+    }
+    if (points.length === 0) {
+      profileStatus.textContent = "No saved colours to save as a template yet.";
+      return;
+    }
+    const snapshot = JSON.parse(JSON.stringify(points));
+    const existing = profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.points = snapshot;
+    } else {
+      profiles.push({
+        id: "prof_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        name,
+        points: snapshot
+      });
+    }
+    saveCvProfiles();
+    renderProfileSelect();
+    profileSelect.value = existing ? existing.id : profiles[profiles.length - 1].id;
+    profileNameInput.value = "";
+    profileStatus.textContent = `${existing ? "Updated" : "Saved"} template "${name}" — ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+  }
+
+  function loadSelectedProfile() {
+    const id = profileSelect.value;
+    if (!id) {
+      profileStatus.textContent = "Pick a template to load first.";
+      return;
+    }
+    const prof = profiles.find((p) => p.id === id);
+    if (!prof) return;
+    const ok = window.confirm(
+      `Load template "${prof.name}"? This replaces your current ${points.length} saved colour${points.length === 1 ? "" : "s"} with the ${prof.points.length} from this template.`
+    );
+    if (!ok) return;
+    points = JSON.parse(JSON.stringify(prof.points));
+    selectedIds.clear();
+    saveCvPoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    profileStatus.textContent = `Loaded "${prof.name}" — ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+  }
+
+  function deleteSelectedProfile() {
+    const id = profileSelect.value;
+    if (!id) {
+      profileStatus.textContent = "Pick a template to delete first.";
+      return;
+    }
+    const prof = profiles.find((p) => p.id === id);
+    if (!prof) return;
+    const ok = window.confirm(`Delete template "${prof.name}"? This can't be undone — your current saved colours are unaffected.`);
+    if (!ok) return;
+    profiles = profiles.filter((p) => p.id !== id);
+    saveCvProfiles();
+    renderProfileSelect();
+    profileStatus.textContent = `Deleted template "${prof.name}".`;
+  }
+
   function renderPresetGrid() {
     presetGrid.innerHTML = "";
     CVD_PRESETS.forEach((preset) => {
@@ -1763,6 +1878,7 @@
   function closePointsPanel() {
     pointsPanel.classList.add("hide");
     importExportStatus.textContent = "";
+    profileStatus.textContent = "";
     pointsBtn.focus();
   }
 
@@ -2377,6 +2493,7 @@
     hideCvOverlayPanels();
     setSelectMode(false);
     importExportStatus.textContent = "";
+    profileStatus.textContent = "";
     pointsPanel.classList.remove("hide");
     closePointsBtn.focus();
   });
@@ -2392,6 +2509,13 @@
       importPointsFromFile(importFile.files[0]);
     }
     importFile.value = "";
+  });
+
+  saveProfileBtn.addEventListener("click", saveCurrentAsProfile);
+  loadProfileBtn.addEventListener("click", loadSelectedProfile);
+  deleteProfileBtn.addEventListener("click", deleteSelectedProfile);
+  profileNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveCurrentAsProfile();
   });
 
   document.addEventListener("keydown", (e) => {
@@ -2410,6 +2534,7 @@
   });
 
   updatePointsCount();
+  renderProfileSelect();
   blendLabel.textContent = `${blendSlider.value}%`;
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);
