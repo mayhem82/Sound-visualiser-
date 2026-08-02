@@ -791,14 +791,17 @@
   // The full correction engine from colorvision.html/colorvision.js —
   // calibrated points, colour-blindness-type simulation, blend — applied
   // to the same camera background above instead of navigating away to a
-  // separate page. Persists to the exact same localStorage keys, so any
-  // colours already calibrated on colorvision.html show up here too, and
-  // vice versa. Renders into its own off-screen WebGL canvas (see
+  // separate page. Renders into its own off-screen WebGL canvas (see
   // renderCorrectionFrame / drawCameraBackground above) since cameraFeed
   // only ever holds the one raw feed.
+  //
+  // Deliberately its own storage key, separate from colorvision.html's
+  // (colorvision.js's STORAGE_KEY) — they used to share one calibrated-
+  // points list, which meant deleting a colour on one page silently wiped
+  // it on the other too. Each page now keeps its own independent set.
 
   const MAX_POINTS = 32;
-  const CV_STORAGE_KEY = "cvCalibrationPoints_v1";
+  const CV_STORAGE_KEY = "cvCalibrationPoints_soundNebula_v1";
   const CV_ROTATE_KEY = "cvRotate180_v1";
   const CV_SPREAD_KEY = "cvSpread_v1";
   const CV_DEFAULT_SPREAD = 4;
