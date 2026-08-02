@@ -213,23 +213,6 @@ html, body {
   cursor: not-allowed;
 }
 
-.mask-tools {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.mask-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.mask-tool-btn {
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
 .hud-slider select {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);
