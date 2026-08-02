@@ -31,6 +31,16 @@
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
   const nebulaBtn = document.getElementById("nebulaBtn");
+  const outlinesBtn = document.getElementById("outlinesBtn");
+  const outlineThicknessWrap = document.getElementById("outlineThicknessWrap");
+  const outlineThicknessSlider = document.getElementById("outlineThicknessSlider");
+  const outlineThicknessLabel = document.getElementById("outlineThicknessLabel");
+  const outlineBlendWrap = document.getElementById("outlineBlendWrap");
+  const outlineBlendSlider = document.getElementById("outlineBlendSlider");
+  const outlineBlendLabel = document.getElementById("outlineBlendLabel");
+  const outlineOpacityWrap = document.getElementById("outlineOpacityWrap");
+  const outlineOpacitySlider = document.getElementById("outlineOpacitySlider");
+  const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
@@ -133,6 +143,50 @@
   let musicMode = localStorage.getItem(MIC_MODE_KEY) === "1";
   let cameraBackgroundEnabled = false;
   let nebulaEnabled = true;
+  // ---- Outlines mode ----
+  // Redraws the particle nebula as stroked/hollow shapes instead of solid
+  // glow blobs, and (when colour vision correction is running) overlays a
+  // Sobel edge-detection outline on the camera view — same three sliders
+  // drive both. Thickness/Blend/Opacity keep working even with the mode
+  // toggled off (so turning it back on remembers where you left them);
+  // it's outlinesEnabled that gates whether they have any visible effect.
+  const OUTLINE_ENABLED_KEY = "outlinesEnabled_soundNebula_v1";
+  const OUTLINE_THICKNESS_KEY = "outlineThickness_soundNebula_v1";
+  const OUTLINE_BLEND_KEY = "outlineBlend_soundNebula_v1";
+  const OUTLINE_OPACITY_KEY = "outlineOpacity_soundNebula_v1";
+  const OUTLINE_DEFAULT_THICKNESS = 2;
+  const OUTLINE_DEFAULT_BLEND = 1;
+  const OUTLINE_DEFAULT_OPACITY = 1;
+
+  function loadOutlineNumberPref(key, fallback) {
+    try {
+      const raw = parseFloat(localStorage.getItem(key));
+      return Number.isFinite(raw) ? raw : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  let outlinesEnabled = (() => {
+    try { return localStorage.getItem(OUTLINE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let outlineThickness = loadOutlineNumberPref(OUTLINE_THICKNESS_KEY, OUTLINE_DEFAULT_THICKNESS);
+  let outlineBlend = loadOutlineNumberPref(OUTLINE_BLEND_KEY, OUTLINE_DEFAULT_BLEND);
+  let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
+
+  function saveOutlinesEnabledPref() {
+    try { localStorage.setItem(OUTLINE_ENABLED_KEY, outlinesEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveOutlineThicknessPref() {
+    try { localStorage.setItem(OUTLINE_THICKNESS_KEY, String(outlineThickness)); } catch (e) {}
+  }
+  function saveOutlineBlendPref() {
+    try { localStorage.setItem(OUTLINE_BLEND_KEY, String(outlineBlend)); } catch (e) {}
+  }
+  function saveOutlineOpacityPref() {
+    try { localStorage.setItem(OUTLINE_OPACITY_KEY, String(outlineOpacity)); } catch (e) {}
+  }
+
   let cameraStream = null;
   const CAMERA_DEVICE_KEY = "cameraDeviceId_v1";
   let selectedCameraId = localStorage.getItem(CAMERA_DEVICE_KEY) || "";
@@ -501,15 +555,28 @@
         const y = cy + Math.sin(p.angle) * radius * 0.72; // slight ellipse flattening
         const size = p.size * (1 + energy * 3.2);
         const alpha = 0.25 + energy * 0.65;
-
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
         const hue = p.band.hue + p.hueOffset;
-        grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha})`);
-        grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, size * 4, 0, Math.PI * 2);
-        ctx.fill();
+        // 0 when Outlines mode is off — keeps this pixel-for-pixel
+        // identical to the plain filled look with no behaviour change.
+        const outlineWeight = outlinesEnabled ? outlineBlend : 0;
+
+        if (outlineWeight < 1) {
+          const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+          grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha * (1 - outlineWeight)})`);
+          grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (outlineWeight > 0) {
+          ctx.strokeStyle = `hsla(${hue}, 90%, 75%, ${alpha * outlineWeight * outlineOpacity})`;
+          ctx.lineWidth = outlineThickness;
+          ctx.beginPath();
+          ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
     }
 
@@ -791,6 +858,21 @@
     // up when engaged.
     nebulaBtn.classList.toggle("active", !nebulaEnabled);
     nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
+  }
+
+  function updateOutlinesUi() {
+    outlinesBtn.textContent = outlinesEnabled ? "Outlines mode: On" : "Outlines mode: Off";
+    outlinesBtn.classList.toggle("active", outlinesEnabled);
+    outlinesBtn.setAttribute("aria-pressed", String(outlinesEnabled));
+    [outlineThicknessWrap, outlineBlendWrap, outlineOpacityWrap].forEach((el) =>
+      el.classList.toggle("hide", !outlinesEnabled)
+    );
+  }
+
+  function toggleOutlinesMode() {
+    outlinesEnabled = !outlinesEnabled;
+    saveOutlinesEnabledPref();
+    updateOutlinesUi();
   }
 
   // ---- Colour Vision Assist, live on the camera background ----
@@ -1090,6 +1172,11 @@
     varying vec2 vUv;
     uniform sampler2D uTex;
     uniform float uBlend;
+    uniform float uOutlineEnabled;
+    uniform float uOutlineThickness;
+    uniform float uOutlineBlend;
+    uniform float uOutlineOpacity;
+    uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
     uniform vec3 uSourceLab[${MAX_POINTS}];
@@ -1177,6 +1264,31 @@
       return rgb1 + m;
     }
 
+    float cvLuminance(vec3 c) {
+      return dot(c, vec3(0.299, 0.587, 0.114));
+    }
+
+    // Sobel edge detection on luminance, sampled from the raw camera
+    // texture (not the corrected result) so outline strength reflects
+    // real scene edges regardless of the current blend/CVD settings.
+    // uOutlineThickness scales the sample offsets — a bigger spread
+    // reads as a thicker line since more of a real edge's neighbourhood
+    // ends up contributing to it.
+    float cvEdgeStrength(vec2 uv) {
+      vec2 t = uTexelSize * max(uOutlineThickness, 0.0001);
+      float tl = cvLuminance(texture2D(uTex, uv + vec2(-t.x, -t.y)).rgb);
+      float tc = cvLuminance(texture2D(uTex, uv + vec2(0.0, -t.y)).rgb);
+      float tr = cvLuminance(texture2D(uTex, uv + vec2(t.x, -t.y)).rgb);
+      float ml = cvLuminance(texture2D(uTex, uv + vec2(-t.x, 0.0)).rgb);
+      float mr = cvLuminance(texture2D(uTex, uv + vec2(t.x, 0.0)).rgb);
+      float bl = cvLuminance(texture2D(uTex, uv + vec2(-t.x, t.y)).rgb);
+      float bc = cvLuminance(texture2D(uTex, uv + vec2(0.0, t.y)).rgb);
+      float br = cvLuminance(texture2D(uTex, uv + vec2(t.x, t.y)).rgb);
+      float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+      float gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+      return clamp(length(vec2(gx, gy)), 0.0, 1.0);
+    }
+
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 base = daltonize(original, uCvdType, uCvdStrength);
@@ -1212,7 +1324,15 @@
       float expMul = pow(2.0, correction2.y);
       corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
-      gl_FragColor = vec4(mix(original, corrected, uBlend), 1.0);
+      vec3 filled = mix(original, corrected, uBlend);
+      vec3 finalColor = filled;
+      if (uOutlineEnabled > 0.5) {
+        float edge = cvEdgeStrength(vUv) * uOutlineOpacity;
+        vec3 outlineColor = vec3(edge);
+        finalColor = mix(filled, outlineColor, uOutlineBlend);
+      }
+
+      gl_FragColor = vec4(finalColor, 1.0);
     }
   `;
 
@@ -1279,6 +1399,11 @@
     correctionUniforms = {
       uTex: glCtx.getUniformLocation(prog, "uTex"),
       uBlend: glCtx.getUniformLocation(prog, "uBlend"),
+      uOutlineEnabled: glCtx.getUniformLocation(prog, "uOutlineEnabled"),
+      uOutlineThickness: glCtx.getUniformLocation(prog, "uOutlineThickness"),
+      uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
+      uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
+      uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
       uUvScale: glCtx.getUniformLocation(prog, "uUvScale"),
@@ -1342,6 +1467,15 @@
     correctionGl.texImage2D(correctionGl.TEXTURE_2D, 0, correctionGl.RGBA, correctionGl.RGBA, correctionGl.UNSIGNED_BYTE, cameraFeed);
     correctionGl.uniform1i(correctionUniforms.uTex, 0);
     correctionGl.uniform1f(correctionUniforms.uBlend, parseFloat(blendSlider.value) / 100);
+    correctionGl.uniform1f(correctionUniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
+    correctionGl.uniform1f(correctionUniforms.uOutlineThickness, outlineThickness);
+    correctionGl.uniform1f(correctionUniforms.uOutlineBlend, outlineBlend);
+    correctionGl.uniform1f(correctionUniforms.uOutlineOpacity, outlineOpacity);
+    // Texel size in the camera's own native resolution (not the output
+    // canvas's) — vUv samples uTex in cropped-video space, so the edge
+    // kernel needs to step in video texels for a consistent line width
+    // regardless of how the canvas is sized/scaled on screen.
+    correctionGl.uniform2f(correctionUniforms.uTexelSize, 1 / vw, 1 / vh);
     correctionGl.uniform1f(correctionUniforms.uSpread, spread);
     correctionGl.uniform1f(correctionUniforms.uRotate180, rotate180 ? 1 : 0);
     correctionGl.uniform2f(correctionUniforms.uUvScale, cover.sx, cover.sy);
@@ -1486,6 +1620,9 @@
     glCtx.texImage2D(glCtx.TEXTURE_2D, 0, glCtx.RGBA, 1, 1, 0, glCtx.RGBA, glCtx.UNSIGNED_BYTE, px);
     glCtx.uniform1i(correctionUniforms.uTex, 0);
     glCtx.uniform1f(correctionUniforms.uBlend, blendOverride);
+    // Always off here — this draws a single solid-colour swatch, not the
+    // live camera frame, so edge detection across it would be meaningless.
+    glCtx.uniform1f(correctionUniforms.uOutlineEnabled, 0);
     glCtx.uniform1f(correctionUniforms.uSpread, spread);
     glCtx.uniform1f(correctionUniforms.uRotate180, 0);
     glCtx.uniform2f(correctionUniforms.uUvScale, 1, 1);
@@ -2420,6 +2557,29 @@
     navigator.mediaDevices.addEventListener("devicechange", refreshCameraDeviceList);
   }
   nebulaBtn.addEventListener("click", toggleNebula);
+  outlinesBtn.addEventListener("click", toggleOutlinesMode);
+  outlineThicknessSlider.addEventListener("input", () => {
+    outlineThickness = parseFloat(outlineThicknessSlider.value);
+    outlineThicknessLabel.textContent = `${outlineThickness}px`;
+    saveOutlineThicknessPref();
+  });
+  outlineBlendSlider.addEventListener("input", () => {
+    outlineBlend = parseFloat(outlineBlendSlider.value) / 100;
+    outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+    saveOutlineBlendPref();
+  });
+  outlineOpacitySlider.addEventListener("input", () => {
+    outlineOpacity = parseFloat(outlineOpacitySlider.value) / 100;
+    outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+    saveOutlineOpacityPref();
+  });
+  outlineThicknessSlider.value = String(outlineThickness);
+  outlineThicknessLabel.textContent = `${outlineThickness}px`;
+  outlineBlendSlider.value = String(Math.round(outlineBlend * 100));
+  outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+  outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
+  outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+  updateOutlinesUi();
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);

@@ -8,6 +8,13 @@
   const DEFAULT_SPREAD = 4;
   const SAMPLE_AREA_KEY = "pcSampleArea_v1";
   const DEFAULT_SAMPLE_AREA = 15;
+  const OUTLINE_ENABLED_KEY = "outlinesEnabled_propertyColour_v1";
+  const OUTLINE_THICKNESS_KEY = "outlineThickness_propertyColour_v1";
+  const OUTLINE_BLEND_KEY = "outlineBlend_propertyColour_v1";
+  const OUTLINE_OPACITY_KEY = "outlineOpacity_propertyColour_v1";
+  const OUTLINE_DEFAULT_THICKNESS = 2;
+  const OUTLINE_DEFAULT_BLEND = 1;
+  const OUTLINE_DEFAULT_OPACITY = 1;
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -28,6 +35,16 @@
   const blendLabel = document.getElementById("blendLabel");
   const spreadSlider = document.getElementById("spreadSlider");
   const spreadLabel = document.getElementById("spreadLabel");
+  const outlinesBtn = document.getElementById("outlinesBtn");
+  const outlineThicknessWrap = document.getElementById("outlineThicknessWrap");
+  const outlineThicknessSlider = document.getElementById("outlineThicknessSlider");
+  const outlineThicknessLabel = document.getElementById("outlineThicknessLabel");
+  const outlineBlendWrap = document.getElementById("outlineBlendWrap");
+  const outlineBlendSlider = document.getElementById("outlineBlendSlider");
+  const outlineBlendLabel = document.getElementById("outlineBlendLabel");
+  const outlineOpacityWrap = document.getElementById("outlineOpacityWrap");
+  const outlineOpacitySlider = document.getElementById("outlineOpacitySlider");
+  const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -166,6 +183,12 @@
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
   let sampleArea = loadSampleAreaPref();
+  let outlinesEnabled = (() => {
+    try { return localStorage.getItem(OUTLINE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let outlineThickness = loadOutlineNumberPref(OUTLINE_THICKNESS_KEY, OUTLINE_DEFAULT_THICKNESS);
+  let outlineBlend = loadOutlineNumberPref(OUTLINE_BLEND_KEY, OUTLINE_DEFAULT_BLEND);
+  let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
   const maskCtx = maskCanvas.getContext("2d");
   let maskTexture = null;
   let maskDirty = true;
@@ -370,6 +393,42 @@
     return "Very wide";
   }
 
+  function loadOutlineNumberPref(key, fallback) {
+    try {
+      const raw = parseFloat(localStorage.getItem(key));
+      return Number.isFinite(raw) ? raw : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+  function saveOutlinesEnabledPref() {
+    try { localStorage.setItem(OUTLINE_ENABLED_KEY, outlinesEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveOutlineThicknessPref() {
+    try { localStorage.setItem(OUTLINE_THICKNESS_KEY, String(outlineThickness)); } catch (e) {}
+  }
+  function saveOutlineBlendPref() {
+    try { localStorage.setItem(OUTLINE_BLEND_KEY, String(outlineBlend)); } catch (e) {}
+  }
+  function saveOutlineOpacityPref() {
+    try { localStorage.setItem(OUTLINE_OPACITY_KEY, String(outlineOpacity)); } catch (e) {}
+  }
+
+  function updateOutlinesUi() {
+    outlinesBtn.textContent = outlinesEnabled ? "Outlines mode: On" : "Outlines mode: Off";
+    outlinesBtn.classList.toggle("active", outlinesEnabled);
+    outlinesBtn.setAttribute("aria-pressed", String(outlinesEnabled));
+    [outlineThicknessWrap, outlineBlendWrap, outlineOpacityWrap].forEach((el) =>
+      el.classList.toggle("hide", !outlinesEnabled)
+    );
+  }
+
+  function toggleOutlinesMode() {
+    outlinesEnabled = !outlinesEnabled;
+    saveOutlinesEnabledPref();
+    updateOutlinesUi();
+  }
+
   function loadSampleAreaPref() {
     try {
       const raw = parseFloat(localStorage.getItem(SAMPLE_AREA_KEY));
@@ -434,6 +493,11 @@
     varying vec2 vMaskUv;
     uniform sampler2D uTex;
     uniform float uBlend;
+    uniform float uOutlineEnabled;
+    uniform float uOutlineThickness;
+    uniform float uOutlineBlend;
+    uniform float uOutlineOpacity;
+    uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
     uniform vec3 uSourceLab[${MAX_POINTS}];
@@ -490,6 +554,28 @@
       return rgb1 + m;
     }
 
+    float cvLuminance(vec3 c) {
+      return dot(c, vec3(0.299, 0.587, 0.114));
+    }
+
+    // Sobel edge detection on luminance, sampled from the raw camera
+    // texture (not the corrected result) so outline strength reflects
+    // real scene edges regardless of the current blend/mask settings.
+    float cvEdgeStrength(vec2 uv) {
+      vec2 t = uTexelSize * max(uOutlineThickness, 0.0001);
+      float tl = cvLuminance(texture2D(uTex, uv + vec2(-t.x, -t.y)).rgb);
+      float tc = cvLuminance(texture2D(uTex, uv + vec2(0.0, -t.y)).rgb);
+      float tr = cvLuminance(texture2D(uTex, uv + vec2(t.x, -t.y)).rgb);
+      float ml = cvLuminance(texture2D(uTex, uv + vec2(-t.x, 0.0)).rgb);
+      float mr = cvLuminance(texture2D(uTex, uv + vec2(t.x, 0.0)).rgb);
+      float bl = cvLuminance(texture2D(uTex, uv + vec2(-t.x, t.y)).rgb);
+      float bc = cvLuminance(texture2D(uTex, uv + vec2(0.0, t.y)).rgb);
+      float br = cvLuminance(texture2D(uTex, uv + vec2(t.x, t.y)).rgb);
+      float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+      float gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+      return clamp(length(vec2(gx, gy)), 0.0, 1.0);
+    }
+
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 correction = vec3(0.0);
@@ -525,7 +611,15 @@
       corrected = clamp((corrected * expMul - 0.5) * contMul + 0.5, 0.0, 1.0);
 
       float maskFactor = texture2D(uMaskTex, vMaskUv).r;
-      gl_FragColor = vec4(mix(original, corrected, uBlend * maskFactor), 1.0);
+      vec3 filled = mix(original, corrected, uBlend * maskFactor);
+      vec3 finalColor = filled;
+      if (uOutlineEnabled > 0.5) {
+        float edge = cvEdgeStrength(vUv) * uOutlineOpacity;
+        vec3 outlineColor = vec3(edge);
+        finalColor = mix(filled, outlineColor, uOutlineBlend);
+      }
+
+      gl_FragColor = vec4(finalColor, 1.0);
     }
   `;
 
@@ -600,6 +694,11 @@
     const uni = {
       uTex: glCtx.getUniformLocation(prog, "uTex"),
       uBlend: glCtx.getUniformLocation(prog, "uBlend"),
+      uOutlineEnabled: glCtx.getUniformLocation(prog, "uOutlineEnabled"),
+      uOutlineThickness: glCtx.getUniformLocation(prog, "uOutlineThickness"),
+      uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
+      uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
+      uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
       uUvScale: glCtx.getUniformLocation(prog, "uUvScale"),
@@ -774,6 +873,11 @@
       gl.uniform1i(uniforms.uMaskTex, 1);
 
       gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
+      gl.uniform1f(uniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uOutlineThickness, outlineThickness);
+      gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
+      gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
+      gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
@@ -824,6 +928,11 @@
         fixedGl.uniform1i(fixedUniforms.uMaskTex, 1);
 
         fixedGl.uniform1f(fixedUniforms.uBlend, 1);
+        fixedGl.uniform1f(fixedUniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
+        fixedGl.uniform1f(fixedUniforms.uOutlineThickness, outlineThickness);
+        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
+        fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
+        fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
         fixedGl.uniform1f(fixedUniforms.uSpread, spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
         fixedGl.uniform2f(fixedUniforms.uUvScale, cover.sx, cover.sy);
@@ -2115,6 +2224,30 @@
     saveSampleAreaPref();
     updateReticleSize();
   });
+
+  outlinesBtn.addEventListener("click", toggleOutlinesMode);
+  outlineThicknessSlider.addEventListener("input", () => {
+    outlineThickness = parseFloat(outlineThicknessSlider.value);
+    outlineThicknessLabel.textContent = `${outlineThickness}px`;
+    saveOutlineThicknessPref();
+  });
+  outlineBlendSlider.addEventListener("input", () => {
+    outlineBlend = parseFloat(outlineBlendSlider.value) / 100;
+    outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+    saveOutlineBlendPref();
+  });
+  outlineOpacitySlider.addEventListener("input", () => {
+    outlineOpacity = parseFloat(outlineOpacitySlider.value) / 100;
+    outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+    saveOutlineOpacityPref();
+  });
+  outlineThicknessSlider.value = String(outlineThickness);
+  outlineThicknessLabel.textContent = `${outlineThickness}px`;
+  outlineBlendSlider.value = String(Math.round(outlineBlend * 100));
+  outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+  outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
+  outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+  updateOutlinesUi();
 
   pauseBtn.addEventListener("click", () => {
     paused = !paused;

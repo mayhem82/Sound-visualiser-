@@ -45,6 +45,19 @@
     Correction spread: <span id="spreadLabel">Medium</span>
     <input id="spreadSlider" type="range" min="1" max="40" value="4">
   </label>
+  <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view instead of (or blended with) the normal full-colour correction.">Outlines mode: Off</button>
+  <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
+    Outline thickness: <span id="outlineThicknessLabel">2px</span>
+    <input id="outlineThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="outlineBlendWrap" class="hud-slider hide" title="0% is the normal filled/full-colour look. 100% is fully outlined.">
+    Outline blend: <span id="outlineBlendLabel">100%</span>
+    <input id="outlineBlendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="outlineOpacityWrap" class="hud-slider hide" title="How strong/visible the outline lines themselves are.">
+    Outline opacity: <span id="outlineOpacityLabel">100%</span>
+    <input id="outlineOpacitySlider" type="range" min="0" max="100" value="100">
+  </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
