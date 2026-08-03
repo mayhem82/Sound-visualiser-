@@ -18,6 +18,7 @@
   const CARTOON_ENABLED_KEY = "cartoonEnabled_propertyColour_v1";
   const CARTOON_LEVELS_KEY = "cartoonLevels_propertyColour_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
+  const SHUTTER_MODE_KEY = "shutterMode_propertyColour_v1";
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -299,6 +300,10 @@
     try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
+  let shutterMode = (() => {
+    try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
+  })();
+  let shutterModeStatusTimer = null;
   const maskCtx = maskCanvas.getContext("2d");
   let maskTexture = null;
   let maskDirty = true;
@@ -1536,6 +1541,27 @@
   function toggleRecording() {
     if (isRecording) stopRecording();
     else startRecording();
+  }
+
+  // ---- Hardware volume-button shutter ----
+  // Volume-down fires whichever mode is currently selected (photo shutter,
+  // or start/stop video); volume-up switches which mode that is, so both
+  // photo and video stay reachable from the hardware buttons alone.
+  function fireShutter() {
+    if (shutterMode === "video") toggleRecording();
+    else takePhoto();
+  }
+
+  function saveShutterModePref() {
+    try { localStorage.setItem(SHUTTER_MODE_KEY, shutterMode); } catch (e) {}
+  }
+
+  function toggleShutterMode() {
+    shutterMode = shutterMode === "video" ? "photo" : "video";
+    saveShutterModePref();
+    showCameraStatus(`Volume shutter: ${shutterMode === "video" ? "Video" : "Photo"} mode`);
+    if (shutterModeStatusTimer) clearTimeout(shutterModeStatusTimer);
+    shutterModeStatusTimer = setTimeout(hideCameraStatus, 1600);
   }
 
   // ---- Tablet viewer (WebRTC, signaled over public MQTT relays) ----
@@ -2910,13 +2936,17 @@
   // desktop never do), and even where a browser does — mainly some
   // Android/Chrome versions, especially as an installed PWA — the OS may
   // still also change the system volume alongside it. Where it works,
-  // volume-down takes a photo, same convention as native camera apps; the
-  // on-screen Photo button is the reliable fallback everywhere else.
+  // volume-down fires the current shutter mode (photo or video) and
+  // volume-up switches which mode that is; the on-screen Photo/Record
+  // buttons are the reliable fallback everywhere else.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "AudioVolumeDown" && e.code !== "AudioVolumeDown") return;
+    const isDown = e.key === "AudioVolumeDown" || e.code === "AudioVolumeDown";
+    const isUp = e.key === "AudioVolumeUp" || e.code === "AudioVolumeUp";
+    if (!isDown && !isUp) return;
     if (!currentStream) return;
     e.preventDefault();
-    takePhoto();
+    if (isUp) toggleShutterMode();
+    else fireShutter();
   });
 
   calibrateBtn.addEventListener("click", openChoosePanel);
