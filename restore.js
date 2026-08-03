@@ -170,7 +170,9 @@
     { label: "Cool white paint", hex: "#f0f2f5" },
     { label: "Beige / greige", hex: "#d9cfc1" },
     { label: "Taupe", hex: "#b8a99a" },
-    { label: "Charcoal trim", hex: "#3a3a3a" }
+    { label: "Charcoal trim", hex: "#3a3a3a" },
+    { label: "Terracotta roof tile", hex: "#b5652c" },
+    { label: "Sage green trim", hex: "#8f9779" }
   ];
 
   // Each saved point is a real colour the user aimed at and personally tuned:
