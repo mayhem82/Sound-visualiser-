@@ -30,6 +30,16 @@
   const overlay = document.getElementById("overlay");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
+  const cameraOnlyModeCheckbox = document.getElementById("cameraOnlyModeCheckbox");
+  const cameraOnlyBadge = document.getElementById("cameraOnlyBadge");
+  const cameraOnlyRoomCode = document.getElementById("cameraOnlyRoomCode");
+  const cameraOnlyStatusText = document.getElementById("cameraOnlyStatusText");
+  const cameraOnlyStopBtn = document.getElementById("cameraOnlyStopBtn");
+  const showReceiveBtn = document.getElementById("showReceiveBtn");
+  const receiveForm = document.getElementById("receiveForm");
+  const receiveRoomInput = document.getElementById("receiveRoomInput");
+  const receiveConnectBtn = document.getElementById("receiveConnectBtn");
+  const receiverStatusBadge = document.getElementById("receiverStatusBadge");
 
   const hud = document.getElementById("hud");
   const blendSlider = document.getElementById("blendSlider");
@@ -909,16 +919,44 @@
         audio: false
       });
       await attachStream(stream);
-      overlay.classList.add("hide");
-      hud.classList.remove("hide");
       resizeStage();
       initGL();
       uploadPointUniforms();
       renderLoop();
       refreshVideoDevices();
+      if (cameraOnlyModeCheckbox.checked) {
+        await enterCameraOnlyMode();
+      } else {
+        overlay.classList.add("hide");
+        hud.classList.remove("hide");
+      }
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
+  }
+
+  // ---- Camera-only broadcast mode ----
+  // For a two-device setup: this device just points somewhere and streams
+  // its raw feed, with no controls of its own to fumble with. All
+  // calibration/correction/control happens on whichever other device
+  // connects via "Receive camera from another device" (see
+  // connectAsReceiver below) — that device gets the raw feed and runs its
+  // own full local correction pipeline against it, same as if it had its
+  // own camera. The camera view itself stays fully visible the whole
+  // time — this only hides the overlay, same as a normal local start, and
+  // shows a small non-blocking corner badge with the room code instead of
+  // the full control HUD.
+  async function enterCameraOnlyMode() {
+    overlay.classList.add("hide");
+    cameraOnlyBadge.classList.remove("hide");
+    cameraOnlyStatusText.textContent = "Connecting to relay…";
+    await startTabletShare();
+  }
+
+  function exitCameraOnlyMode() {
+    stopTabletShare("");
+    cameraOnlyBadge.classList.add("hide");
+    hud.classList.remove("hide");
   }
 
   async function attachStream(stream) {
@@ -1361,18 +1399,27 @@
     if (msg.type === "switch-camera" && msg.to === broadcastShare.deviceId) switchCamera();
   }
 
+  // Mirrors broadcast status into both the normal "Connect tablet" panel
+  // (viewerStatus) and the camera-only mode's own corner badge
+  // (cameraOnlyStatusText, only ever shown in camera-only mode) — whichever
+  // one the operator is actually looking at stays in sync automatically.
+  function setViewerStatus(text) {
+    viewerStatus.textContent = text;
+    cameraOnlyStatusText.textContent = text;
+  }
+
   function updateViewerConnectedBadge() {
     const anyConnected = Array.from(broadcastShare.peers.values()).some(
       (entry) => entry.pc && entry.pc.connectionState === "connected"
     );
     viewerConnectedBadge.classList.toggle("hide", !anyConnected);
-    if (anyConnected) viewerStatus.textContent = "Tablet connected.";
+    if (anyConnected) setViewerStatus("Tablet connected.");
   }
 
   async function ensureBroadcastPeerFor(viewerId) {
     if (broadcastShare.peers.has(viewerId)) return; // dedupe repeated viewer-here / multi-broker echoes
     if (!gl || typeof stage.captureStream !== "function") {
-      viewerStatus.textContent = "Viewer streaming isn't supported in this browser.";
+      setViewerStatus("Viewer streaming isn't supported in this browser.");
       return;
     }
     ensureOriginalCanvas();
@@ -1419,7 +1466,7 @@
       }, { qos: 1 });
     } catch (err) {
       broadcastShare.peers.delete(viewerId);
-      viewerStatus.textContent = "Couldn't connect to the other device: " + (err.message || err.name || "unknown error");
+      setViewerStatus("Couldn't connect to the other device: " + (err.message || err.name || "unknown error"));
     }
   }
 
@@ -1467,21 +1514,21 @@
     broadcastShare.room = null;
     shareCodeBlock.classList.add("hide");
     viewerConnectedBadge.classList.add("hide");
-    viewerStatus.textContent = message || "";
+    setViewerStatus(message || "");
     startShareBtn.textContent = "Start live sharing";
     startShareBtn.disabled = false;
   }
 
   async function startTabletShare() {
     startShareBtn.disabled = true;
-    viewerStatus.textContent = "Connecting to relay…";
+    setViewerStatus("Connecting to relay…");
     const room = makeRoomCode();
     broadcastShare.room = room;
 
     try {
       await connectBroadcastSignaling(room);
     } catch (err) {
-      viewerStatus.textContent = err.message || "Couldn't start live sharing.";
+      setViewerStatus(err.message || "Couldn't start live sharing.");
       broadcastShare.room = null;
       startShareBtn.disabled = false;
       return;
@@ -1489,11 +1536,12 @@
 
     broadcastShare.active = true;
     shareRoomCode.textContent = room;
+    cameraOnlyRoomCode.textContent = room;
     const viewUrl = new URL("viewer.html", location.href);
     viewUrl.searchParams.set("room", room);
     shareViewUrlText.textContent = viewUrl.toString();
     shareCodeBlock.classList.remove("hide");
-    viewerStatus.textContent = "Waiting for the other device to connect…";
+    setViewerStatus("Waiting for the other device to connect…");
     startShareBtn.textContent = "Stop live sharing";
     startShareBtn.disabled = false;
   }
@@ -1504,6 +1552,208 @@
     } else {
       startTabletShare();
     }
+  }
+
+  // ---- Receiving a camera feed from another device ----
+  // The reverse of "Connect tablet" above: this is the *answerer* side of
+  // the same room-code/WebRTC pairing, but instead of displaying the
+  // incoming video read-only (like viewer.html does), the "original"
+  // (raw, uncorrected) track becomes this page's own video source — so
+  // the whole existing calibration/correction pipeline below runs against
+  // it exactly as if it came from a local camera. Lets one device (e.g. a
+  // phone in camera-only mode above) just point somewhere while another
+  // device (e.g. a tablet) does all the calibration and shows the result.
+  let receiverConnection = null;
+  let isReceiverMode = false;
+  let receiverStarted = false;
+
+  // Mirrors receiver-side status into a small badge that stays visible
+  // even after the start overlay hides (setStatus()'s own #status element
+  // lives inside #panel, inside #overlay — invisible once connected) so
+  // the connection/error state stays visible for troubleshooting instead
+  // of silently going dark the moment the overlay hides.
+  function setReceiverStatus(text) {
+    setStatus(text);
+    receiverStatusBadge.textContent = text;
+    receiverStatusBadge.classList.toggle("hide", !text);
+  }
+
+  function connectAsReceiver(room) {
+    const deviceId = makeDeviceId();
+    let clients = [];
+    let pc = null;
+    let heartbeatTimer = null;
+    let torn = false;
+    let pendingIds = null;
+    let hostId = null;
+
+    function publish(fields, opts) {
+      opts = opts || {};
+      const msg = Object.assign({ v: 1, from: deviceId, to: null, ts: Date.now() }, fields);
+      const payload = JSON.stringify(msg);
+      const topic = signalTopic(room);
+      clients.forEach((c) => {
+        if (c.connected) c.publish(topic, payload, { retain: !!opts.retain, qos: opts.qos != null ? opts.qos : 0 });
+      });
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    }
+    function startHeartbeat() {
+      stopHeartbeat();
+      publish({ type: "viewer-here" });
+      heartbeatTimer = setInterval(() => publish({ type: "viewer-here" }), 3000);
+    }
+
+    async function handleOffer(msg) {
+      if (pc && ["new", "connecting", "connected"].includes(pc.connectionState)) return;
+      pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
+      hostId = msg.from;
+      console.log("[receiver] offer received from camera device", { correctedStreamId: pendingIds.corrected, originalStreamId: pendingIds.original });
+      setReceiverStatus("Camera device found — connecting…");
+
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      pc.addEventListener("track", (e) => {
+        const streamId = e.streams[0] && e.streams[0].id;
+        console.log("[receiver] track event", { streamId, matchesOriginal: !pendingIds || !pendingIds.original || streamId === pendingIds.original });
+        // Only the raw/original feed matters — correction happens locally
+        // on this device, not on the camera device's.
+        if (pendingIds && pendingIds.original && streamId !== pendingIds.original) return;
+        video.srcObject = e.streams[0];
+        video.play().catch((err) => console.log("[receiver] video.play() failed", err));
+        finishReceiverStart();
+      });
+
+      pc.addEventListener("connectionstatechange", () => {
+        if (!pc || torn) return;
+        console.log("[receiver] connectionState:", pc.connectionState);
+        if (pc.connectionState === "connected") {
+          setReceiverStatus("Receiving from camera device.");
+        } else if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+          setReceiverStatus("Connection to the camera device was lost.");
+        }
+      });
+
+      try {
+        await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGatheringComplete(pc);
+        publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
+      } catch (err) {
+        console.log("[receiver] handleOffer failed", err);
+        setReceiverStatus(err.message || err.name || "Couldn't connect.");
+      }
+    }
+
+    function handleMessage(raw) {
+      let msg;
+      try { msg = JSON.parse(raw); } catch (e) { return; }
+      if (!msg || msg.from === deviceId) return;
+      if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
+    }
+
+    setReceiverStatus("Connecting to relay…");
+
+    const ready = new Promise((resolveReady, rejectReady) => {
+      loadMqttLib().then(() => {
+        if (torn) { rejectReady(new Error("cancelled")); return; }
+        let resolved = false;
+        const topic = signalTopic(room);
+        console.log("[receiver] subscribing for room", room, "topic", topic);
+        clients = LIVE_BROKERS.map((url) => {
+          const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
+          client.on("connect", () => {
+            client.subscribe(topic, { qos: 1 });
+            if (!resolved) {
+              resolved = true;
+              setReceiverStatus("Waiting for the camera device…");
+              startHeartbeat();
+              resolveReady();
+            }
+          });
+          client.on("message", (t, payload) => {
+            if (t === topic) handleMessage(payload.toString());
+          });
+          return client;
+        });
+
+        setTimeout(() => {
+          if (resolved || torn) return;
+          rejectReady(new Error("Couldn't reach a relay — check your internet connection and try again."));
+        }, 9000);
+      }).catch((err) => {
+        if (torn) return;
+        rejectReady(err);
+      });
+    });
+
+    return {
+      ready,
+      // Remote-controls the camera device's own switch-camera button
+      // (already listened for there — see handleBroadcastSignal above) —
+      // useful when it's mounted or otherwise out of easy reach. No-ops on
+      // the other end if it only has one camera.
+      switchRemoteCamera() {
+        publish({ type: "switch-camera", to: hostId });
+      },
+      teardown() {
+        torn = true;
+        stopHeartbeat();
+        if (pc) { pc.close(); pc = null; }
+        clients.forEach((c) => { try { c.end(true); } catch (e) {} });
+        clients = [];
+      }
+    };
+  }
+
+  function finishReceiverStart() {
+    if (receiverStarted) return;
+    receiverStarted = true;
+    isReceiverMode = true;
+    console.log("[receiver] finishReceiverStart() running — revealing HUD");
+    setReceiverStatus("Receiving from camera device.");
+    overlay.classList.add("hide");
+    hud.classList.remove("hide");
+    resizeStage();
+    initGL();
+    uploadPointUniforms();
+    renderLoop();
+    applyReceiverModeUi();
+  }
+
+  function applyReceiverModeUi() {
+    // No local camera hardware on this device to control — these only
+    // make sense for a camera physically attached to it.
+    torchBtn.classList.add("hide");
+    exposureModeBtn.classList.add("hide");
+    shutterWrap.classList.add("hide");
+    isoWrap.classList.add("hide");
+    evWrap.classList.add("hide");
+    // Broadcasting further from a receiving device isn't supported — keeps
+    // a two-device setup to exactly two devices.
+    connectTabletBtn.classList.add("hide");
+    // Repurposed below to remote-control the camera device's lens instead
+    // of switching this device's own (nonexistent) camera.
+    switchCameraBtn.classList.remove("hide");
+    switchCameraBtn.title = "Remotely switch the camera device's lens (no-op if it only has one).";
+  }
+
+  function startReceiving() {
+    const room = receiveRoomInput.value.trim().toUpperCase();
+    if (room.length < 4) {
+      setReceiverStatus("Enter the room code shown on the camera device.");
+      return;
+    }
+    receiveConnectBtn.disabled = true;
+    receiverConnection = connectAsReceiver(room);
+    receiverConnection.ready.catch((err) => {
+      receiverConnection = null;
+      setReceiverStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
+      receiveConnectBtn.disabled = false;
+    });
   }
 
   // Mobile browsers throttle requestAnimationFrame hard (often to ~1fps or
@@ -1517,12 +1767,12 @@
   document.addEventListener("visibilitychange", () => {
     if (!broadcastShare.active) return;
     if (document.hidden) {
-      viewerStatus.textContent = "This tab is in the background — the shared view will freeze until it's active again.";
+      setViewerStatus("This tab is in the background — the shared view will freeze until it's active again.");
     } else {
       const anyConnected = Array.from(broadcastShare.peers.values()).some(
         (entry) => entry.pc && entry.pc.connectionState === "connected"
       );
-      viewerStatus.textContent = anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…";
+      setViewerStatus(anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…");
       updateViewerConnectedBadge();
     }
   });
@@ -1971,13 +2221,26 @@
   shutterSlider.addEventListener("input", applyShutter);
   isoSlider.addEventListener("input", applyIso);
   evSlider.addEventListener("input", applyExposureCompensation);
-  switchCameraBtn.addEventListener("click", switchCamera);
+  switchCameraBtn.addEventListener("click", () => {
+    if (isReceiverMode && receiverConnection) receiverConnection.switchRemoteCamera();
+    else switchCamera();
+  });
   photoBtn.addEventListener("click", takePhoto);
   recordBtn.addEventListener("click", toggleRecording);
 
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
+
+  cameraOnlyStopBtn.addEventListener("click", exitCameraOnlyMode);
+  showReceiveBtn.addEventListener("click", () => {
+    receiveForm.classList.remove("hide");
+    showReceiveBtn.classList.add("hide");
+  });
+  receiveConnectBtn.addEventListener("click", startReceiving);
+  receiveRoomInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") startReceiving();
+  });
 
   // Best-effort hardware shutter: most browsers never forward physical
   // volume-button presses to page JavaScript at all (iOS Safari and
@@ -2072,7 +2335,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge"
     ));
   }
 

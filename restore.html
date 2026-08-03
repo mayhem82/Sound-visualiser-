@@ -35,15 +35,13 @@
       </div>
     </div>
   </div>
+</div>
 
-  <div id="cameraOnlyPanel" class="hide">
-    <h1>Broadcasting</h1>
-    <p class="hint">Point this device at the property. Do all calibration and correction on the connected device.</p>
-    <div class="room-code-label">Room code</div>
-    <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
-    <p id="cameraOnlyStatusText" class="hint" role="status" aria-live="polite">Starting…</p>
-    <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Stop &amp; show full controls</button>
-  </div>
+<div id="cameraOnlyBadge" class="hide" role="status" aria-live="polite">
+  <div class="room-code-label">Room code</div>
+  <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
+  <p id="cameraOnlyStatusText" class="hint">Starting…</p>
+  <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Show full controls</button>
 </div>
 
 <div id="hud" class="hide">
@@ -99,6 +97,7 @@
 <p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
 <p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
 <p id="maskActiveBadge" class="hide" aria-hidden="true">&#128396; Mask active</p>
+<p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
 
 <canvas id="maskCanvas"></canvas>
 <canvas id="maskAnalysisCanvas" hidden></canvas>

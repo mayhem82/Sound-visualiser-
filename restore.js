@@ -27,11 +27,10 @@
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
   const overlay = document.getElementById("overlay");
-  const panel = document.getElementById("panel");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
   const cameraOnlyModeCheckbox = document.getElementById("cameraOnlyModeCheckbox");
-  const cameraOnlyPanel = document.getElementById("cameraOnlyPanel");
+  const cameraOnlyBadge = document.getElementById("cameraOnlyBadge");
   const cameraOnlyRoomCode = document.getElementById("cameraOnlyRoomCode");
   const cameraOnlyStatusText = document.getElementById("cameraOnlyStatusText");
   const cameraOnlyStopBtn = document.getElementById("cameraOnlyStopBtn");
@@ -39,6 +38,7 @@
   const receiveForm = document.getElementById("receiveForm");
   const receiveRoomInput = document.getElementById("receiveRoomInput");
   const receiveConnectBtn = document.getElementById("receiveConnectBtn");
+  const receiverStatusBadge = document.getElementById("receiverStatusBadge");
 
   const hud = document.getElementById("hud");
   const blendSlider = document.getElementById("blendSlider");
@@ -1025,17 +1025,21 @@
   // device" (see connectAsReceiver below) — that device gets the raw feed
   // and runs its own full local correction pipeline against it, same as
   // if it had its own camera.
+  //
+  // The camera view itself stays fully visible the whole time — this only
+  // hides the *overlay* (start screen), same as a normal local start, and
+  // shows a small non-blocking corner badge with the room code instead of
+  // the full control HUD. The phone remains useful as its own monitor.
   async function enterCameraOnlyMode() {
-    panel.classList.add("hide");
-    cameraOnlyPanel.classList.remove("hide");
+    overlay.classList.add("hide");
+    cameraOnlyBadge.classList.remove("hide");
     cameraOnlyStatusText.textContent = "Connecting to relay…";
     await startTabletShare();
   }
 
   function exitCameraOnlyMode() {
     stopTabletShare("");
-    cameraOnlyPanel.classList.add("hide");
-    overlay.classList.add("hide");
+    cameraOnlyBadge.classList.add("hide");
     hud.classList.remove("hide");
   }
 
@@ -1648,6 +1652,17 @@
   let isReceiverMode = false;
   let receiverStarted = false;
 
+  // Mirrors receiver-side status into a small badge that stays visible
+  // even after the start overlay hides (setStatus()'s own #status element
+  // lives inside #panel, inside #overlay — invisible once connected) so
+  // the connection/error state stays visible for troubleshooting instead
+  // of silently going dark the moment the overlay hides.
+  function setReceiverStatus(text) {
+    setStatus(text);
+    receiverStatusBadge.textContent = text;
+    receiverStatusBadge.classList.toggle("hide", !text);
+  }
+
   function connectAsReceiver(room) {
     const deviceId = makeDeviceId();
     let clients = [];
@@ -1680,23 +1695,29 @@
       if (pc && ["new", "connecting", "connected"].includes(pc.connectionState)) return;
       pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
       hostId = msg.from;
+      console.log("[receiver] offer received from camera device", { correctedStreamId: pendingIds.corrected, originalStreamId: pendingIds.original });
+      setReceiverStatus("Camera device found — connecting…");
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
       pc.addEventListener("track", (e) => {
         const streamId = e.streams[0] && e.streams[0].id;
+        console.log("[receiver] track event", { streamId, matchesOriginal: !pendingIds || !pendingIds.original || streamId === pendingIds.original });
         // Only the raw/original feed matters — correction happens locally
         // on this device, not on the camera device's.
         if (pendingIds && pendingIds.original && streamId !== pendingIds.original) return;
         video.srcObject = e.streams[0];
-        video.play().catch(() => {});
+        video.play().catch((err) => console.log("[receiver] video.play() failed", err));
         finishReceiverStart();
       });
 
       pc.addEventListener("connectionstatechange", () => {
         if (!pc || torn) return;
-        if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-          setStatus("Connection to the camera device was lost.");
+        console.log("[receiver] connectionState:", pc.connectionState);
+        if (pc.connectionState === "connected") {
+          setReceiverStatus("Receiving from camera device.");
+        } else if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+          setReceiverStatus("Connection to the camera device was lost.");
         }
       });
 
@@ -1707,7 +1728,8 @@
         await waitForIceGatheringComplete(pc);
         publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
       } catch (err) {
-        setStatus(err.message || err.name || "Couldn't connect.");
+        console.log("[receiver] handleOffer failed", err);
+        setReceiverStatus(err.message || err.name || "Couldn't connect.");
       }
     }
 
@@ -1718,20 +1740,21 @@
       if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
     }
 
-    setStatus("Connecting to relay…");
+    setReceiverStatus("Connecting to relay…");
 
     const ready = new Promise((resolveReady, rejectReady) => {
       loadMqttLib().then(() => {
         if (torn) { rejectReady(new Error("cancelled")); return; }
         let resolved = false;
         const topic = signalTopic(room);
+        console.log("[receiver] subscribing for room", room, "topic", topic);
         clients = LIVE_BROKERS.map((url) => {
           const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
           client.on("connect", () => {
             client.subscribe(topic, { qos: 1 });
             if (!resolved) {
               resolved = true;
-              setStatus("Waiting for the camera device…");
+              setReceiverStatus("Waiting for the camera device…");
               startHeartbeat();
               resolveReady();
             }
@@ -1775,7 +1798,8 @@
     if (receiverStarted) return;
     receiverStarted = true;
     isReceiverMode = true;
-    setStatus("");
+    console.log("[receiver] finishReceiverStart() running — revealing HUD");
+    setReceiverStatus("Receiving from camera device.");
     overlay.classList.add("hide");
     hud.classList.remove("hide");
     resizeStage();
@@ -1806,14 +1830,14 @@
   function startReceiving() {
     const room = receiveRoomInput.value.trim().toUpperCase();
     if (room.length < 4) {
-      setStatus("Enter the room code shown on the camera device.");
+      setReceiverStatus("Enter the room code shown on the camera device.");
       return;
     }
     receiveConnectBtn.disabled = true;
     receiverConnection = connectAsReceiver(room);
     receiverConnection.ready.catch((err) => {
       receiverConnection = null;
-      setStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
+      setReceiverStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
       receiveConnectBtn.disabled = false;
     });
   }
@@ -2693,7 +2717,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #maskCanvas, #maskLayer"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge"
     ));
   }
 
