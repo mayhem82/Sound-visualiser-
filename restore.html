@@ -67,6 +67,7 @@
     <input id="outlineOpacitySlider" type="range" min="0" max="100" value="100">
   </label>
   <button id="calibrateBtn" class="hud-btn">Match a reference colour</button>
+  <button id="quickPresetsBtn" class="hud-btn" title="One-tap corrections — no reference colour needed. Replaces your currently saved references.">Quick presets</button>
   <button id="pointsBtn" class="hud-btn">Saved references (<span id="pointsCount">0</span>)</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
@@ -163,6 +164,25 @@
     <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
 
     <button id="closeChooseBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<div id="quickPresetsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="quickPresetsPanelTitle">
+  <div id="quickPresetsPanelInner">
+    <h2 id="quickPresetsPanelTitle">Quick presets</h2>
+    <p class="hint">One-tap corrections made up as reasonable starting points — not a substitute for calibrating against your own actual reference. Applying one replaces your currently saved references.</p>
+
+    <h3 class="quick-preset-group-title">Lighting conditions</h3>
+    <p class="hint">A single wide-reaching correction tuned to counteract a typical colour cast for that light.</p>
+    <div id="lightingPresetGrid" class="quick-preset-grid"></div>
+
+    <h3 class="quick-preset-group-title">Starter templates</h3>
+    <p class="hint">A small set of references for common property types — wall, trim, roof.</p>
+    <div id="templatePresetGrid" class="quick-preset-grid"></div>
+
+    <p id="quickPresetsStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <button id="closeQuickPresetsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>
 

@@ -521,7 +521,8 @@ video#cameraFeed, canvas#sampleCanvas {
 .points-actions .hud-btn { flex: 1 1 auto; font-size: 13px; padding: 10px 12px; }
 
 /* Choose-colour panel: same docked-bottom treatment as the tune/points panels */
-#choosePanel {
+#choosePanel,
+#quickPresetsPanel {
   position: fixed;
   left: 0;
   right: 0;
@@ -531,11 +532,13 @@ video#cameraFeed, canvas#sampleCanvas {
   justify-content: center;
 }
 
-#choosePanel.hide {
+#choosePanel.hide,
+#quickPresetsPanel.hide {
   display: none;
 }
 
-#choosePanelInner {
+#choosePanelInner,
+#quickPresetsPanelInner {
   width: 100%;
   max-width: 480px;
   background: rgba(15, 15, 25, 0.92);
@@ -546,8 +549,10 @@ video#cameraFeed, canvas#sampleCanvas {
   overflow-y: auto;
 }
 
-#choosePanelInner h2 { margin: 0 0 8px; font-size: 18px; }
-#choosePanelInner h3 { margin: 18px 0 8px; font-size: 13px; color: rgba(242, 242, 247, 0.6); font-weight: 500; }
+#choosePanelInner h2,
+#quickPresetsPanelInner h2 { margin: 0 0 8px; font-size: 18px; }
+#choosePanelInner h3,
+#quickPresetsPanelInner h3 { margin: 18px 0 8px; font-size: 13px; color: rgba(242, 242, 247, 0.6); font-weight: 500; }
 
 .choose-actions {
   display: flex;
@@ -574,11 +579,27 @@ video#cameraFeed, canvas#sampleCanvas {
   height: 100%;
 }
 
-#presetGrid {
+#presetGrid,
+.quick-preset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
+}
+
+.quick-preset-group-title {
+  margin: 18px 0 8px !important;
+}
+
+.preset-card .preset-swatch-multi {
+  width: 100%;
+  height: 48px;
+  display: flex;
+}
+
+.preset-card .preset-swatch-multi span {
+  flex: 1 1 0;
+  height: 100%;
 }
 
 .preset-card {
@@ -602,6 +623,13 @@ video#cameraFeed, canvas#sampleCanvas {
   color: rgba(242, 242, 247, 0.65);
   padding: 4px 4px 0;
   line-height: 1.3;
+}
+
+.preset-card .preset-hint {
+  font-size: 9px;
+  color: rgba(242, 242, 247, 0.4);
+  padding: 2px 4px 0;
+  line-height: 1.25;
 }
 
 /* Touch/click targets at a comfortable minimum, and a visible focus ring

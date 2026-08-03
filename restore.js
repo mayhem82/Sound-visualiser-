@@ -157,6 +157,13 @@
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
 
+  const quickPresetsBtn = document.getElementById("quickPresetsBtn");
+  const quickPresetsPanel = document.getElementById("quickPresetsPanel");
+  const lightingPresetGrid = document.getElementById("lightingPresetGrid");
+  const templatePresetGrid = document.getElementById("templatePresetGrid");
+  const quickPresetsStatus = document.getElementById("quickPresetsStatus");
+  const closeQuickPresetsBtn = document.getElementById("closeQuickPresetsBtn");
+
   // Neutral references useful as calibration starting points for property
   // documentation — a grey card and white/black references are standard
   // photographic targets; the paint neutrals are common enough starting
@@ -175,6 +182,82 @@
     { label: "Sage green trim", hex: "#8f9779" }
   ];
 
+  // ---- Quick presets ----
+  // Made-up, reasonable starting corrections — not a substitute for
+  // calibrating against your own actual reference. Two flavours:
+  //
+  // Lighting conditions: a single correction applied broadly (a wide
+  // "spread" so it isn't limited to colours near one specific swatch),
+  // approximating a white-balance-style fix for that light's typical
+  // colour cast. hueShift/satAdjust/etc. match the tune panel's own
+  // units (hueShift in degrees, the rest as -1..1 fractions).
+  const LIGHTING_PRESETS = [
+    { label: "Overcast daylight", hint: "Mild blue cast", hueShift: 4, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0.08 },
+    { label: "Bright midday sun", hint: "Harsh, slightly cool", hueShift: 2, satAdjust: 0.05, lightAdjust: 0, contrastAdjust: -0.08, exposureAdjust: -0.08 },
+    { label: "Golden hour / sunset", hint: "Strong orange cast", hueShift: -10, satAdjust: -0.12, lightAdjust: 0.04, contrastAdjust: 0, exposureAdjust: 0 },
+    { label: "Open shade", hint: "Strong blue cast", hueShift: 8, satAdjust: 0.06, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0.08 },
+    { label: "Tungsten / incandescent", hint: "Strong orange cast indoors", hueShift: -14, satAdjust: -0.15, lightAdjust: 0.04, contrastAdjust: 0, exposureAdjust: 0 },
+    { label: "Fluorescent", hint: "Green cast indoors", hueShift: -6, satAdjust: -0.1, lightAdjust: 0.02, contrastAdjust: 0, exposureAdjust: 0 },
+    { label: "LED daylight", hint: "Mild blue/green tint", hueShift: 3, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 },
+    { label: "Warm/soft-white LED", hint: "Mild orange cast", hueShift: -5, satAdjust: -0.06, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+    { label: "Night / streetlight", hint: "Strong orange, low light", hueShift: -12, satAdjust: -0.2, lightAdjust: 0, contrastAdjust: 0.1, exposureAdjust: 0.25 },
+    { label: "Rainy / heavy overcast", hint: "Flat, desaturated, cool", hueShift: 5, satAdjust: 0.15, lightAdjust: 0, contrastAdjust: 0.1, exposureAdjust: 0.15 }
+  ];
+
+  // Starter templates: a small set of realistic reference points for
+  // common property types (wall, then trim/roof/other features) — a
+  // faster starting point than calibrating every point from a blank
+  // slate, still meant to be refined against the real property.
+  const TEMPLATE_PRESETS = [
+    { label: "New build / project home", points: [
+      { label: "White render wall", hex: "#ebe8e0", category: "wall", hueShift: 2, satAdjust: 0.03, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0.03 },
+      { label: "Charcoal roof", hex: "#26262a", category: "other", hueShift: -3, satAdjust: 0.02, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 },
+      { label: "Grey driveway", hex: "#8c8c87", category: "other", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Federation / heritage home", points: [
+      { label: "Red brick wall", hex: "#8c4033", category: "wall", hueShift: -4, satAdjust: 0.05, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Cream trim", hex: "#e0d4b3", category: "other", hueShift: 3, satAdjust: -0.03, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Dark green roof", hex: "#263f2e", category: "other", hueShift: 0, satAdjust: 0.05, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 }
+    ] },
+    { label: "Coastal property", points: [
+      { label: "Weathered timber wall", hex: "#999489", category: "wall", hueShift: 4, satAdjust: 0.03, lightAdjust: 0.03, contrastAdjust: 0, exposureAdjust: 0.05 },
+      { label: "White render trim", hex: "#e6e6e2", category: "other", hueShift: 2, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Blue-grey roof", hex: "#59667a", category: "other", hueShift: -3, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Rural / acreage property", points: [
+      { label: "Earthy brown wall", hex: "#735237", category: "wall", hueShift: -2, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Silver corrugated roof", hex: "#a6a6a8", category: "other", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 },
+      { label: "Timber post", hex: "#59402a", category: "other", hueShift: -3, satAdjust: 0.03, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Modern render home", points: [
+      { label: "Grey render wall", hex: "#808080", category: "wall", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0.03, exposureAdjust: 0 },
+      { label: "Black window frames", hex: "#1a1a1c", category: "other", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 },
+      { label: "Dark roof", hex: "#2e2e33", category: "other", hueShift: -3, satAdjust: 0.03, lightAdjust: 0, contrastAdjust: 0.05, exposureAdjust: 0 }
+    ] },
+    { label: "Brick veneer home", points: [
+      { label: "Red-brown brick wall", hex: "#804839", category: "wall", hueShift: -3, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "White trim", hex: "#eae8e3", category: "other", hueShift: 2, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Weatherboard cottage", points: [
+      { label: "Pastel blue weatherboard wall", hex: "#bfd1cc", category: "wall", hueShift: -2, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "White trim", hex: "#edebe6", category: "other", hueShift: 2, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Apartment / unit block", points: [
+      { label: "Light grey render wall", hex: "#adada8", category: "wall", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0.03, exposureAdjust: 0 },
+      { label: "Aluminium/glass trim", hex: "#8c9499", category: "other", hueShift: -3, satAdjust: 0.03, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Renovation / before-after doc", points: [
+      { label: "Neutral wall reference", hex: "#b3b3ad", category: "wall", hueShift: 0, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Timber floor", hex: "#805c3d", category: "other", hueShift: -3, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "White ceiling trim", hex: "#edece8", category: "other", hueShift: 2, satAdjust: 0, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] },
+    { label: "Landscape / garden doc", points: [
+      { label: "Green foliage", hex: "#476b38", category: "other", hueShift: 0, satAdjust: 0.06, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Timber deck", hex: "#735233", category: "other", hueShift: -3, satAdjust: 0.04, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 },
+      { label: "Terracotta pot", hex: "#99593d", category: "other", hueShift: -3, satAdjust: 0.05, lightAdjust: 0, contrastAdjust: 0, exposureAdjust: 0 }
+    ] }
+  ];
+
   // Each saved point is a real colour the user aimed at and personally tuned:
   // { id, label, sourceColor: [r,g,b 0-1], hueShift (deg), satAdjust, lightAdjust (-1..1) }.
   // The shader blends correction across the whole frame by weighting each
@@ -187,6 +270,7 @@
   let editingCategory = "other"; // "wall" | "other" — which the tune panel's picker is currently set to
   let tuneReturnFocusEl = null;
   let choosePanelReturnFocusEl = null;
+  let quickPresetsReturnFocusEl = null;
   let aiming = false;
   let paused = false;
   let selectMode = false;
@@ -2181,6 +2265,7 @@
     tunePanel.classList.add("hide");
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
+    quickPresetsPanel.classList.add("hide");
     viewerPanel.classList.add("hide");
     if (maskModeActive) exitMaskMode();
   }
@@ -2444,6 +2529,131 @@
     choosePanelReturnFocusEl = null;
   }
 
+  // ---- Quick presets ----
+  // One-tap corrections that need no reference colour or calibration —
+  // either a single wide-reaching "lighting condition" fix, or a small
+  // multi-point "starter template" for a common property type. Either
+  // kind replaces the currently saved references entirely (confirmed
+  // first if any exist), matching the "one tap, replaces current set"
+  // behaviour requested for this feature.
+
+  function confirmReplacePoints() {
+    if (points.length === 0) return true;
+    return window.confirm(`Replace your ${points.length} saved reference${points.length === 1 ? "" : "s"} with this preset? This can't be undone.`);
+  }
+
+  function makePointFromPreset(preset) {
+    return {
+      id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      label: preset.label,
+      sourceColor: hexToRgb01(preset.hex),
+      category: preset.category || "other",
+      hueShift: preset.hueShift || 0,
+      satAdjust: preset.satAdjust || 0,
+      lightAdjust: preset.lightAdjust || 0,
+      contrastAdjust: preset.contrastAdjust || 0,
+      exposureAdjust: preset.exposureAdjust || 0
+    };
+  }
+
+  function applyLightingPreset(preset) {
+    if (!confirmReplacePoints()) return;
+    points = [makePointFromPreset({ ...preset, hex: "#808080", category: "other" })];
+    // A single point can only reach nearby colours by Lab distance, but a
+    // lighting cast affects every colour in the frame — so widen the
+    // spread to the slider's max, same units uploadPointUniforms already
+    // expects, rather than inventing a separate "global" code path.
+    spread = 40;
+    saveSpreadPref();
+    spreadSlider.value = String(spread);
+    spreadLabel.textContent = spreadDescription(spread);
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    closeQuickPresetsPanel();
+    setStatus(`Applied "${preset.label}" lighting preset.`);
+  }
+
+  function applyTemplate(template) {
+    if (!confirmReplacePoints()) return;
+    points = template.points.map(makePointFromPreset);
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    closeQuickPresetsPanel();
+    setStatus(`Applied "${template.label}" template (${points.length} references).`);
+  }
+
+  function renderLightingPresetGrid() {
+    lightingPresetGrid.innerHTML = "";
+    LIGHTING_PRESETS.forEach((preset) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "preset-card";
+      card.setAttribute("aria-label", `${preset.label}. ${preset.hint}. Apply this lighting preset, replacing saved references.`);
+      const sw = document.createElement("div");
+      sw.className = "preset-swatch";
+      sw.style.background = rgbToCss(applyCorrection([0.5, 0.5, 0.5], preset.hueShift, preset.satAdjust, preset.lightAdjust, preset.contrastAdjust, preset.exposureAdjust));
+      const label = document.createElement("div");
+      label.className = "preset-label";
+      label.textContent = preset.label;
+      const hint = document.createElement("div");
+      hint.className = "preset-hint";
+      hint.textContent = preset.hint;
+      card.appendChild(sw);
+      card.appendChild(label);
+      card.appendChild(hint);
+      card.addEventListener("click", () => applyLightingPreset(preset));
+      lightingPresetGrid.appendChild(card);
+    });
+  }
+
+  function renderTemplatePresetGrid() {
+    templatePresetGrid.innerHTML = "";
+    TEMPLATE_PRESETS.forEach((template) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "preset-card";
+      card.setAttribute("aria-label", `${template.label}. ${template.points.length} references. Apply this template, replacing saved references.`);
+      const sw = document.createElement("div");
+      sw.className = "preset-swatch-multi";
+      template.points.forEach((p) => {
+        const seg = document.createElement("span");
+        seg.style.background = p.hex;
+        sw.appendChild(seg);
+      });
+      const label = document.createElement("div");
+      label.className = "preset-label";
+      label.textContent = template.label;
+      const hint = document.createElement("div");
+      hint.className = "preset-hint";
+      hint.textContent = `${template.points.length} references`;
+      card.appendChild(sw);
+      card.appendChild(label);
+      card.appendChild(hint);
+      card.addEventListener("click", () => applyTemplate(template));
+      templatePresetGrid.appendChild(card);
+    });
+  }
+
+  function openQuickPresetsPanel() {
+    hideOverlayPanels();
+    renderLightingPresetGrid();
+    renderTemplatePresetGrid();
+    quickPresetsStatus.textContent = "";
+    quickPresetsReturnFocusEl = quickPresetsBtn;
+    quickPresetsPanel.classList.remove("hide");
+    closeQuickPresetsBtn.focus();
+  }
+
+  function closeQuickPresetsPanel() {
+    quickPresetsPanel.classList.add("hide");
+    if (quickPresetsReturnFocusEl) quickPresetsReturnFocusEl.focus();
+    quickPresetsReturnFocusEl = null;
+  }
+
   // ---- Export / import ----
   // Calibration only ever lived in localStorage, so clearing site data or
   // switching devices silently wiped it. Export/import makes it a portable
@@ -2643,6 +2853,9 @@
   });
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
+  quickPresetsBtn.addEventListener("click", openQuickPresetsPanel);
+  closeQuickPresetsBtn.addEventListener("click", closeQuickPresetsPanel);
+
   cancelAimBtn.addEventListener("click", stopAiming);
 
   freezeBtn.addEventListener("click", () => {
@@ -2696,6 +2909,8 @@
       closePointsPanel();
     } else if (!choosePanel.classList.contains("hide")) {
       closeChoosePanel();
+    } else if (!quickPresetsPanel.classList.contains("hide")) {
+      closeQuickPresetsPanel();
     } else if (!viewerPanel.classList.contains("hide")) {
       closeViewerPanel();
     } else if (maskModeActive) {
@@ -2719,7 +2934,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #quickPresetsPanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge"
     ));
   }
 
