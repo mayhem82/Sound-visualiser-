@@ -41,6 +41,10 @@
   const outlineOpacityWrap = document.getElementById("outlineOpacityWrap");
   const outlineOpacitySlider = document.getElementById("outlineOpacitySlider");
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
+  const cartoonBtn = document.getElementById("cartoonBtn");
+  const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
+  const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
+  const cartoonLevelsLabel = document.getElementById("cartoonLevelsLabel");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
@@ -185,6 +189,26 @@
   }
   function saveOutlineOpacityPref() {
     try { localStorage.setItem(OUTLINE_OPACITY_KEY, String(outlineOpacity)); } catch (e) {}
+  }
+
+  // ---- Cartoon mode ----
+  // Flattens particle colours (and the camera view, when Colour vision is
+  // on) into a handful of bold bands and draws bold dark edge lines —
+  // mutually exclusive with Outlines mode since both draw edges over the
+  // same content.
+  const CARTOON_ENABLED_KEY = "cartoonEnabled_soundNebula_v1";
+  const CARTOON_LEVELS_KEY = "cartoonLevels_soundNebula_v1";
+  const CARTOON_DEFAULT_LEVELS = 6;
+  let cartoonEnabled = (() => {
+    try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
+
+  function saveCartoonEnabledPref() {
+    try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveCartoonLevelsPref() {
+    try { localStorage.setItem(CARTOON_LEVELS_KEY, String(cartoonLevels)); } catch (e) {}
   }
 
   let cameraStream = null;
@@ -556,26 +580,43 @@
         const size = p.size * (1 + energy * 3.2);
         const alpha = 0.25 + energy * 0.65;
         const hue = p.band.hue + p.hueOffset;
-        // 0 when Outlines mode is off — keeps this pixel-for-pixel
-        // identical to the plain filled look with no behaviour change.
-        const outlineWeight = outlinesEnabled ? outlineBlend : 0;
 
-        if (outlineWeight < 1) {
-          const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
-          grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha * (1 - outlineWeight)})`);
-          grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
-          ctx.fillStyle = grad;
+        if (cartoonEnabled) {
+          // Flat cel-shaded look: snap hue to one of a handful of bands
+          // (instead of the smooth soft-glow gradient) and ink a bold dark
+          // ring around the solid fill.
+          const hueStep = 360 / Math.max(cartoonLevels, 2);
+          const bandHue = Math.floor(((hue % 360) + 360) % 360 / hueStep) * hueStep + hueStep / 2;
+          const flatAlpha = Math.min(1, alpha * 1.3);
+          ctx.fillStyle = `hsla(${bandHue}, 95%, 62%, ${flatAlpha})`;
           ctx.beginPath();
-          ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+          ctx.arc(x, y, size * 2.4, 0, Math.PI * 2);
           ctx.fill();
-        }
-
-        if (outlineWeight > 0) {
-          ctx.strokeStyle = `hsla(${hue}, 90%, 75%, ${alpha * outlineWeight * outlineOpacity})`;
-          ctx.lineWidth = outlineThickness;
-          ctx.beginPath();
-          ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(8, 8, 14, ${flatAlpha})`;
+          ctx.lineWidth = Math.max(1.5, outlineThickness);
           ctx.stroke();
+        } else {
+          // 0 when Outlines mode is off — keeps this pixel-for-pixel
+          // identical to the plain filled look with no behaviour change.
+          const outlineWeight = outlinesEnabled ? outlineBlend : 0;
+
+          if (outlineWeight < 1) {
+            const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+            grad.addColorStop(0, `hsla(${hue}, 90%, 70%, ${alpha * (1 - outlineWeight)})`);
+            grad.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          if (outlineWeight > 0) {
+            ctx.strokeStyle = `hsla(${hue}, 90%, 75%, ${alpha * outlineWeight * outlineOpacity})`;
+            ctx.lineWidth = outlineThickness;
+            ctx.beginPath();
+            ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
       }
     }
@@ -871,8 +912,33 @@
 
   function toggleOutlinesMode() {
     outlinesEnabled = !outlinesEnabled;
+    if (outlinesEnabled && cartoonEnabled) {
+      cartoonEnabled = false;
+      saveCartoonEnabledPref();
+      updateCartoonUi();
+    }
     saveOutlinesEnabledPref();
     updateOutlinesUi();
+  }
+
+  // Cartoon mode and Outlines mode both draw edge lines/strokes over the
+  // same content, so they're mutually exclusive rather than stacked.
+  function updateCartoonUi() {
+    cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
+    cartoonBtn.classList.toggle("active", cartoonEnabled);
+    cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
+    cartoonLevelsWrap.classList.toggle("hide", !cartoonEnabled);
+  }
+
+  function toggleCartoonMode() {
+    cartoonEnabled = !cartoonEnabled;
+    if (cartoonEnabled && outlinesEnabled) {
+      outlinesEnabled = false;
+      saveOutlinesEnabledPref();
+      updateOutlinesUi();
+    }
+    saveCartoonEnabledPref();
+    updateCartoonUi();
   }
 
   // ---- Colour Vision Assist, live on the camera background ----
@@ -1176,6 +1242,8 @@
     uniform float uOutlineThickness;
     uniform float uOutlineBlend;
     uniform float uOutlineOpacity;
+    uniform float uCartoonEnabled;
+    uniform float uCartoonLevels;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -1289,6 +1357,18 @@
       return clamp(length(vec2(gx, gy)), 0.0, 1.0);
     }
 
+    // Flattens colour into a handful of bold, punchy bands — the "flat
+    // cel-shaded" half of a cartoon look. Bold ink edges are added
+    // separately in main() using the same Sobel edge strength as
+    // Outlines mode.
+    vec3 cvCartoonize(vec3 c, float levels) {
+      vec3 hsl = rgb2hsl(c);
+      hsl.y = clamp(hsl.y * 1.35 + 0.05, 0.0, 1.0);
+      vec3 boosted = hsl2rgb(hsl);
+      float lv = max(levels, 2.0);
+      return clamp(floor(boosted * lv) / (lv - 1.0), 0.0, 1.0);
+    }
+
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 base = daltonize(original, uCvdType, uCvdStrength);
@@ -1326,7 +1406,12 @@
 
       vec3 filled = mix(original, corrected, uBlend);
       vec3 finalColor = filled;
-      if (uOutlineEnabled > 0.5) {
+      if (uCartoonEnabled > 0.5) {
+        vec3 toon = cvCartoonize(filled, uCartoonLevels);
+        float edge = cvEdgeStrength(vUv);
+        float line = smoothstep(0.12, 0.35, edge);
+        finalColor = mix(toon, vec3(0.02), line);
+      } else if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv) * uOutlineOpacity;
         vec3 outlineColor = vec3(edge);
         finalColor = mix(filled, outlineColor, uOutlineBlend);
@@ -1403,6 +1488,8 @@
       uOutlineThickness: glCtx.getUniformLocation(prog, "uOutlineThickness"),
       uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
       uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
+      uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
+      uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
       uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
@@ -1471,6 +1558,8 @@
     correctionGl.uniform1f(correctionUniforms.uOutlineThickness, outlineThickness);
     correctionGl.uniform1f(correctionUniforms.uOutlineBlend, outlineBlend);
     correctionGl.uniform1f(correctionUniforms.uOutlineOpacity, outlineOpacity);
+    correctionGl.uniform1f(correctionUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
+    correctionGl.uniform1f(correctionUniforms.uCartoonLevels, cartoonLevels);
     // Texel size in the camera's own native resolution (not the output
     // canvas's) — vUv samples uTex in cropped-video space, so the edge
     // kernel needs to step in video texels for a consistent line width
@@ -1621,8 +1710,10 @@
     glCtx.uniform1i(correctionUniforms.uTex, 0);
     glCtx.uniform1f(correctionUniforms.uBlend, blendOverride);
     // Always off here — this draws a single solid-colour swatch, not the
-    // live camera frame, so edge detection across it would be meaningless.
+    // live camera frame, so edge detection/posterizing across it would be
+    // meaningless.
     glCtx.uniform1f(correctionUniforms.uOutlineEnabled, 0);
+    glCtx.uniform1f(correctionUniforms.uCartoonEnabled, 0);
     glCtx.uniform1f(correctionUniforms.uSpread, spread);
     glCtx.uniform1f(correctionUniforms.uRotate180, 0);
     glCtx.uniform2f(correctionUniforms.uUvScale, 1, 1);
@@ -2580,6 +2671,15 @@
   outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
   updateOutlinesUi();
+  cartoonBtn.addEventListener("click", toggleCartoonMode);
+  cartoonLevelsSlider.addEventListener("input", () => {
+    cartoonLevels = parseFloat(cartoonLevelsSlider.value);
+    cartoonLevelsLabel.textContent = String(cartoonLevels);
+    saveCartoonLevelsPref();
+  });
+  cartoonLevelsSlider.value = String(cartoonLevels);
+  cartoonLevelsLabel.textContent = String(cartoonLevels);
+  updateCartoonUi();
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);

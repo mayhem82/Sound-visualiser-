@@ -66,6 +66,11 @@
     Outline opacity: <span id="outlineOpacityLabel">100%</span>
     <input id="outlineOpacitySlider" type="range" min="0" max="100" value="100">
   </label>
+  <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the camera view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
+  <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
+    Cartoon levels: <span id="cartoonLevelsLabel">6</span>
+    <input id="cartoonLevelsSlider" type="range" min="2" max="12" step="1" value="6">
+  </label>
   <button id="calibrateBtn" class="hud-btn">Match a reference colour</button>
   <button id="quickPresetsBtn" class="hud-btn" title="One-tap corrections — no reference colour needed. Replaces your currently saved references.">Quick presets</button>
   <button id="pointsBtn" class="hud-btn">Saved references (<span id="pointsCount">0</span>)</button>

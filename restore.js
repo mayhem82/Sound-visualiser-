@@ -15,6 +15,9 @@
   const OUTLINE_DEFAULT_THICKNESS = 2;
   const OUTLINE_DEFAULT_BLEND = 1;
   const OUTLINE_DEFAULT_OPACITY = 1;
+  const CARTOON_ENABLED_KEY = "cartoonEnabled_propertyColour_v1";
+  const CARTOON_LEVELS_KEY = "cartoonLevels_propertyColour_v1";
+  const CARTOON_DEFAULT_LEVELS = 6;
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -55,6 +58,10 @@
   const outlineOpacityWrap = document.getElementById("outlineOpacityWrap");
   const outlineOpacitySlider = document.getElementById("outlineOpacitySlider");
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
+  const cartoonBtn = document.getElementById("cartoonBtn");
+  const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
+  const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
+  const cartoonLevelsLabel = document.getElementById("cartoonLevelsLabel");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -288,6 +295,10 @@
   let outlineThickness = loadOutlineNumberPref(OUTLINE_THICKNESS_KEY, OUTLINE_DEFAULT_THICKNESS);
   let outlineBlend = loadOutlineNumberPref(OUTLINE_BLEND_KEY, OUTLINE_DEFAULT_BLEND);
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
+  let cartoonEnabled = (() => {
+    try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
   const maskCtx = maskCanvas.getContext("2d");
   let maskTexture = null;
   let maskDirty = true;
@@ -524,8 +535,41 @@
 
   function toggleOutlinesMode() {
     outlinesEnabled = !outlinesEnabled;
+    if (outlinesEnabled && cartoonEnabled) {
+      cartoonEnabled = false;
+      saveCartoonEnabledPref();
+      updateCartoonUi();
+    }
     saveOutlinesEnabledPref();
     updateOutlinesUi();
+  }
+
+  function saveCartoonEnabledPref() {
+    try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveCartoonLevelsPref() {
+    try { localStorage.setItem(CARTOON_LEVELS_KEY, String(cartoonLevels)); } catch (e) {}
+  }
+
+  // Cartoon mode and Outlines mode both draw edge lines over the camera
+  // view, so they're mutually exclusive rather than stacked — turning one
+  // on turns the other off, same as how the shader picks only one branch.
+  function updateCartoonUi() {
+    cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
+    cartoonBtn.classList.toggle("active", cartoonEnabled);
+    cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
+    cartoonLevelsWrap.classList.toggle("hide", !cartoonEnabled);
+  }
+
+  function toggleCartoonMode() {
+    cartoonEnabled = !cartoonEnabled;
+    if (cartoonEnabled && outlinesEnabled) {
+      outlinesEnabled = false;
+      saveOutlinesEnabledPref();
+      updateOutlinesUi();
+    }
+    saveCartoonEnabledPref();
+    updateCartoonUi();
   }
 
   function loadSampleAreaPref() {
@@ -596,6 +640,8 @@
     uniform float uOutlineThickness;
     uniform float uOutlineBlend;
     uniform float uOutlineOpacity;
+    uniform float uCartoonEnabled;
+    uniform float uCartoonLevels;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -676,6 +722,18 @@
       return clamp(length(vec2(gx, gy)), 0.0, 1.0);
     }
 
+    // Flattens colour into a handful of bold, punchy bands — the "flat
+    // cel-shaded" half of a cartoon look. Bold ink edges are added
+    // separately in main() using the same Sobel edge strength as
+    // Outlines mode.
+    vec3 cvCartoonize(vec3 c, float levels) {
+      vec3 hsl = rgb2hsl(c);
+      hsl.y = clamp(hsl.y * 1.35 + 0.05, 0.0, 1.0);
+      vec3 boosted = hsl2rgb(hsl);
+      float lv = max(levels, 2.0);
+      return clamp(floor(boosted * lv) / (lv - 1.0), 0.0, 1.0);
+    }
+
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 correction = vec3(0.0);
@@ -740,7 +798,12 @@
       float maskFactor = texture2D(uMaskTex, vMaskUv).r;
       vec3 filled = mix(original, corrected, uBlend * maskFactor);
       vec3 finalColor = filled;
-      if (uOutlineEnabled > 0.5) {
+      if (uCartoonEnabled > 0.5) {
+        vec3 toon = cvCartoonize(filled, uCartoonLevels);
+        float edge = cvEdgeStrength(vUv);
+        float line = smoothstep(0.12, 0.35, edge);
+        finalColor = mix(toon, vec3(0.02), line);
+      } else if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv) * uOutlineOpacity;
         vec3 outlineColor = vec3(edge);
         finalColor = mix(filled, outlineColor, uOutlineBlend);
@@ -825,6 +888,8 @@
       uOutlineThickness: glCtx.getUniformLocation(prog, "uOutlineThickness"),
       uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
       uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
+      uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
+      uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
       uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
@@ -1008,6 +1073,8 @@
       gl.uniform1f(uniforms.uOutlineThickness, outlineThickness);
       gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
       gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
+      gl.uniform1f(uniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uCartoonLevels, cartoonLevels);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
@@ -1063,6 +1130,8 @@
         fixedGl.uniform1f(fixedUniforms.uOutlineThickness, outlineThickness);
         fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
         fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
+        fixedGl.uniform1f(fixedUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
+        fixedGl.uniform1f(fixedUniforms.uCartoonLevels, cartoonLevels);
         fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
         fixedGl.uniform1f(fixedUniforms.uSpread, spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
@@ -2766,6 +2835,16 @@
   outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
   updateOutlinesUi();
+
+  cartoonBtn.addEventListener("click", toggleCartoonMode);
+  cartoonLevelsSlider.addEventListener("input", () => {
+    cartoonLevels = parseFloat(cartoonLevelsSlider.value);
+    cartoonLevelsLabel.textContent = String(cartoonLevels);
+    saveCartoonLevelsPref();
+  });
+  cartoonLevelsSlider.value = String(cartoonLevels);
+  cartoonLevelsLabel.textContent = String(cartoonLevels);
+  updateCartoonUi();
 
   pauseBtn.addEventListener("click", () => {
     paused = !paused;
