@@ -117,6 +117,11 @@
 <p id="maskActiveBadge" class="hide" aria-hidden="true">&#128396; Mask active</p>
 <p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
 
+<div id="floatingCaptureBar" class="hide" role="group" aria-label="Photo and video capture">
+  <button id="floatingPhotoBtn" class="hud-btn" title="Take a photo of the corrected view. Long-press and drag to move this bar.">&#128247; Photo</button>
+  <button id="floatingRecordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view. Long-press and drag to move this bar.">&#9210; Record</button>
+</div>
+
 <canvas id="maskCanvas"></canvas>
 <canvas id="maskAnalysisCanvas" hidden></canvas>
 <div id="maskLayer" class="hide">

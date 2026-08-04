@@ -25,6 +25,9 @@
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
   const SHUTTER_MODE_KEY = "shutterMode_propertyColour_v1";
+  const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_propertyColour_v1";
+  const LONG_PRESS_MS = 450;
+  const DRAG_CANCEL_PX = 10;
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -100,6 +103,9 @@
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
+  const floatingCaptureBar = document.getElementById("floatingCaptureBar");
+  const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
+  const floatingRecordBtn = document.getElementById("floatingRecordBtn");
 
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const viewerPanel = document.getElementById("viewerPanel");
@@ -1225,6 +1231,7 @@
         overlay.classList.add("hide");
         hud.classList.remove("hide");
       }
+      updateFloatingCaptureBarVisibility();
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
@@ -1248,12 +1255,14 @@
     cameraOnlyBadge.classList.remove("hide");
     cameraOnlyStatusText.textContent = "Connecting to relay…";
     await startTabletShare();
+    updateFloatingCaptureBarVisibility();
   }
 
   function exitCameraOnlyMode() {
     stopTabletShare("");
     cameraOnlyBadge.classList.add("hide");
     hud.classList.remove("hide");
+    updateFloatingCaptureBarVisibility();
   }
 
   async function attachStream(stream) {
@@ -1538,6 +1547,7 @@
     const mm = String(Math.floor(secs / 60)).padStart(2, "0");
     const ss = String(secs % 60).padStart(2, "0");
     recordBtn.textContent = `⏹ ${mm}:${ss}`;
+    floatingRecordBtn.textContent = `⏹ ${mm}:${ss}`;
     recordingIndicatorTime.textContent = `${mm}:${ss}`;
   }
 
@@ -1575,6 +1585,8 @@
     recordingStartedAt = Date.now();
     recordBtn.classList.add("recording");
     recordBtn.setAttribute("aria-pressed", "true");
+    floatingRecordBtn.classList.add("recording");
+    floatingRecordBtn.setAttribute("aria-pressed", "true");
     recordingIndicator.classList.remove("hide");
     updateRecordingLabel();
     recordingTimerId = setInterval(updateRecordingLabel, 500);
@@ -1587,6 +1599,9 @@
     recordBtn.classList.remove("recording");
     recordBtn.setAttribute("aria-pressed", "false");
     recordBtn.textContent = "⏺ Record";
+    floatingRecordBtn.classList.remove("recording");
+    floatingRecordBtn.setAttribute("aria-pressed", "false");
+    floatingRecordBtn.textContent = "⏺ Record";
     recordingIndicator.classList.add("hide");
     if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
   }
@@ -1594,6 +1609,146 @@
   function toggleRecording() {
     if (isRecording) stopRecording();
     else startRecording();
+  }
+
+  // ---- Floating capture bar ----
+  // Photo/Record live inside #hud, which the user can tap away entirely
+  // (see the body click handler near the bottom of this file) — this
+  // small floating duplicate stays reachable in that "no HUD" state, so
+  // capture never needs the full control panel back up. It's draggable
+  // (long-press, then move, then release) so it can be parked wherever's
+  // convenient — out from under a thumb, or off the actual subject.
+
+  function loadFloatingCapturePos() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(FLOATING_CAPTURE_POS_KEY));
+      if (raw && Number.isFinite(raw.left) && Number.isFinite(raw.top)) return raw;
+    } catch (e) {}
+    return null;
+  }
+
+  function saveFloatingCapturePos(pos) {
+    try { localStorage.setItem(FLOATING_CAPTURE_POS_KEY, JSON.stringify(pos)); } catch (e) {}
+  }
+
+  function clampFloatingCapturePos(left, top) {
+    const maxLeft = Math.max(4, window.innerWidth - floatingCaptureBar.offsetWidth - 4);
+    const maxTop = Math.max(4, window.innerHeight - floatingCaptureBar.offsetHeight - 4);
+    return { left: Math.min(Math.max(4, left), maxLeft), top: Math.min(Math.max(4, top), maxTop) };
+  }
+
+  function applyFloatingCapturePos() {
+    const pos = loadFloatingCapturePos();
+    if (!pos) return;
+    const clamped = clampFloatingCapturePos(pos.left, pos.top);
+    floatingCaptureBar.style.left = `${clamped.left}px`;
+    floatingCaptureBar.style.top = `${clamped.top}px`;
+    floatingCaptureBar.style.right = "auto";
+    floatingCaptureBar.style.bottom = "auto";
+  }
+
+  // Only visible once a corrected view actually exists (gl set, whether
+  // from a local camera or a received tablet feed) and the HUD itself is
+  // hidden — camera-only broadcast mode has its own minimal badge and
+  // doesn't need this duplicated on top of it.
+  function updateFloatingCaptureBarVisibility() {
+    const visible = !!gl && hud.classList.contains("hide") && cameraOnlyBadge.classList.contains("hide");
+    floatingCaptureBar.classList.toggle("hide", !visible);
+  }
+
+  // Long-press-then-drag, distinguished from a plain tap: a timer starts
+  // on pointerdown, and only once it fires does the bar start actually
+  // following the pointer — a quick tap never crosses that threshold, so
+  // it reaches the pressed button's own click handler normally. Moving
+  // far enough before the timer fires cancels it outright (treated as an
+  // accidental/scrolling touch, not a drag).
+  function setupDraggableCaptureBar() {
+    let pressTimer = null;
+    let dragging = false;
+    let moved = false;
+    let suppressClick = false;
+    let startX = 0, startY = 0, barStartLeft = 0, barStartTop = 0;
+
+    function beginDrag() {
+      dragging = true;
+      moved = false;
+      floatingCaptureBar.classList.add("dragging");
+      const rect = floatingCaptureBar.getBoundingClientRect();
+      barStartLeft = rect.left;
+      barStartTop = rect.top;
+    }
+
+    function endPress() {
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      if (dragging) {
+        floatingCaptureBar.classList.remove("dragging");
+        if (moved) {
+          const clamped = clampFloatingCapturePos(
+            parseFloat(floatingCaptureBar.style.left) || barStartLeft,
+            parseFloat(floatingCaptureBar.style.top) || barStartTop
+          );
+          saveFloatingCapturePos(clamped);
+          suppressClick = true;
+        }
+        dragging = false;
+      }
+    }
+
+    floatingCaptureBar.addEventListener("pointerdown", (e) => {
+      if (e.button !== undefined && e.button !== 0 && e.pointerType === "mouse") return;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = floatingCaptureBar.getBoundingClientRect();
+      barStartLeft = rect.left;
+      barStartTop = rect.top;
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        beginDrag();
+        try { floatingCaptureBar.setPointerCapture(e.pointerId); } catch (err) {}
+      }, LONG_PRESS_MS);
+    });
+
+    floatingCaptureBar.addEventListener("pointermove", (e) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!dragging) {
+        if (pressTimer && Math.hypot(dx, dy) > DRAG_CANCEL_PX) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+        return;
+      }
+      moved = true;
+      e.preventDefault();
+      const clamped = clampFloatingCapturePos(barStartLeft + dx, barStartTop + dy);
+      floatingCaptureBar.style.left = `${clamped.left}px`;
+      floatingCaptureBar.style.top = `${clamped.top}px`;
+      floatingCaptureBar.style.right = "auto";
+      floatingCaptureBar.style.bottom = "auto";
+    });
+
+    floatingCaptureBar.addEventListener("pointerup", endPress);
+    floatingCaptureBar.addEventListener("pointercancel", endPress);
+
+    // Capture phase, so a drag-ending click gets swallowed before it
+    // reaches the Photo/Record button's own listener underneath.
+    floatingCaptureBar.addEventListener("click", (e) => {
+      if (suppressClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        suppressClick = false;
+      }
+    }, true);
+
+    window.addEventListener("resize", () => {
+      if (!floatingCaptureBar.style.left) return;
+      const clamped = clampFloatingCapturePos(
+        parseFloat(floatingCaptureBar.style.left),
+        parseFloat(floatingCaptureBar.style.top)
+      );
+      floatingCaptureBar.style.left = `${clamped.left}px`;
+      floatingCaptureBar.style.top = `${clamped.top}px`;
+    });
   }
 
   // ---- Hardware volume-button shutter ----
@@ -2042,6 +2197,7 @@
     uploadPointUniforms();
     renderLoop();
     applyReceiverModeUi();
+    updateFloatingCaptureBarVisibility();
   }
 
   function applyReceiverModeUi() {
@@ -2970,6 +3126,10 @@
   });
   photoBtn.addEventListener("click", takePhoto);
   recordBtn.addEventListener("click", toggleRecording);
+  floatingPhotoBtn.addEventListener("click", takePhoto);
+  floatingRecordBtn.addEventListener("click", toggleRecording);
+  setupDraggableCaptureBar();
+  applyFloatingCapturePos();
 
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
@@ -3117,13 +3277,14 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #quickPresetsPanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #quickPresetsPanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar"
     ));
   }
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;
     hud.classList.toggle("hide");
+    updateFloatingCaptureBarVisibility();
   });
 
   updatePointsCount();
