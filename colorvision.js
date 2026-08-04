@@ -29,6 +29,9 @@
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
   const LONG_PRESS_MS = 450;
   const DRAG_CANCEL_PX = 10;
+  const RECORD_FPS_KEY = "recordFps_colorVision_v1";
+  const DEFAULT_RECORD_FPS = 30;
+  const RECORD_FPS_OPTIONS = [15, 24, 30, 60];
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -104,6 +107,7 @@
   const evLabel = document.getElementById("evLabel");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
   const photoBtn = document.getElementById("photoBtn");
+  const recordFpsSelect = document.getElementById("recordFpsSelect");
   const recordBtn = document.getElementById("recordBtn");
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
@@ -223,6 +227,12 @@
     try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
   })();
   let shutterModeStatusTimer = null;
+  let recordFps = (() => {
+    try {
+      const raw = parseInt(localStorage.getItem(RECORD_FPS_KEY), 10);
+      return RECORD_FPS_OPTIONS.includes(raw) ? raw : DEFAULT_RECORD_FPS;
+    } catch (e) { return DEFAULT_RECORD_FPS; }
+  })();
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -1390,7 +1400,7 @@
     }
     let canvasStream;
     try {
-      canvasStream = stage.captureStream(30);
+      canvasStream = stage.captureStream(recordFps);
     } catch (err) {
       showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
       return;
@@ -1418,6 +1428,10 @@
     floatingRecordBtn.classList.add("recording");
     floatingRecordBtn.setAttribute("aria-pressed", "true");
     recordingIndicator.classList.remove("hide");
+    // Framerate is baked into the captureStream() call above — changing
+    // the dropdown mid-recording wouldn't affect the file already being
+    // written, so lock it to avoid the false impression that it would.
+    recordFpsSelect.disabled = true;
     updateRecordingLabel();
     recordingTimerId = setInterval(updateRecordingLabel, 500);
   }
@@ -1433,6 +1447,7 @@
     floatingRecordBtn.setAttribute("aria-pressed", "false");
     floatingRecordBtn.textContent = "⏺ Record";
     recordingIndicator.classList.add("hide");
+    recordFpsSelect.disabled = false;
     if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
   }
 
@@ -2561,6 +2576,11 @@
     else switchCamera();
   });
   photoBtn.addEventListener("click", takePhoto);
+  recordFpsSelect.value = String(recordFps);
+  recordFpsSelect.addEventListener("change", () => {
+    recordFps = parseInt(recordFpsSelect.value, 10);
+    try { localStorage.setItem(RECORD_FPS_KEY, String(recordFps)); } catch (e) {}
+  });
   recordBtn.addEventListener("click", toggleRecording);
   floatingPhotoBtn.addEventListener("click", takePhoto);
   floatingRecordBtn.addEventListener("click", toggleRecording);
