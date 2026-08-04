@@ -71,6 +71,18 @@
     Cartoon levels: <span id="cartoonLevelsLabel">6</span>
     <input id="cartoonLevelsSlider" type="range" min="2" max="12" step="1" value="6">
   </label>
+  <label id="cartoonEdgeThicknessWrap" class="hud-slider hide" title="How wide the cartoon ink lines are.">
+    Cartoon edge thickness: <span id="cartoonEdgeThicknessLabel">2px</span>
+    <input id="cartoonEdgeThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="cartoonEdgeStrengthWrap" class="hud-slider hide" title="How bold/dark the cartoon ink lines are, and how easily they trigger on softer edges.">
+    Cartoon edge strength: <span id="cartoonEdgeStrengthLabel">60%</span>
+    <input id="cartoonEdgeStrengthSlider" type="range" min="0" max="100" step="5" value="60">
+  </label>
+  <label id="cartoonSaturationWrap" class="hud-slider hide" title="How vivid the flat cartoon colour bands are.">
+    Cartoon saturation: <span id="cartoonSaturationLabel">135%</span>
+    <input id="cartoonSaturationSlider" type="range" min="100" max="300" step="5" value="135">
+  </label>
   <button id="calibrateBtn" class="hud-btn">Match a reference colour</button>
   <button id="quickPresetsBtn" class="hud-btn" title="One-tap corrections — no reference colour needed. Replaces your currently saved references.">Quick presets</button>
   <button id="pointsBtn" class="hud-btn">Saved references (<span id="pointsCount">0</span>)</button>

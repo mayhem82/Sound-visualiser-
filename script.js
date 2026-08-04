@@ -45,6 +45,15 @@
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
   const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
   const cartoonLevelsLabel = document.getElementById("cartoonLevelsLabel");
+  const cartoonEdgeThicknessWrap = document.getElementById("cartoonEdgeThicknessWrap");
+  const cartoonEdgeThicknessSlider = document.getElementById("cartoonEdgeThicknessSlider");
+  const cartoonEdgeThicknessLabel = document.getElementById("cartoonEdgeThicknessLabel");
+  const cartoonEdgeStrengthWrap = document.getElementById("cartoonEdgeStrengthWrap");
+  const cartoonEdgeStrengthSlider = document.getElementById("cartoonEdgeStrengthSlider");
+  const cartoonEdgeStrengthLabel = document.getElementById("cartoonEdgeStrengthLabel");
+  const cartoonSaturationWrap = document.getElementById("cartoonSaturationWrap");
+  const cartoonSaturationSlider = document.getElementById("cartoonSaturationSlider");
+  const cartoonSaturationLabel = document.getElementById("cartoonSaturationLabel");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
@@ -199,16 +208,34 @@
   const CARTOON_ENABLED_KEY = "cartoonEnabled_soundNebula_v1";
   const CARTOON_LEVELS_KEY = "cartoonLevels_soundNebula_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
+  const CARTOON_EDGE_THICKNESS_KEY = "cartoonEdgeThickness_soundNebula_v1";
+  const CARTOON_EDGE_STRENGTH_KEY = "cartoonEdgeStrength_soundNebula_v1";
+  const CARTOON_SATURATION_KEY = "cartoonSaturation_soundNebula_v1";
+  const CARTOON_DEFAULT_EDGE_THICKNESS = 2;
+  const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
+  const CARTOON_DEFAULT_SATURATION = 1.35;
   let cartoonEnabled = (() => {
     try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
+  let cartoonEdgeThickness = loadOutlineNumberPref(CARTOON_EDGE_THICKNESS_KEY, CARTOON_DEFAULT_EDGE_THICKNESS);
+  let cartoonEdgeStrength = loadOutlineNumberPref(CARTOON_EDGE_STRENGTH_KEY, CARTOON_DEFAULT_EDGE_STRENGTH);
+  let cartoonSaturation = loadOutlineNumberPref(CARTOON_SATURATION_KEY, CARTOON_DEFAULT_SATURATION);
 
   function saveCartoonEnabledPref() {
     try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
   }
   function saveCartoonLevelsPref() {
     try { localStorage.setItem(CARTOON_LEVELS_KEY, String(cartoonLevels)); } catch (e) {}
+  }
+  function saveCartoonEdgeThicknessPref() {
+    try { localStorage.setItem(CARTOON_EDGE_THICKNESS_KEY, String(cartoonEdgeThickness)); } catch (e) {}
+  }
+  function saveCartoonEdgeStrengthPref() {
+    try { localStorage.setItem(CARTOON_EDGE_STRENGTH_KEY, String(cartoonEdgeStrength)); } catch (e) {}
+  }
+  function saveCartoonSaturationPref() {
+    try { localStorage.setItem(CARTOON_SATURATION_KEY, String(cartoonSaturation)); } catch (e) {}
   }
 
   let cameraStream = null;
@@ -584,16 +611,21 @@
         if (cartoonEnabled) {
           // Flat cel-shaded look: snap hue to one of a handful of bands
           // (instead of the smooth soft-glow gradient) and ink a bold dark
-          // ring around the solid fill.
+          // ring around the solid fill. satPct/lineOpacity mirror the
+          // shader's cvCartoonize()/cvCartoonLine() formulas so the same
+          // sliders feel consistent whether they're tuning particles or
+          // the camera view.
           const hueStep = 360 / Math.max(cartoonLevels, 2);
           const bandHue = Math.floor(((hue % 360) + 360) % 360 / hueStep) * hueStep + hueStep / 2;
           const flatAlpha = Math.min(1, alpha * 1.3);
-          ctx.fillStyle = `hsla(${bandHue}, 95%, 62%, ${flatAlpha})`;
+          const satPct = Math.min(100, Math.max(20, cartoonSaturation * 70));
+          const lineOpacity = 0.35 + 0.65 * cartoonEdgeStrength;
+          ctx.fillStyle = `hsla(${bandHue}, ${satPct}%, 62%, ${flatAlpha})`;
           ctx.beginPath();
           ctx.arc(x, y, size * 2.4, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = `rgba(8, 8, 14, ${flatAlpha})`;
-          ctx.lineWidth = Math.max(1.5, outlineThickness);
+          ctx.strokeStyle = `rgba(8, 8, 14, ${flatAlpha * lineOpacity})`;
+          ctx.lineWidth = Math.max(1.5, cartoonEdgeThickness);
           ctx.stroke();
         } else {
           // 0 when Outlines mode is off — keeps this pixel-for-pixel
@@ -927,7 +959,9 @@
     cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
     cartoonBtn.classList.toggle("active", cartoonEnabled);
     cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
-    cartoonLevelsWrap.classList.toggle("hide", !cartoonEnabled);
+    [cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap].forEach((el) =>
+      el.classList.toggle("hide", !cartoonEnabled)
+    );
   }
 
   function toggleCartoonMode() {
@@ -1244,6 +1278,9 @@
     uniform float uOutlineOpacity;
     uniform float uCartoonEnabled;
     uniform float uCartoonLevels;
+    uniform float uCartoonEdgeThickness;
+    uniform float uCartoonEdgeStrength;
+    uniform float uCartoonSaturation;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -1339,11 +1376,10 @@
     // Sobel edge detection on luminance, sampled from the raw camera
     // texture (not the corrected result) so outline strength reflects
     // real scene edges regardless of the current blend/CVD settings.
-    // uOutlineThickness scales the sample offsets — a bigger spread
-    // reads as a thicker line since more of a real edge's neighbourhood
-    // ends up contributing to it.
-    float cvEdgeStrength(vec2 uv) {
-      vec2 t = uTexelSize * max(uOutlineThickness, 0.0001);
+    // thickness scales the sample offsets — Outlines mode and Cartoon
+    // mode each pass their own independent thickness value in.
+    float cvEdgeStrength(vec2 uv, float thickness) {
+      vec2 t = uTexelSize * max(thickness, 0.0001);
       float tl = cvLuminance(texture2D(uTex, uv + vec2(-t.x, -t.y)).rgb);
       float tc = cvLuminance(texture2D(uTex, uv + vec2(0.0, -t.y)).rgb);
       float tr = cvLuminance(texture2D(uTex, uv + vec2(t.x, -t.y)).rgb);
@@ -1358,15 +1394,26 @@
     }
 
     // Flattens colour into a handful of bold, punchy bands — the "flat
-    // cel-shaded" half of a cartoon look. Bold ink edges are added
-    // separately in main() using the same Sobel edge strength as
-    // Outlines mode.
-    vec3 cvCartoonize(vec3 c, float levels) {
+    // cel-shaded" half of a cartoon look. saturation is a direct
+    // multiplier on the original saturation (1.0 = unchanged, 3.0 =
+    // strongly boosted). Bold ink edges are added separately in main().
+    vec3 cvCartoonize(vec3 c, float levels, float saturation) {
       vec3 hsl = rgb2hsl(c);
-      hsl.y = clamp(hsl.y * 1.35 + 0.05, 0.0, 1.0);
+      hsl.y = clamp(hsl.y * saturation + 0.05, 0.0, 1.0);
       vec3 boosted = hsl2rgb(hsl);
       float lv = max(levels, 2.0);
       return clamp(floor(boosted * lv) / (lv - 1.0), 0.0, 1.0);
+    }
+
+    // How strongly the cartoon ink line shows at a given edge strength.
+    // strength is a 0..1 fraction: higher makes softer edges trigger a
+    // line (lower threshold) and makes the line itself more opaque/dark.
+    float cvCartoonLine(vec2 uv, float thickness, float strength) {
+      float edge = cvEdgeStrength(uv, thickness);
+      float lo = mix(0.30, 0.04, strength);
+      float hi = lo + 0.18;
+      float opacity = mix(0.35, 1.0, strength);
+      return smoothstep(lo, hi, edge) * opacity;
     }
 
     void main() {
@@ -1407,12 +1454,11 @@
       vec3 filled = mix(original, corrected, uBlend);
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
-        vec3 toon = cvCartoonize(filled, uCartoonLevels);
-        float edge = cvEdgeStrength(vUv);
-        float line = smoothstep(0.12, 0.35, edge);
+        vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
+        float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
         finalColor = mix(toon, vec3(0.02), line);
       } else if (uOutlineEnabled > 0.5) {
-        float edge = cvEdgeStrength(vUv) * uOutlineOpacity;
+        float edge = cvEdgeStrength(vUv, uOutlineThickness) * uOutlineOpacity;
         vec3 outlineColor = vec3(edge);
         finalColor = mix(filled, outlineColor, uOutlineBlend);
       }
@@ -1490,6 +1536,9 @@
       uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
       uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
       uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
+      uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
+      uCartoonEdgeStrength: glCtx.getUniformLocation(prog, "uCartoonEdgeStrength"),
+      uCartoonSaturation: glCtx.getUniformLocation(prog, "uCartoonSaturation"),
       uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
@@ -1560,6 +1609,9 @@
     correctionGl.uniform1f(correctionUniforms.uOutlineOpacity, outlineOpacity);
     correctionGl.uniform1f(correctionUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
     correctionGl.uniform1f(correctionUniforms.uCartoonLevels, cartoonLevels);
+    correctionGl.uniform1f(correctionUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
+    correctionGl.uniform1f(correctionUniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
+    correctionGl.uniform1f(correctionUniforms.uCartoonSaturation, cartoonSaturation);
     // Texel size in the camera's own native resolution (not the output
     // canvas's) — vUv samples uTex in cropped-video space, so the edge
     // kernel needs to step in video texels for a consistent line width
@@ -2679,6 +2731,27 @@
   });
   cartoonLevelsSlider.value = String(cartoonLevels);
   cartoonLevelsLabel.textContent = String(cartoonLevels);
+  cartoonEdgeThicknessSlider.addEventListener("input", () => {
+    cartoonEdgeThickness = parseFloat(cartoonEdgeThicknessSlider.value);
+    cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+    saveCartoonEdgeThicknessPref();
+  });
+  cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
+  cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+  cartoonEdgeStrengthSlider.addEventListener("input", () => {
+    cartoonEdgeStrength = parseFloat(cartoonEdgeStrengthSlider.value) / 100;
+    cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+    saveCartoonEdgeStrengthPref();
+  });
+  cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
+  cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+  cartoonSaturationSlider.addEventListener("input", () => {
+    cartoonSaturation = parseFloat(cartoonSaturationSlider.value) / 100;
+    cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+    saveCartoonSaturationPref();
+  });
+  cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
+  cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
   updateCartoonUi();
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
