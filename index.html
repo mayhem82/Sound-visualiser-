@@ -72,6 +72,7 @@
     Camera
     <select id="cameraSelect"></select>
   </label>
+  <button id="cameraOnlyBtn" class="hud-btn hide" aria-pressed="false" title="For a two-device setup: this device just streams its raw camera feed, with no controls of its own — do all the calibration and control on the other (receiving) device instead. Needs Camera background on.">Camera-only broadcast: Off</button>
   <button id="nebulaBtn" class="hud-btn" aria-pressed="false" title="Hide the swirling particle nebula so the camera feed behind it shows through clearly — handy while looking closely at the colour vision correction.">Nebula: On</button>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Redraws the particle nebula as hollow/stroked shapes instead of solid glow blobs, and (when Colour vision is on) overlays detected edges on the camera view. The three sliders control both at once.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the outline strokes/edge lines are.">
@@ -147,6 +148,7 @@
 <p id="flashStatus" class="flash-status hide"></p>
 <p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
 <p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+<p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
 
 <div id="floatingCaptureBar" class="hide" role="group" aria-label="Calibrate, photo, and video capture">
   <button id="floatingCalibrateBtn" class="hud-btn hide" title="Aim the camera at a colour to calibrate. Long-press and drag to move this bar.">&#127919; Calibrate</button>
@@ -169,10 +171,27 @@
 
     <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
 
+    <div id="receiveModeSection">
+      <p class="hint">Or, to control from this device while another device (in Camera-only broadcast mode) provides the camera:</p>
+      <button id="showReceiveBtn" class="hud-btn reticle-btn-secondary">Receive camera from another device</button>
+      <div id="receiveForm" class="hide">
+        <p class="hint">On the camera device: turn on Camera background, tap "Camera-only broadcast", then read out the room code shown there.</p>
+        <input id="receiveRoomInput" type="text" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off">
+        <button id="receiveConnectBtn" class="hud-btn">Connect</button>
+      </div>
+    </div>
+
     <div class="tune-actions">
       <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
     </div>
   </div>
+</div>
+
+<div id="cameraOnlyBadge" class="hide" role="status" aria-live="polite">
+  <div class="room-code-label">Room code</div>
+  <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
+  <p id="cameraOnlyStatusText" class="hint">Starting…</p>
+  <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Show full controls</button>
 </div>
 
 <div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
