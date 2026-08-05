@@ -187,6 +187,10 @@ html, body {
   gap: 10px;
 }
 
+#receiveForm.hide {
+  display: none;
+}
+
 #receiveForm input[type="text"] {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);
@@ -411,6 +415,10 @@ html, body {
 #shareCodeBlock {
   margin-top: 16px;
   text-align: center;
+}
+
+#shareCodeBlock.hide {
+  display: none;
 }
 
 .room-code-label {
