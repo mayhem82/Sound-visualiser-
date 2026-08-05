@@ -164,7 +164,39 @@
   const MIC_MODE_KEY = "micMusicMode_v1";
   let musicMode = localStorage.getItem(MIC_MODE_KEY) === "1";
   let cameraBackgroundEnabled = false;
-  let nebulaEnabled = true;
+  // ---- Visualiser settings persistence ----
+  // Everything below used to reset to its hardcoded default on every
+  // reload — sensitivity, flash speed, dim/invert/screen-flash toggles,
+  // frequency range, sync delay, nebula visibility, and the true/corrected
+  // blend all now survive across sessions the same way outlines/cartoon
+  // settings already did.
+  const SENSITIVITY_KEY = "sensitivity_soundNebula_v1";
+  const FLASH_SPEED_KEY = "flashSpeed_soundNebula_v1";
+  const DIM_FLICKER_KEY = "dimFlicker_soundNebula_v1";
+  const TORCH_INVERTED_KEY = "torchInverted_soundNebula_v1";
+  const SCREEN_FLASH_KEY = "screenFlash_soundNebula_v1";
+  const FREQ_LOW_KEY = "freqLow_soundNebula_v1";
+  const FREQ_HIGH_KEY = "freqHigh_soundNebula_v1";
+  const SYNC_DELAY_KEY = "syncDelay_soundNebula_v1";
+  const NEBULA_ENABLED_KEY = "nebulaEnabled_soundNebula_v1";
+  const BLEND_KEY = "blend_soundNebula_v1";
+
+  function loadBoolPref(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : raw === "1";
+    } catch (e) {
+      return fallback;
+    }
+  }
+  function saveBoolPref(key, value) {
+    try { localStorage.setItem(key, value ? "1" : "0"); } catch (e) {}
+  }
+  function saveNumberPref(key, value) {
+    try { localStorage.setItem(key, String(value)); } catch (e) {}
+  }
+
+  let nebulaEnabled = loadBoolPref(NEBULA_ENABLED_KEY, true);
   // ---- Outlines mode ----
   // Redraws the particle nebula as stroked/hollow shapes instead of solid
   // glow blobs, and (when colour vision correction is running) overlays a
@@ -296,15 +328,15 @@
   let vibrateSupported = typeof navigator.vibrate === "function";
   let bassHistory = [];
   let lastBeatAt = 0;
-  let sensitivity = 0.5; // 0 (least sensitive) .. 1 (most sensitive)
-  let flashSpeed = 0.5; // 0 (slow) .. 1 (fast strobe)
+  let sensitivity = loadOutlineNumberPref(SENSITIVITY_KEY, 50) / 100; // 0 (least sensitive) .. 1 (most sensitive)
+  let flashSpeed = loadOutlineNumberPref(FLASH_SPEED_KEY, 50) / 100; // 0 (slow) .. 1 (fast strobe)
   let beatCooldownMs = 180;
   let minFlashMs = 50;
   let maxFlashMs = 160;
-  let dimFlickerEnabled = false;
-  let screenFlashEnabled = false;
-  let torchInverted = false; // false: off, flashes on beat. true: on, cuts on beat.
-  let syncDelayMs = 0; // delays torch/vibrate/screen flash after beat detection
+  let dimFlickerEnabled = loadBoolPref(DIM_FLICKER_KEY, false);
+  let screenFlashEnabled = loadBoolPref(SCREEN_FLASH_KEY, false);
+  let torchInverted = loadBoolPref(TORCH_INVERTED_KEY, false); // false: off, flashes on beat. true: on, cuts on beat.
+  let syncDelayMs = loadOutlineNumberPref(SYNC_DELAY_KEY, 0); // delays torch/vibrate/screen flash after beat detection
   const BEAT_HISTORY_LEN = 40;
   // There's no real brightness constraint for camera torch on the web
   // platform — it's on/off only. This rapidly toggles the torch during
@@ -325,6 +357,7 @@
     beatCooldownMs = lerp(400, 70, flashSpeed);
     minFlashMs = Math.max(18, beatCooldownMs * 0.28);
     maxFlashMs = Math.max(minFlashMs + 10, beatCooldownMs * 0.75);
+    saveNumberPref(FLASH_SPEED_KEY, speedSlider.value);
   }
 
   const FREQ_MIN_GAP_HZ = 20;
@@ -351,6 +384,8 @@
       BANDS[0].from = Math.min(1, low / nyquist);
       BANDS[0].to = Math.min(1, high / nyquist);
     }
+    saveNumberPref(FREQ_LOW_KEY, low);
+    saveNumberPref(FREQ_HIGH_KEY, high);
   }
 
   function resize() {
@@ -961,6 +996,7 @@
     // up when engaged.
     nebulaBtn.classList.toggle("active", !nebulaEnabled);
     nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
+    saveBoolPref(NEBULA_ENABLED_KEY, nebulaEnabled);
   }
 
   function updateOutlinesUi() {
@@ -2331,7 +2367,141 @@
     setSelectMode(false);
   }
 
-  // ---- Templates (named snapshots of the saved-colours list) ----
+  // ---- Templates (named snapshots of the full visualiser setup) ----
+  // Captures everything the persistence above also remembers automatically
+  // (sensitivity, flash/frequency/sync settings, nebula visibility, blend,
+  // outlines, cartoon mode, and the colour-vision correction settings) plus
+  // the saved-colours list, so a template is a complete look you can switch
+  // back to on demand — not just a colour set. Older templates saved before
+  // this only ever had a `points` array; applySettingsSnapshot() skips any
+  // field that isn't present, so loading one just leaves those settings as
+  // they currently are instead of erroring or zeroing them out.
+
+  function currentSettingsSnapshot() {
+    return {
+      sensitivity: Number(sensitivitySlider.value),
+      flashSpeed: Number(speedSlider.value),
+      dimFlickerEnabled,
+      torchInverted,
+      screenFlashEnabled,
+      freqLow: Number(freqLowSlider.value),
+      freqHigh: Number(freqHighSlider.value),
+      syncDelayMs,
+      nebulaEnabled,
+      blend: Number(blendSlider.value),
+      outlinesEnabled,
+      outlineThickness,
+      outlineBlend,
+      outlineOpacity,
+      cartoonEnabled,
+      cartoonLevels,
+      cartoonEdgeThickness,
+      cartoonEdgeStrength,
+      cartoonSaturation,
+      rotate180,
+      spread,
+      cvdType,
+      cvdStrength
+    };
+  }
+
+  function applySettingsSnapshot(s) {
+    if (!s || typeof s !== "object") return;
+    if (Number.isFinite(s.sensitivity)) { sensitivitySlider.value = String(s.sensitivity); updateSensitivity(); }
+    if (Number.isFinite(s.flashSpeed)) { speedSlider.value = String(s.flashSpeed); updateFlashSpeed(); }
+    if (typeof s.dimFlickerEnabled === "boolean") {
+      dimFlickerEnabled = s.dimFlickerEnabled;
+      dimToggle.checked = dimFlickerEnabled;
+      saveBoolPref(DIM_FLICKER_KEY, dimFlickerEnabled);
+    }
+    if (typeof s.torchInverted === "boolean") {
+      torchInverted = s.torchInverted;
+      invertToggle.checked = torchInverted;
+      saveBoolPref(TORCH_INVERTED_KEY, torchInverted);
+    }
+    if (typeof s.screenFlashEnabled === "boolean") {
+      screenFlashEnabled = s.screenFlashEnabled;
+      screenFlashToggle.checked = screenFlashEnabled;
+      saveBoolPref(SCREEN_FLASH_KEY, screenFlashEnabled);
+    }
+    if (Number.isFinite(s.freqLow)) freqLowSlider.value = String(s.freqLow);
+    if (Number.isFinite(s.freqHigh)) freqHighSlider.value = String(s.freqHigh);
+    if (Number.isFinite(s.freqLow) || Number.isFinite(s.freqHigh)) updateFreqRange("low");
+    if (Number.isFinite(s.syncDelayMs)) { syncDelaySlider.value = String(s.syncDelayMs); updateSyncDelay(); }
+    if (typeof s.nebulaEnabled === "boolean" && s.nebulaEnabled !== nebulaEnabled) toggleNebula();
+    if (Number.isFinite(s.blend)) {
+      blendSlider.value = String(s.blend);
+      blendLabel.textContent = `${blendSlider.value}%`;
+      saveNumberPref(BLEND_KEY, blendSlider.value);
+    }
+    if (typeof s.outlinesEnabled === "boolean" && s.outlinesEnabled !== outlinesEnabled) toggleOutlinesMode();
+    if (Number.isFinite(s.outlineThickness)) {
+      outlineThickness = s.outlineThickness;
+      outlineThicknessSlider.value = String(outlineThickness);
+      outlineThicknessLabel.textContent = `${outlineThickness}px`;
+      saveOutlineThicknessPref();
+    }
+    if (Number.isFinite(s.outlineBlend)) {
+      outlineBlend = s.outlineBlend;
+      outlineBlendSlider.value = String(Math.round(outlineBlend * 100));
+      outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+      saveOutlineBlendPref();
+    }
+    if (Number.isFinite(s.outlineOpacity)) {
+      outlineOpacity = s.outlineOpacity;
+      outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
+      outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+      saveOutlineOpacityPref();
+    }
+    if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
+    if (Number.isFinite(s.cartoonLevels)) {
+      cartoonLevels = s.cartoonLevels;
+      cartoonLevelsSlider.value = String(cartoonLevels);
+      cartoonLevelsLabel.textContent = String(cartoonLevels);
+      saveCartoonLevelsPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeThickness)) {
+      cartoonEdgeThickness = s.cartoonEdgeThickness;
+      cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
+      cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+      saveCartoonEdgeThicknessPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeStrength)) {
+      cartoonEdgeStrength = s.cartoonEdgeStrength;
+      cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
+      cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+      saveCartoonEdgeStrengthPref();
+    }
+    if (Number.isFinite(s.cartoonSaturation)) {
+      cartoonSaturation = s.cartoonSaturation;
+      cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
+      cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+      saveCartoonSaturationPref();
+    }
+    if (typeof s.rotate180 === "boolean") {
+      rotate180 = s.rotate180;
+      rotateBtn.classList.toggle("active", rotate180);
+      saveRotatePref();
+    }
+    if (Number.isFinite(s.spread)) {
+      spread = s.spread;
+      spreadSlider.value = String(spread);
+      spreadLabel.textContent = spreadDescription(spread);
+      saveSpreadPref();
+    }
+    if (typeof s.cvdType === "string" && Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, s.cvdType)) {
+      cvdType = s.cvdType;
+      cvdTypeSelect.value = cvdType;
+      cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+      saveCvdTypePref();
+    }
+    if (Number.isFinite(s.cvdStrength)) {
+      cvdStrength = s.cvdStrength;
+      cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
+      cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
+      saveCvdStrengthPref();
+    }
+  }
 
   function renderProfileSelect() {
     const prevValue = profileSelect.value;
@@ -2355,26 +2525,25 @@
       profileStatus.textContent = "Enter a name for the template first.";
       return;
     }
-    if (points.length === 0) {
-      profileStatus.textContent = "No saved colours to save as a template yet.";
-      return;
-    }
-    const snapshot = JSON.parse(JSON.stringify(points));
+    const pointsSnapshot = JSON.parse(JSON.stringify(points));
+    const settings = currentSettingsSnapshot();
     const existing = profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
     if (existing) {
-      existing.points = snapshot;
+      existing.points = pointsSnapshot;
+      existing.settings = settings;
     } else {
       profiles.push({
         id: "prof_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         name,
-        points: snapshot
+        points: pointsSnapshot,
+        settings
       });
     }
     saveCvProfiles();
     renderProfileSelect();
     profileSelect.value = existing ? existing.id : profiles[profiles.length - 1].id;
     profileNameInput.value = "";
-    profileStatus.textContent = `${existing ? "Updated" : "Saved"} template "${name}" — ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+    profileStatus.textContent = `${existing ? "Updated" : "Saved"} template "${name}" — ${points.length} colour${points.length === 1 ? "" : "s"} and current settings.`;
   }
 
   function loadSelectedProfile() {
@@ -2386,7 +2555,7 @@
     const prof = profiles.find((p) => p.id === id);
     if (!prof) return;
     const ok = window.confirm(
-      `Load template "${prof.name}"? This replaces your current ${points.length} saved colour${points.length === 1 ? "" : "s"} with the ${prof.points.length} from this template.`
+      `Load template "${prof.name}"? This replaces your current ${points.length} saved colour${points.length === 1 ? "" : "s"} and settings with those from this template.`
     );
     if (!ok) return;
     points = JSON.parse(JSON.stringify(prof.points));
@@ -2395,7 +2564,11 @@
     uploadPointUniforms();
     updatePointsCount();
     renderPointsGrid();
-    profileStatus.textContent = `Loaded "${prof.name}" — ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+    // Older templates (saved before templates captured settings) have no
+    // `settings` field — applySettingsSnapshot() is a no-op in that case,
+    // leaving whatever's currently configured untouched.
+    applySettingsSnapshot(prof.settings);
+    profileStatus.textContent = `Loaded "${prof.name}" — ${points.length} colour${points.length === 1 ? "" : "s"} and settings.`;
   }
 
   function deleteSelectedProfile() {
@@ -2694,11 +2867,13 @@
 
   function updateSensitivity() {
     sensitivity = Number(sensitivitySlider.value) / 100;
+    saveNumberPref(SENSITIVITY_KEY, sensitivitySlider.value);
   }
 
   function updateSyncDelay() {
     syncDelayMs = Number(syncDelaySlider.value);
     syncDelayLabel.textContent = `${syncDelayMs} ms`;
+    saveNumberPref(SYNC_DELAY_KEY, syncDelayMs);
   }
 
   // ---- Tablet viewer (WebRTC, signaled over public MQTT relays) ----
@@ -2955,9 +3130,11 @@
   speedSlider.addEventListener("input", updateFlashSpeed);
   dimToggle.addEventListener("change", () => {
     dimFlickerEnabled = dimToggle.checked;
+    saveBoolPref(DIM_FLICKER_KEY, dimFlickerEnabled);
   });
   invertToggle.addEventListener("change", async () => {
     torchInverted = invertToggle.checked;
+    saveBoolPref(TORCH_INVERTED_KEY, torchInverted);
     if (torchInverted && !flashEnabled) {
       // Checking Invert should activate the flash system by itself,
       // without requiring the separate Flash button to already be on.
@@ -2976,6 +3153,7 @@
   });
   screenFlashToggle.addEventListener("change", () => {
     screenFlashEnabled = screenFlashToggle.checked;
+    saveBoolPref(SCREEN_FLASH_KEY, screenFlashEnabled);
   });
   testFlashBtn.addEventListener("click", () => {
     // Bypasses beat detection entirely — a bright white pop so it's
@@ -3052,6 +3230,21 @@
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
+  // Reflect the persisted settings loaded earlier back into their controls
+  // before the update*() calls below re-derive state from them — otherwise
+  // the controls would keep showing their HTML defaults even though the
+  // underlying values were actually restored.
+  sensitivitySlider.value = String(Math.round(sensitivity * 100));
+  speedSlider.value = String(Math.round(flashSpeed * 100));
+  dimToggle.checked = dimFlickerEnabled;
+  invertToggle.checked = torchInverted;
+  screenFlashToggle.checked = screenFlashEnabled;
+  freqLowSlider.value = String(loadOutlineNumberPref(FREQ_LOW_KEY, Number(freqLowSlider.value)));
+  freqHighSlider.value = String(loadOutlineNumberPref(FREQ_HIGH_KEY, Number(freqHighSlider.value)));
+  syncDelaySlider.value = String(syncDelayMs);
+  nebulaBtn.textContent = nebulaEnabled ? "Nebula: On" : "Nebula: Off";
+  nebulaBtn.classList.toggle("active", !nebulaEnabled);
+  nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");
@@ -3062,8 +3255,10 @@
   colourVisionBtn.addEventListener("click", toggleColourVision);
   colourVisionFlashBtn.addEventListener("click", toggleColourVisionFlash);
 
+  blendSlider.value = String(loadOutlineNumberPref(BLEND_KEY, Number(blendSlider.value)));
   blendSlider.addEventListener("input", () => {
     blendLabel.textContent = `${blendSlider.value}%`;
+    saveNumberPref(BLEND_KEY, blendSlider.value);
   });
 
   spreadSlider.addEventListener("input", () => {
