@@ -113,6 +113,7 @@
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
   const floatingCaptureBar = document.getElementById("floatingCaptureBar");
+  const floatingCalibrateBtn = document.getElementById("floatingCalibrateBtn");
   const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
   const floatingRecordBtn = document.getElementById("floatingRecordBtn");
 
@@ -2622,6 +2623,11 @@
   calibrateBtn.addEventListener("click", openChoosePanel);
   chooseAimBtn.addEventListener("click", () => {
     choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    startAiming();
+  });
+  floatingCalibrateBtn.addEventListener("click", () => {
+    hideOverlayPanels();
     choosePanelReturnFocusEl = null;
     startAiming();
   });

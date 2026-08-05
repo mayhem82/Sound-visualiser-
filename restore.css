@@ -51,7 +51,8 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
-#recordBtn.recording {
+#recordBtn.recording,
+#floatingRecordBtn.recording {
   background: rgba(248, 113, 113, 0.22);
   border-color: rgba(248, 113, 113, 0.6);
   color: #fecaca;
@@ -64,7 +65,8 @@ video#cameraFeed, canvas#sampleCanvas {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #recordBtn.recording {
+  #recordBtn.recording,
+  #floatingRecordBtn.recording {
     animation: none;
   }
 }

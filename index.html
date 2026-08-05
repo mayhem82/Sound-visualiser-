@@ -129,12 +129,30 @@
   <button id="calibrateBtn" class="hud-btn hide">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn hide">Saved colours (<span id="pointsCount">0</span>)</button>
   <button id="rotateBtn" class="hud-btn hide" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="photoBtn" class="hud-btn" title="Take a photo of the visualisation (particles, and the camera background if it's on).">&#128247; Photo</button>
+  <label id="recordFpsWrap" class="hud-slider" title="Frame rate for recorded video. Lower is a smaller file; higher is smoother motion. Locked once recording starts.">
+    Recording FPS:
+    <select id="recordFpsSelect">
+      <option value="15">15 fps</option>
+      <option value="24">24 fps</option>
+      <option value="30" selected>30 fps</option>
+      <option value="60">60 fps</option>
+    </select>
+  </label>
+  <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the visualisation (particles, and the camera background if it's on).">&#9210; Record</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this visualisation to another device (e.g. a tablet or TV) as a read-only viewer.">Connect tablet</button>
   <a href="colorvision.html" class="hud-btn">Colour Vision &rarr;</a>
   <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
 </div>
 <p id="flashStatus" class="flash-status hide"></p>
 <p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
+<p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+
+<div id="floatingCaptureBar" class="hide" role="group" aria-label="Calibrate, photo, and video capture">
+  <button id="floatingCalibrateBtn" class="hud-btn hide" title="Aim the camera at a colour to calibrate. Long-press and drag to move this bar.">&#127919; Calibrate</button>
+  <button id="floatingPhotoBtn" class="hud-btn" title="Take a photo of the visualisation. Long-press and drag to move this bar.">&#128247; Photo</button>
+  <button id="floatingRecordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the visualisation. Long-press and drag to move this bar.">&#9210; Record</button>
+</div>
 
 <div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
   <div id="viewerPanelInner">
