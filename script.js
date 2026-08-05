@@ -338,6 +338,11 @@
   let torchInverted = loadBoolPref(TORCH_INVERTED_KEY, false); // false: off, flashes on beat. true: on, cuts on beat.
   let syncDelayMs = loadOutlineNumberPref(SYNC_DELAY_KEY, 0); // delays torch/vibrate/screen flash after beat detection
   const BEAT_HISTORY_LEN = 40;
+  // Beat strength (0..1, how far above the detection threshold a hit
+  // landed) at or above which the screen flash blacks out instead of
+  // showing the usual band-weighted colour — reserved for genuinely hard
+  // hits, not just moderately loud ones.
+  const SCREEN_FLASH_BLACK_THRESHOLD = 0.65;
   // There's no real brightness constraint for camera torch on the web
   // platform — it's on/off only. This rapidly toggles the torch during
   // each pulse to approximate a dimmer look; it's a rough illusion, not
@@ -498,7 +503,12 @@
     }
     if (screenFlashEnabled) {
       const duration = lerp(minFlashMs, maxFlashMs, strength) + 60;
-      flashScreen(beatColor(strength), duration, strength);
+      // Strong hits black the screen instead of flashing colour — the
+      // hardest-hitting beats read as a sharp cut to black rather than
+      // just a brighter version of the same colour pulse. Softer/normal
+      // beats keep the existing band-weighted colour flash.
+      const color = strength >= SCREEN_FLASH_BLACK_THRESHOLD ? "#000000" : beatColor(strength);
+      flashScreen(color, duration, strength);
     }
     if (colourVisionFlashEnabled) {
       fireColourVisionFlash(strength);
