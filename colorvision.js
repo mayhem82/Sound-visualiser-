@@ -3,6 +3,7 @@
 
   const MAX_POINTS = 32;
   const STORAGE_KEY = "cvCalibrationPoints_v1";
+  const PROFILES_KEY = "cvProfiles_colorVision_v1";
   const ROTATE_KEY = "cvRotate180_v1";
   const SPREAD_KEY = "cvSpread_v1";
   const DEFAULT_SPREAD = 4;
@@ -165,6 +166,12 @@
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
   const importExportStatus = document.getElementById("importExportStatus");
+  const profileSelect = document.getElementById("profileSelect");
+  const loadProfileBtn = document.getElementById("loadProfileBtn");
+  const deleteProfileBtn = document.getElementById("deleteProfileBtn");
+  const profileNameInput = document.getElementById("profileNameInput");
+  const saveProfileBtn = document.getElementById("saveProfileBtn");
+  const profileStatus = document.getElementById("profileStatus");
 
   const choosePanel = document.getElementById("choosePanel");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
@@ -195,6 +202,7 @@
   // so nearby real-world colours inherit similar correction and coverage
   // improves the more points get calibrated.
   let points = loadPoints();
+  let profiles = loadProfiles();
   let editingPointId = null;
   let frozenColor = null;
   let tuneReturnFocusEl = null;
@@ -385,6 +393,24 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(points));
     } catch (e) {
       setStatus("Could not save (storage full or unavailable).");
+    }
+  }
+
+  function loadProfiles() {
+    try {
+      const raw = localStorage.getItem(PROFILES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveProfiles() {
+    try {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+    } catch (e) {
+      profileStatus.textContent = "Could not save template (storage full or unavailable).";
     }
   }
 
@@ -1941,7 +1967,7 @@
         // on this device, not on the camera device's.
         if (pendingIds && pendingIds.original && streamId !== pendingIds.original) return;
         video.srcObject = e.streams[0];
-        video.play().catch((err) => console.log("[receiver] video.play() failed", err));
+        video.play().catch((err) => console.error("[receiver] video.play() failed", err));
         finishReceiverStart();
       });
 
@@ -1962,7 +1988,7 @@
         await waitForIceGatheringComplete(pc);
         publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
       } catch (err) {
-        console.log("[receiver] handleOffer failed", err);
+        console.error("[receiver] handleOffer failed", err);
         setReceiverStatus(err.message || err.name || "Couldn't connect.");
       }
     }
@@ -2032,7 +2058,6 @@
     if (receiverStarted) return;
     receiverStarted = true;
     isReceiverMode = true;
-    console.log("[receiver] finishReceiverStart() running — revealing HUD");
     setReceiverStatus("Receiving from camera device.");
     overlay.classList.add("hide");
     hud.classList.remove("hide");
@@ -2366,6 +2391,194 @@
     setSelectMode(false);
   }
 
+  // ---- Templates (named snapshots of the full correction setup) ----
+  // Captures the saved-colours list plus the settings that don't already
+  // persist on their own here (blend), and the ones that do (spread,
+  // rotate, colour-blindness type/strength, outlines, cartoon mode) — so a
+  // template is a complete correction setup you can switch back to, not
+  // just a colour set. Older templates saved before this only ever had a
+  // `points` array; applySettingsSnapshot() skips any field that isn't
+  // present, so loading one just leaves those settings as they currently
+  // are instead of erroring or zeroing them out.
+
+  function currentSettingsSnapshot() {
+    return {
+      blend: Number(blendSlider.value),
+      spread,
+      rotate180,
+      cvdType,
+      cvdStrength,
+      outlinesEnabled,
+      outlineThickness,
+      outlineBlend,
+      outlineOpacity,
+      cartoonEnabled,
+      cartoonLevels,
+      cartoonEdgeThickness,
+      cartoonEdgeStrength,
+      cartoonSaturation
+    };
+  }
+
+  function applySettingsSnapshot(s) {
+    if (!s || typeof s !== "object") return;
+    if (Number.isFinite(s.blend)) {
+      blendSlider.value = String(s.blend);
+      blendLabel.textContent = `${blendSlider.value}%`;
+    }
+    if (Number.isFinite(s.spread)) {
+      spread = s.spread;
+      spreadSlider.value = String(spread);
+      spreadLabel.textContent = spreadDescription(spread);
+      saveSpreadPref();
+    }
+    if (typeof s.rotate180 === "boolean") {
+      rotate180 = s.rotate180;
+      rotateBtn.classList.toggle("active", rotate180);
+      saveRotatePref();
+    }
+    if (typeof s.cvdType === "string" && Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, s.cvdType)) {
+      cvdType = s.cvdType;
+      cvdTypeSelect.value = cvdType;
+      cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
+      saveCvdTypePref();
+    }
+    if (Number.isFinite(s.cvdStrength)) {
+      cvdStrength = s.cvdStrength;
+      cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
+      cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
+      saveCvdStrengthPref();
+    }
+    if (typeof s.outlinesEnabled === "boolean" && s.outlinesEnabled !== outlinesEnabled) toggleOutlinesMode();
+    if (Number.isFinite(s.outlineThickness)) {
+      outlineThickness = s.outlineThickness;
+      outlineThicknessSlider.value = String(outlineThickness);
+      outlineThicknessLabel.textContent = `${outlineThickness}px`;
+      saveOutlineThicknessPref();
+    }
+    if (Number.isFinite(s.outlineBlend)) {
+      outlineBlend = s.outlineBlend;
+      outlineBlendSlider.value = String(Math.round(outlineBlend * 100));
+      outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
+      saveOutlineBlendPref();
+    }
+    if (Number.isFinite(s.outlineOpacity)) {
+      outlineOpacity = s.outlineOpacity;
+      outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
+      outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+      saveOutlineOpacityPref();
+    }
+    if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
+    if (Number.isFinite(s.cartoonLevels)) {
+      cartoonLevels = s.cartoonLevels;
+      cartoonLevelsSlider.value = String(cartoonLevels);
+      cartoonLevelsLabel.textContent = String(cartoonLevels);
+      saveCartoonLevelsPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeThickness)) {
+      cartoonEdgeThickness = s.cartoonEdgeThickness;
+      cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
+      cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+      saveCartoonEdgeThicknessPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeStrength)) {
+      cartoonEdgeStrength = s.cartoonEdgeStrength;
+      cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
+      cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+      saveCartoonEdgeStrengthPref();
+    }
+    if (Number.isFinite(s.cartoonSaturation)) {
+      cartoonSaturation = s.cartoonSaturation;
+      cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
+      cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+      saveCartoonSaturationPref();
+    }
+  }
+
+  function renderProfileSelect() {
+    const prevValue = profileSelect.value;
+    profileSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Select a template —";
+    profileSelect.appendChild(placeholder);
+    profiles.forEach((prof) => {
+      const opt = document.createElement("option");
+      opt.value = prof.id;
+      opt.textContent = `${prof.name} (${prof.points.length})`;
+      profileSelect.appendChild(opt);
+    });
+    if (profiles.some((p) => p.id === prevValue)) profileSelect.value = prevValue;
+  }
+
+  function saveCurrentAsProfile() {
+    const name = profileNameInput.value.trim();
+    if (!name) {
+      profileStatus.textContent = "Enter a name for the template first.";
+      return;
+    }
+    const pointsSnapshot = JSON.parse(JSON.stringify(points));
+    const settings = currentSettingsSnapshot();
+    const existing = profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.points = pointsSnapshot;
+      existing.settings = settings;
+    } else {
+      profiles.push({
+        id: "prof_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        name,
+        points: pointsSnapshot,
+        settings
+      });
+    }
+    saveProfiles();
+    renderProfileSelect();
+    profileSelect.value = existing ? existing.id : profiles[profiles.length - 1].id;
+    profileNameInput.value = "";
+    profileStatus.textContent = `${existing ? "Updated" : "Saved"} template "${name}" — ${points.length} colour${points.length === 1 ? "" : "s"} and current settings.`;
+  }
+
+  function loadSelectedProfile() {
+    const id = profileSelect.value;
+    if (!id) {
+      profileStatus.textContent = "Pick a template to load first.";
+      return;
+    }
+    const prof = profiles.find((p) => p.id === id);
+    if (!prof) return;
+    const ok = window.confirm(
+      `Load template "${prof.name}"? This replaces your current ${points.length} saved colour${points.length === 1 ? "" : "s"} and settings with those from this template.`
+    );
+    if (!ok) return;
+    points = JSON.parse(JSON.stringify(prof.points));
+    selectedIds.clear();
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    // Older templates (saved before templates captured settings) have no
+    // `settings` field — applySettingsSnapshot() is a no-op in that case,
+    // leaving whatever's currently configured untouched.
+    applySettingsSnapshot(prof.settings);
+    profileStatus.textContent = `Loaded "${prof.name}" — ${points.length} colour${points.length === 1 ? "" : "s"} and settings.`;
+  }
+
+  function deleteSelectedProfile() {
+    const id = profileSelect.value;
+    if (!id) {
+      profileStatus.textContent = "Pick a template to delete first.";
+      return;
+    }
+    const prof = profiles.find((p) => p.id === id);
+    if (!prof) return;
+    const ok = window.confirm(`Delete template "${prof.name}"? This can't be undone — your current saved colours are unaffected.`);
+    if (!ok) return;
+    profiles = profiles.filter((p) => p.id !== id);
+    saveProfiles();
+    renderProfileSelect();
+    profileStatus.textContent = `Deleted template "${prof.name}".`;
+  }
+
   // ---- Choose-colour panel ----
 
   function renderPresetGrid() {
@@ -2681,6 +2894,13 @@
     importFile.value = "";
   });
 
+  saveProfileBtn.addEventListener("click", saveCurrentAsProfile);
+  loadProfileBtn.addEventListener("click", loadSelectedProfile);
+  deleteProfileBtn.addEventListener("click", deleteSelectedProfile);
+  profileNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveCurrentAsProfile();
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (!tunePanel.classList.contains("hide")) {
@@ -2715,6 +2935,7 @@
   });
 
   updatePointsCount();
+  renderProfileSelect();
   blendLabel.textContent = `${blendSlider.value}%`;
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);

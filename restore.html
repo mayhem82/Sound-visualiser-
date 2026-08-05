@@ -24,6 +24,7 @@
     </label>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
 
     <div id="receiveModeSection">
       <p class="hint">Or, on the controlling device of a two-device setup:</p>
@@ -118,6 +119,7 @@
   <button id="maskBtn" class="hud-btn" title="Paint over an area (like a ceiling) to protect it from a correction, regardless of how close its colour is to the reference.">&#128396; Mask</button>
   <a href="index.html" class="hud-btn">&larr; Sound Nebula</a>
   <a href="colorvision.html" class="hud-btn">Colour Vision &rarr;</a>
+  <a href="tutorials.html" class="hud-btn">Video Tutorials &rarr;</a>
 </div>
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
@@ -306,6 +308,24 @@
       <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden>
     </div>
+
+    <div class="profiles-section">
+      <h3 id="profilesTitle">Templates</h3>
+      <p class="hint">Save the current saved references and settings as a named template, then switch between templates instantly &mdash; handy for different circumstances (e.g. a specific property type, or indoor vs outdoor lighting).</p>
+      <div class="profiles-row">
+        <select id="profileSelect" aria-label="Saved templates">
+          <option value="">&mdash; Select a template &mdash;</option>
+        </select>
+        <button id="loadProfileBtn" class="hud-btn reticle-btn-secondary">Load</button>
+        <button id="deleteProfileBtn" class="hud-btn reticle-btn-secondary">Delete</button>
+      </div>
+      <div class="profiles-row">
+        <input id="profileNameInput" type="text" placeholder="Template name" maxlength="40">
+        <button id="saveProfileBtn" class="hud-btn reticle-btn-secondary">Save as template</button>
+      </div>
+      <p id="profileStatus" class="hint" role="status" aria-live="polite"></p>
+    </div>
+
     <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>

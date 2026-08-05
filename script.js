@@ -270,6 +270,11 @@
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_soundNebula_v1";
   const LONG_PRESS_MS = 450;
   const DRAG_CANCEL_PX = 10;
+  const SHUTTER_MODE_KEY = "shutterMode_soundNebula_v1";
+  let shutterMode = (() => {
+    try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
+  })();
+  let shutterModeStatusTimer = null;
   let isRecording = false;
   let mediaRecorder = null;
   let recordedChunks = [];
@@ -2022,6 +2027,30 @@
     else startRecording();
   }
 
+  // ---- Hardware volume-button shutter ----
+  // Volume-down fires whichever mode is currently selected (photo shutter,
+  // or start/stop video); volume-up switches which mode that is, so both
+  // photo and video stay reachable from the hardware buttons alone.
+  function fireShutter() {
+    if (shutterMode === "video") toggleRecording();
+    else takePhoto();
+  }
+
+  function saveShutterModePref() {
+    try { localStorage.setItem(SHUTTER_MODE_KEY, shutterMode); } catch (e) {}
+  }
+
+  function toggleShutterMode() {
+    shutterMode = shutterMode === "video" ? "photo" : "video";
+    saveShutterModePref();
+    appendFlashStatus(`Volume shutter: ${shutterMode === "video" ? "Video" : "Photo"} mode`);
+    flashStatus.classList.remove("hide");
+    if (shutterModeStatusTimer) clearTimeout(shutterModeStatusTimer);
+    shutterModeStatusTimer = setTimeout(() => {
+      flashStatus.classList.add("hide");
+    }, 1600);
+  }
+
   // ---- Floating capture bar ----
   // Photo/Record/Calibrate live inside #hud, which the tap-to-hide gesture
   // can dismiss entirely — this small floating trio stays reachable in
@@ -3366,6 +3395,24 @@
   deleteProfileBtn.addEventListener("click", deleteSelectedProfile);
   profileNameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") saveCurrentAsProfile();
+  });
+
+  // Best-effort hardware shutter: most browsers never forward physical
+  // volume-button presses to page JavaScript at all (iOS Safari and
+  // desktop never do), and even where a browser does — mainly some
+  // Android/Chrome versions, especially as an installed PWA — the OS may
+  // still also change the system volume alongside it. Where it works,
+  // volume-down fires the current shutter mode (photo or video) and
+  // volume-up switches which mode that is; the on-screen Photo/Record
+  // buttons are the reliable fallback everywhere else.
+  document.addEventListener("keydown", (e) => {
+    const isDown = e.key === "AudioVolumeDown" || e.code === "AudioVolumeDown";
+    const isUp = e.key === "AudioVolumeUp" || e.code === "AudioVolumeUp";
+    if (!isDown && !isUp) return;
+    if (!stream) return;
+    e.preventDefault();
+    if (isUp) toggleShutterMode();
+    else fireShutter();
   });
 
   document.addEventListener("keydown", (e) => {
