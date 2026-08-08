@@ -91,6 +91,7 @@
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
   const reticleLayer = document.getElementById("reticleLayer");
+  const reticle = document.getElementById("reticle");
   const reticleSwatch = document.getElementById("reticleSwatch");
   const reticleColorName = document.getElementById("reticleColorName");
   const freezeBtn = document.getElementById("freezeBtn");
@@ -1140,6 +1141,12 @@
   let choosePanelReturnFocusEl = null;
   let aiming = false;
   let aimIntervalId = null;
+  // Where in the video frame calibration samples from — a fraction (0,0
+  // top-left .. 1,1 bottom-right), defaulting to dead-center but movable
+  // by tapping anywhere in the camera view while aiming (see
+  // screenToVideoFraction/moveReticleTo below).
+  let aimFracX = 0.5;
+  let aimFracY = 0.5;
   let selectMode = false;
   let selectedIds = new Set();
   let rotate180 = loadRotatePref();
@@ -1917,8 +1924,8 @@
     sampleCanvas.height = 64;
     const vw = cameraFeed.videoWidth, vh = cameraFeed.videoHeight;
     const cropSize = Math.min(vw, vh) * 0.15;
-    const sx = vw / 2 - cropSize / 2;
-    const sy = vh / 2 - cropSize / 2;
+    const sx = Math.min(Math.max(vw * aimFracX - cropSize / 2, 0), vw - cropSize);
+    const sy = Math.min(Math.max(vh * aimFracY - cropSize / 2, 0), vh - cropSize);
     sampleCtx.drawImage(cameraFeed, sx, sy, cropSize, cropSize, 0, 0, 64, 64);
     const data = sampleCtx.getImageData(24, 24, SAMPLE_SIZE, SAMPLE_SIZE).data;
     let r = 0, g = 0, b = 0, n = 0;
@@ -1928,8 +1935,36 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // Converts a tap position (viewport CSS pixels) into a fraction of the
+  // raw camera frame (0,0 top-left .. 1,1 bottom-right) — the same
+  // object-fit:cover cropping and rotate180 flip the correction shader
+  // applies, run in reverse, so tapping a point on screen samples that
+  // same point in the actual camera image rather than wherever it lands
+  // in the video's native (possibly cropped/rotated) frame.
+  function screenToVideoFraction(clientX, clientY) {
+    const canvasUvX = clientX / window.innerWidth;
+    const canvasUvY = 1 - clientY / window.innerHeight;
+    const cover = computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, window.innerWidth, window.innerHeight);
+    let vx = canvasUvX * cover.sx + cover.ox;
+    let vy = canvasUvY * cover.sy + cover.oy;
+    if (rotate180) { vx = 1 - vx; vy = 1 - vy; }
+    return { x: cvClamp01(vx), y: cvClamp01(1 - vy) };
+  }
+
+  function moveReticleTo(clientX, clientY) {
+    const frac = screenToVideoFraction(clientX, clientY);
+    aimFracX = frac.x;
+    aimFracY = frac.y;
+    reticle.style.left = `${clientX}px`;
+    reticle.style.top = `${clientY}px`;
+  }
+
   function startAiming() {
     aiming = true;
+    aimFracX = 0.5;
+    aimFracY = 0.5;
+    reticle.style.left = "";
+    reticle.style.top = "";
     reticleLayer.classList.remove("hide");
     aimIntervalId = setInterval(() => {
       const c = sampleCenterColor();
@@ -3666,6 +3701,16 @@
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
   cancelAimBtn.addEventListener("click", stopAiming);
+
+  // Tap anywhere in the camera view while aiming to move the sample point
+  // there instead of it always being locked to dead-center — the reticle
+  // and freeze/cancel buttons are excluded so their own taps still work.
+  reticleLayer.addEventListener("click", (e) => {
+    if (!aiming) return;
+    if (e.target.closest && e.target.closest("#freezeBtn, #cancelAimBtn")) return;
+    moveReticleTo(e.clientX, e.clientY);
+  });
+
   freezeBtn.addEventListener("click", () => {
     const c = sampleCenterColor();
     stopAiming();
