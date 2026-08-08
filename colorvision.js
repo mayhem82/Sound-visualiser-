@@ -807,10 +807,17 @@
           weightedSum2 += uCorrection2[i] * w;
           totalWeight += w;
         }
-        if (totalWeight > 0.0) {
-          correction = weightedSum / totalWeight;
-          correction2 = weightedSum2 / totalWeight;
-        }
+        // A "null" anchor standing in for "no correction", weighted as if
+        // a point were a fixed reference distance away. Without this, a
+        // single saved colour's correction always normalizes to full
+        // strength everywhere in the frame — the distance-based weight
+        // cancels out of the ratio once there's nothing else to weigh it
+        // against — so even wildly different colours would get the full
+        // shift instead of it fading out. ~50 Lab units is a clearly
+        // "very different colour" reference distance.
+        totalWeight += 1.0 / (2500.0 + uSpread);
+        correction = weightedSum / totalWeight;
+        correction2 = weightedSum2 / totalWeight;
       }
 
       vec3 hsl = rgb2hsl(base);
@@ -1303,6 +1310,19 @@
   // hunts for exposure. Same capability-detection pattern as the torch:
   // only exposed on some Android/Chrome-based cameras, not iOS Safari.
 
+  // Some devices report exposureTime/iso/exposureCompensation as raw
+  // floats with binary-rounding noise (e.g. an exposureCompensation of
+  // "0" arriving as 2.98023224e-8) — rounding before display keeps the
+  // labels readable instead of showing scientific notation or long
+  // fractional tails.
+  function formatExposureNumber(value, decimals) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    const factor = Math.pow(10, decimals);
+    const rounded = Math.round(n * factor) / factor;
+    return String(Object.is(rounded, -0) ? 0 : rounded);
+  }
+
   function setupExposure(track) {
     exposureTrack = track;
     currentExposureMode = "continuous";
@@ -1326,7 +1346,7 @@
       shutterSlider.max = caps.exposureTime.max;
       shutterSlider.step = caps.exposureTime.step || 1;
       shutterSlider.value = settings.exposureTime != null ? settings.exposureTime : caps.exposureTime.min;
-      shutterLabel.textContent = shutterSlider.value;
+      shutterLabel.textContent = formatExposureNumber(shutterSlider.value, 0);
       shutterWrap.classList.remove("hide");
     }
     if (caps.iso) {
@@ -1334,7 +1354,7 @@
       isoSlider.max = caps.iso.max;
       isoSlider.step = caps.iso.step || 1;
       isoSlider.value = settings.iso != null ? settings.iso : caps.iso.min;
-      isoLabel.textContent = isoSlider.value;
+      isoLabel.textContent = formatExposureNumber(isoSlider.value, 0);
       isoWrap.classList.remove("hide");
     }
     if (caps.exposureCompensation) {
@@ -1342,7 +1362,7 @@
       evSlider.max = caps.exposureCompensation.max;
       evSlider.step = caps.exposureCompensation.step || 0.1;
       evSlider.value = settings.exposureCompensation != null ? settings.exposureCompensation : 0;
-      evLabel.textContent = evSlider.value;
+      evLabel.textContent = formatExposureNumber(evSlider.value, 2);
       evWrap.classList.remove("hide");
     }
 
@@ -1377,7 +1397,7 @@
   }
 
   async function applyShutter() {
-    shutterLabel.textContent = shutterSlider.value;
+    shutterLabel.textContent = formatExposureNumber(shutterSlider.value, 0);
     if (!exposureTrack) return;
     if (currentExposureMode !== "manual") await setExposureMode("manual");
     try {
@@ -1386,7 +1406,7 @@
   }
 
   async function applyIso() {
-    isoLabel.textContent = isoSlider.value;
+    isoLabel.textContent = formatExposureNumber(isoSlider.value, 0);
     if (!exposureTrack) return;
     if (currentExposureMode !== "manual") await setExposureMode("manual");
     try {
@@ -1395,7 +1415,7 @@
   }
 
   async function applyExposureCompensation() {
-    evLabel.textContent = evSlider.value;
+    evLabel.textContent = formatExposureNumber(evSlider.value, 2);
     if (!exposureTrack) return;
     // Unlike shutter/ISO, exposure compensation is meaningful in auto mode
     // too (it's what an EV +/- dial does on a regular camera), so this one
