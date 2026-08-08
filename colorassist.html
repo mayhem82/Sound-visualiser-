@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Colour Assist</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="colorassist.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+<video id="cameraFeed" playsinline muted hidden></video>
+<canvas id="sampleCanvas" hidden></canvas>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Colour Assist</h1>
+    <p>A focused, everyday version of Colour Vision Assist: personal colour calibration, structural outlines, and the camera/lighting controls that keep a calibration trustworthy — nothing else. Aim at a colour, tune it until it reads right, save it.</p>
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="colorvision.html">Colour Vision Assist (Advanced) &rarr;</a></p>
+    <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <label id="blendWrap" class="hud-slider" title="0% shows the true camera image. 100% shows the fully corrected image.">
+    True &harr; Corrected: <span id="blendLabel">100%</span>
+    <input id="blendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="spreadWrap" class="hud-slider" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
+    Correction spread: <span id="spreadLabel">Medium</span>
+    <input id="spreadSlider" type="range" min="1" max="40" value="4">
+  </label>
+  <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view, calculated from the raw image so structure stays visible regardless of the current colour correction.">Outlines mode: Off</button>
+  <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
+    Outline thickness: <span id="outlineThicknessLabel">2px</span>
+    <input id="outlineThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="outlineBlendWrap" class="hud-slider hide" title="0% is the normal filled/full-colour look. 100% is fully outlined.">
+    Outline blend: <span id="outlineBlendLabel">100%</span>
+    <input id="outlineBlendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="outlineOpacityWrap" class="hud-slider hide" title="How strong/visible the outline lines themselves are.">
+    Outline opacity: <span id="outlineOpacityLabel">100%</span>
+    <input id="outlineOpacitySlider" type="range" min="0" max="100" value="100">
+  </label>
+  <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
+  <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
+  <button id="exposureModeBtn" class="hud-btn hide" aria-pressed="false" title="Lock the camera's exposure so it stops auto-adjusting brightness — automatic exposure and changing light can shift the apparent colour of whatever you're calibrating against, so locking it is part of keeping a calibration trustworthy, not just a photography nicety.">Exposure: Auto</button>
+  <label id="shutterWrap" class="hud-slider hide" title="Manual shutter speed. Lower is faster/darker, higher is slower/brighter.">
+    Shutter: <span id="shutterLabel"></span>
+    <input id="shutterSlider" type="range">
+  </label>
+  <label id="isoWrap" class="hud-slider hide" title="Manual ISO (sensor sensitivity). Higher brightens the image but can add noise.">
+    ISO: <span id="isoLabel"></span>
+    <input id="isoSlider" type="range">
+  </label>
+  <label id="evWrap" class="hud-slider hide" title="Exposure compensation — nudges brightness up or down without leaving auto exposure.">
+    EV: <span id="evLabel"></span>
+    <input id="evSlider" type="range">
+  </label>
+  <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+  <a href="index.html" class="hud-btn">&larr; Sound Nebula</a>
+  <a href="colorvision.html" class="hud-btn">Colour Vision Assist (Advanced) &rarr;</a>
+  <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
+  <a href="tutorials.html" class="hud-btn">Video Tutorials &rarr;</a>
+</div>
+
+<p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
+
+<div id="floatingCaptureBar" class="hide" role="group" aria-label="Calibrate">
+  <button id="floatingCalibrateBtn" class="hud-btn" title="Aim the camera at a colour to calibrate. Long-press and drag to move this bar.">&#127919; Calibrate</button>
+</div>
+
+<div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
+  <div id="choosePanelInner">
+    <h2 id="choosePanelTitle">Choose a colour to calibrate</h2>
+    <p class="hint">Aim at a real colour with the camera, pick one exactly, or start from a colour commonly confused in colour vision deficiency.</p>
+
+    <div class="choose-actions">
+      <button id="chooseAimBtn" class="hud-btn">Aim with camera</button>
+      <label id="colourPickerWrap" class="hud-btn choose-picker-btn">
+        Colour picker
+        <input id="colourPickerInput" type="color" value="#ff0000" aria-label="Pick an exact colour to calibrate">
+      </label>
+    </div>
+
+    <h3 id="presetGridTitle">Common CVD confusion colours</h3>
+    <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
+
+    <button id="closeChooseBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<div id="reticleLayer" class="hide">
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
+  <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
+  <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
+</div>
+
+<div id="tunePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="tunePanelTitle">
+  <div id="tunePanelInner">
+    <h2 id="tunePanelTitle">Tune until it's recognisable</h2>
+
+    <div class="swatch-row">
+      <div class="swatch-block">
+        <div id="swatchOriginal" class="swatch"></div>
+        <span>What the camera sees</span>
+        <p id="swatchOriginalName" class="color-name"></p>
+      </div>
+      <div class="swatch-block">
+        <div id="swatchCorrected" class="swatch"></div>
+        <span>Your correction</span>
+        <p id="swatchCorrectedName" class="color-name"></p>
+      </div>
+    </div>
+
+    <label class="hud-slider">
+      Hue shift: <span id="hueLabel">0&deg;</span>
+      <input id="hueSlider" type="range" min="-180" max="180" value="0">
+    </label>
+    <label class="hud-slider">
+      Saturation: <span id="satLabel">0%</span>
+      <input id="satSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Lightness: <span id="lightLabel">0%</span>
+      <input id="lightSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Contrast: <span id="contrastLabel">0%</span>
+      <input id="contrastSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Exposure: <span id="exposureLabel">0%</span>
+      <input id="exposureSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Label (optional)
+      <input id="labelInput" type="text" placeholder="e.g. traffic light red" maxlength="40">
+    </label>
+
+    <div class="tune-actions">
+      <button id="savePointBtn" class="hud-btn">Save this colour</button>
+      <button id="deletePointBtn" class="hud-btn reticle-btn-secondary hide">Delete</button>
+      <button id="closeTuneBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="pointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="pointsPanelTitle">
+  <div id="pointsPanelInner">
+    <h2 id="pointsPanelTitle">Saved colours</h2>
+    <p class="hint" id="pointsHint">Tap a colour to review or re-tune it.</p>
+    <div id="pointsGrid"></div>
+    <p id="importExportStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="points-actions">
+      <button id="selectModeBtn" class="hud-btn reticle-btn-secondary" aria-pressed="false">Select</button>
+      <button id="deleteSelectedBtn" class="hud-btn reticle-btn-secondary hide">Delete selected (<span id="selectedCount">0</span>)</button>
+      <button id="clearAllBtn" class="hud-btn reticle-btn-secondary">Clear all</button>
+    </div>
+    <div class="tune-actions">
+      <button id="exportBtn" class="hud-btn reticle-btn-secondary">Export</button>
+      <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden>
+    </div>
+
+    <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<script src="colorassist.js"></script>
+</body>
+</html>
