@@ -7,7 +7,14 @@ share a dark visual style and a lot of underlying plumbing:
   with an optional live camera background that can be colour-corrected.
 - **`colorvision.html`** ("Colour Vision Assist") — live camera colour
   correction for colourblind users, built around colours you calibrate by
-  hand (or a diagnosed deficiency type).
+  hand (or a diagnosed deficiency type). The full experimental version of
+  the correction engine — cartoon mode, diagnosed-CVD-type correction,
+  photo/video capture, two-device tablet pairing, Templates.
+- **`colorassist.html`** ("Colour Assist") — a focused, everyday build on
+  that same engine: personal colour calibration, structural outlines, and
+  the camera/lighting controls that keep a calibration trustworthy, with
+  everything else trimmed away. See its own section below for why it
+  exists alongside Colour Vision Assist rather than replacing it.
 - **`restore.html`** ("Property Colour Reference") — live camera colour
   correction for real-estate photography, built around a known-true
   reference colour (a paint chip or swatch) rather than a generic filter.
@@ -275,6 +282,42 @@ Sound Nebula. **Templates** save/restore a full settings snapshot alongside
 your saved colour points. Photo/Record (with FPS selection), the floating
 capture bar, volume-button shutter, and two-device tablet pairing
 (broadcast/camera-only/receive) all work the same way as described above.
+
+## Colour Assist (`colorassist.html`)
+
+A focused, everyday sibling of Colour Vision Assist, built on the exact
+same correction engine rather than a rewrite of it — `colorvision.html`
+stays the full experimental page where new techniques (cartoon mode,
+diagnosed-CVD-type correction, capture, tablet pairing, Templates) keep
+getting tried; anything that proves useful there can graduate into this
+page individually later. Colour Assist's control surface is deliberately
+just six things:
+
+- **Calibrate Colour** / **Saved Colours** — the same aim-freeze-tune-save
+  workflow as Colour Vision Assist, tuning hue, saturation, lightness,
+  contrast, and exposure until a real-world colour reads right.
+- **Correction Spread** — how far a saved calibration's correction
+  generalises to perceptually nearby colours, using the same Lab-space
+  colour-distance weighting as Colour Vision Assist, not just an exact RGB
+  match.
+- **True ↔ Corrected** — blends between the raw and corrected view.
+- **Outlines** — the same Sobel edge-detection overlay as elsewhere, with
+  thickness/blend/opacity sliders. It's calculated from the raw camera
+  image, so structural edges stay visible regardless of whatever colour
+  correction is currently applied — a second information channel for when
+  colour differentiation alone isn't enough.
+- **Light / Camera Controls** — flashlight, exposure lock, exposure
+  compensation (EV), shutter, ISO, camera switching, and pause, exposed
+  where the browser/hardware supports them. Automatic exposure and
+  changing light can shift the apparent colour of whatever's being
+  calibrated against, so exposure locking here is treated as part of
+  calibration integrity, not just a photography nicety.
+
+Saved colours use their own storage, separate from `colorvision.html` —
+calibrating one doesn't affect the other. The underlying WebGL shader is
+kept identical to Colour Vision Assist's (including its cartoon/CVD-type
+branches, which this page simply never turns on), so any correction-quality
+improvement made to one engine applies to both without being ported by hand.
 
 ## Property Colour Reference (`restore.html`)
 
