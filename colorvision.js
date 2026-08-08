@@ -26,6 +26,9 @@
   const CARTOON_DEFAULT_EDGE_THICKNESS = 2;
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
+  const CARTOON_THEME_KEY = "cartoonTheme_colorVision_v1";
+  const CARTOON_THEME_CODES = { none: 0, greyscale: 1, sepia: 2, desert: 3, oasis: 4 };
+  const CARTOON_DEFAULT_THEME = "none";
   const SHUTTER_MODE_KEY = "shutterMode_colorVision_v1";
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
   const LONG_PRESS_MS = 450;
@@ -90,6 +93,8 @@
   const cartoonSaturationWrap = document.getElementById("cartoonSaturationWrap");
   const cartoonSaturationSlider = document.getElementById("cartoonSaturationSlider");
   const cartoonSaturationLabel = document.getElementById("cartoonSaturationLabel");
+  const cartoonThemeWrap = document.getElementById("cartoonThemeWrap");
+  const cartoonThemeSelect = document.getElementById("cartoonThemeSelect");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -232,6 +237,7 @@
   let cartoonEdgeThickness = loadOutlineNumberPref(CARTOON_EDGE_THICKNESS_KEY, CARTOON_DEFAULT_EDGE_THICKNESS);
   let cartoonEdgeStrength = loadOutlineNumberPref(CARTOON_EDGE_STRENGTH_KEY, CARTOON_DEFAULT_EDGE_STRENGTH);
   let cartoonSaturation = loadOutlineNumberPref(CARTOON_SATURATION_KEY, CARTOON_DEFAULT_SATURATION);
+  let cartoonTheme = loadCartoonThemePref();
   let shutterMode = (() => {
     try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
   })();
@@ -510,6 +516,17 @@
   function saveCartoonSaturationPref() {
     try { localStorage.setItem(CARTOON_SATURATION_KEY, String(cartoonSaturation)); } catch (e) {}
   }
+  function loadCartoonThemePref() {
+    try {
+      const raw = localStorage.getItem(CARTOON_THEME_KEY);
+      return Object.prototype.hasOwnProperty.call(CARTOON_THEME_CODES, raw) ? raw : CARTOON_DEFAULT_THEME;
+    } catch (e) {
+      return CARTOON_DEFAULT_THEME;
+    }
+  }
+  function saveCartoonThemePref() {
+    try { localStorage.setItem(CARTOON_THEME_KEY, cartoonTheme); } catch (e) {}
+  }
 
   // Cartoon mode and Outlines mode both draw edge lines over the camera
   // view, so they're mutually exclusive rather than stacked — turning one
@@ -518,7 +535,7 @@
     cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
     cartoonBtn.classList.toggle("active", cartoonEnabled);
     cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
-    [cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap].forEach((el) =>
+    [cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap, cartoonThemeWrap].forEach((el) =>
       el.classList.toggle("hide", !cartoonEnabled)
     );
   }
@@ -610,6 +627,7 @@
     uniform float uCartoonEdgeThickness;
     uniform float uCartoonEdgeStrength;
     uniform float uCartoonSaturation;
+    uniform int uCartoonTheme; // 0=original, 1=greyscale, 2=sepia, 3=desert, 4=oasis
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -754,6 +772,22 @@
       return smoothstep(lo, hi, edge) * opacity;
     }
 
+    // Recolours the already-posterized cartoon result through a two-colour
+    // gradient keyed by its own luminance ("duotone" — the same technique
+    // behind classic screen-printed poster art), instead of the original
+    // hues. Runs after cvCartoonize so the colour bands stay bold/flat;
+    // this only remaps which colours those bands actually are.
+    vec3 cvCartoonTheme(vec3 c, int theme) {
+      if (theme == 0) return c;
+      float lum = cvLuminance(c);
+      vec3 lo; vec3 hi;
+      if (theme == 1) { lo = vec3(0.05); hi = vec3(0.95); }
+      else if (theme == 2) { lo = vec3(0.14, 0.09, 0.06); hi = vec3(0.91, 0.84, 0.66); }
+      else if (theme == 3) { lo = vec3(0.30, 0.14, 0.06); hi = vec3(0.91, 0.72, 0.40); }
+      else { lo = vec3(0.02, 0.24, 0.23); hi = vec3(0.56, 0.89, 0.75); }
+      return mix(lo, hi, lum);
+    }
+
     void main() {
       vec3 original = texture2D(uTex, vUv).rgb;
       vec3 base = daltonize(original, uCvdType, uCvdStrength);
@@ -793,6 +827,7 @@
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
         vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
+        toon = cvCartoonTheme(toon, uCartoonTheme);
         float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
         finalColor = mix(toon, vec3(0.02), line);
       } else if (uOutlineEnabled > 0.5) {
@@ -874,6 +909,7 @@
       uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
       uCartoonEdgeStrength: glCtx.getUniformLocation(prog, "uCartoonEdgeStrength"),
       uCartoonSaturation: glCtx.getUniformLocation(prog, "uCartoonSaturation"),
+      uCartoonTheme: glCtx.getUniformLocation(prog, "uCartoonTheme"),
       uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
@@ -1013,6 +1049,7 @@
       gl.uniform1f(uniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
       gl.uniform1f(uniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
       gl.uniform1f(uniforms.uCartoonSaturation, cartoonSaturation);
+      gl.uniform1i(uniforms.uCartoonTheme, CARTOON_THEME_CODES[cartoonTheme]);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
@@ -1066,6 +1103,7 @@
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
         fixedGl.uniform1f(fixedUniforms.uCartoonSaturation, cartoonSaturation);
+        fixedGl.uniform1i(fixedUniforms.uCartoonTheme, CARTOON_THEME_CODES[cartoonTheme]);
         fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
         fixedGl.uniform1f(fixedUniforms.uSpread, spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
@@ -2416,7 +2454,8 @@
       cartoonLevels,
       cartoonEdgeThickness,
       cartoonEdgeStrength,
-      cartoonSaturation
+      cartoonSaturation,
+      cartoonTheme
     };
   }
 
@@ -2492,6 +2531,11 @@
       cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
       cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
       saveCartoonSaturationPref();
+    }
+    if (typeof s.cartoonTheme === "string" && Object.prototype.hasOwnProperty.call(CARTOON_THEME_CODES, s.cartoonTheme)) {
+      cartoonTheme = s.cartoonTheme;
+      cartoonThemeSelect.value = cartoonTheme;
+      saveCartoonThemePref();
     }
   }
 
@@ -2765,6 +2809,11 @@
   });
   cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
   cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+  cartoonThemeSelect.addEventListener("change", () => {
+    cartoonTheme = cartoonThemeSelect.value;
+    saveCartoonThemePref();
+  });
+  cartoonThemeSelect.value = cartoonTheme;
   updateCartoonUi();
 
   pauseBtn.addEventListener("click", () => {
