@@ -41,6 +41,8 @@
   const outlineOpacityWrap = document.getElementById("outlineOpacityWrap");
   const outlineOpacitySlider = document.getElementById("outlineOpacitySlider");
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
+  const outlineColorWrap = document.getElementById("outlineColorWrap");
+  const outlineColorInput = document.getElementById("outlineColorInput");
   const cartoonBtn = document.getElementById("cartoonBtn");
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
   const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
@@ -221,6 +223,8 @@
   const OUTLINE_DEFAULT_THICKNESS = 2;
   const OUTLINE_DEFAULT_BLEND = 1;
   const OUTLINE_DEFAULT_OPACITY = 1;
+  const OUTLINE_COLOR_KEY = "outlineColor_soundNebula_v1";
+  const OUTLINE_DEFAULT_COLOR = "#ffffff";
 
   function loadOutlineNumberPref(key, fallback) {
     try {
@@ -237,6 +241,8 @@
   let outlineThickness = loadOutlineNumberPref(OUTLINE_THICKNESS_KEY, OUTLINE_DEFAULT_THICKNESS);
   let outlineBlend = loadOutlineNumberPref(OUTLINE_BLEND_KEY, OUTLINE_DEFAULT_BLEND);
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
+  let outlineColor = loadOutlineColorPref();
+  let outlineColorRgb = cvHexToRgb01(outlineColor);
 
   function saveOutlinesEnabledPref() {
     try { localStorage.setItem(OUTLINE_ENABLED_KEY, outlinesEnabled ? "1" : "0"); } catch (e) {}
@@ -249,6 +255,17 @@
   }
   function saveOutlineOpacityPref() {
     try { localStorage.setItem(OUTLINE_OPACITY_KEY, String(outlineOpacity)); } catch (e) {}
+  }
+  function loadOutlineColorPref() {
+    try {
+      const raw = localStorage.getItem(OUTLINE_COLOR_KEY);
+      return /^#[0-9a-f]{6}$/i.test(raw) ? raw : OUTLINE_DEFAULT_COLOR;
+    } catch (e) {
+      return OUTLINE_DEFAULT_COLOR;
+    }
+  }
+  function saveOutlineColorPref() {
+    try { localStorage.setItem(OUTLINE_COLOR_KEY, outlineColor); } catch (e) {}
   }
 
   // ---- Cartoon mode ----
@@ -1031,7 +1048,7 @@
     outlinesBtn.textContent = outlinesEnabled ? "Outlines mode: On" : "Outlines mode: Off";
     outlinesBtn.classList.toggle("active", outlinesEnabled);
     outlinesBtn.setAttribute("aria-pressed", String(outlinesEnabled));
-    [outlineThicknessWrap, outlineBlendWrap, outlineOpacityWrap].forEach((el) =>
+    [outlineThicknessWrap, outlineBlendWrap, outlineOpacityWrap, outlineColorWrap].forEach((el) =>
       el.classList.toggle("hide", !outlinesEnabled)
     );
   }
@@ -1370,6 +1387,7 @@
     uniform float uOutlineThickness;
     uniform float uOutlineBlend;
     uniform float uOutlineOpacity;
+    uniform vec3 uOutlineColor;
     uniform float uCartoonEnabled;
     uniform float uCartoonLevels;
     uniform float uCartoonEdgeThickness;
@@ -1560,7 +1578,7 @@
         finalColor = mix(toon, vec3(0.02), line);
       } else if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv, uOutlineThickness) * uOutlineOpacity;
-        vec3 outlineColor = vec3(edge);
+        vec3 outlineColor = uOutlineColor * edge;
         finalColor = mix(filled, outlineColor, uOutlineBlend);
       }
 
@@ -1635,6 +1653,7 @@
       uOutlineThickness: glCtx.getUniformLocation(prog, "uOutlineThickness"),
       uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
       uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
+      uOutlineColor: glCtx.getUniformLocation(prog, "uOutlineColor"),
       uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
       uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
       uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
@@ -1708,6 +1727,7 @@
     correctionGl.uniform1f(correctionUniforms.uOutlineThickness, outlineThickness);
     correctionGl.uniform1f(correctionUniforms.uOutlineBlend, outlineBlend);
     correctionGl.uniform1f(correctionUniforms.uOutlineOpacity, outlineOpacity);
+    correctionGl.uniform3f(correctionUniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
     correctionGl.uniform1f(correctionUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
     correctionGl.uniform1f(correctionUniforms.uCartoonLevels, cartoonLevels);
     correctionGl.uniform1f(correctionUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
@@ -2452,6 +2472,7 @@
       outlineThickness,
       outlineBlend,
       outlineOpacity,
+      outlineColor,
       cartoonEnabled,
       cartoonLevels,
       cartoonEdgeThickness,
@@ -2511,6 +2532,12 @@
       outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
       outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
       saveOutlineOpacityPref();
+    }
+    if (typeof s.outlineColor === "string" && /^#[0-9a-f]{6}$/i.test(s.outlineColor)) {
+      outlineColor = s.outlineColor;
+      outlineColorRgb = cvHexToRgb01(outlineColor);
+      outlineColorInput.value = outlineColor;
+      saveOutlineColorPref();
     }
     if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
     if (Number.isFinite(s.cartoonLevels)) {
@@ -3497,12 +3524,18 @@
     outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
     saveOutlineOpacityPref();
   });
+  outlineColorInput.addEventListener("input", () => {
+    outlineColor = outlineColorInput.value;
+    outlineColorRgb = cvHexToRgb01(outlineColor);
+    saveOutlineColorPref();
+  });
   outlineThicknessSlider.value = String(outlineThickness);
   outlineThicknessLabel.textContent = `${outlineThickness}px`;
   outlineBlendSlider.value = String(Math.round(outlineBlend * 100));
   outlineBlendLabel.textContent = `${outlineBlendSlider.value}%`;
   outlineOpacitySlider.value = String(Math.round(outlineOpacity * 100));
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
+  outlineColorInput.value = outlineColor;
   updateOutlinesUi();
   cartoonBtn.addEventListener("click", toggleCartoonMode);
   cartoonLevelsSlider.addEventListener("input", () => {
