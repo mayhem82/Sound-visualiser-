@@ -1,4 +1,7 @@
-# Sound Visualiser — Nebula
+# My Journey Into Sight and Sound
+
+*A personal suite of camera and microphone tools — colour vision correction,
+real-estate colour reference, and sound-reactive visuals.*
 
 A small suite of dependency-free, single-page camera/microphone tools that
 share a dark visual style and a lot of underlying plumbing:
