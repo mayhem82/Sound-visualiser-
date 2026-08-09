@@ -68,6 +68,11 @@
     Correction spread: <span id="spreadLabel">Medium</span>
     <input id="spreadSlider" type="range" min="1" max="40" value="4">
   </label>
+  <button id="audioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone as a second, artistic source of colour: live bass/mid/treble energy (same violet/cyan/pink mapping as Sound Nebula) nudges the corrected view's hue toward whatever's playing, instead of relying only on the camera.">Audio colour tint: Off</button>
+  <label id="audioTintStrengthWrap" class="hud-slider hide" title="How strongly the live audio hue pulls the corrected view's colour, from a subtle nudge to a full wash.">
+    Audio tint strength: <span id="audioTintStrengthLabel">40%</span>
+    <input id="audioTintStrengthSlider" type="range" min="0" max="100" value="40">
+  </label>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view instead of (or blended with) the normal full-colour correction.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
     Outline thickness: <span id="outlineThicknessLabel">2px</span>

@@ -33,6 +33,18 @@
   const CARTOON_DEFAULT_THEME = "none";
   const SHUTTER_MODE_KEY = "shutterMode_colorVision_v1";
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
+  const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
+  const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
+  const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
+  // A second, artistic source of colour besides the camera: live mic
+  // input, split into the same bass/mid/treble bands (and violet/cyan/pink
+  // hues) as Sound Nebula's particle visualiser, so the "mood" of
+  // whatever's playing can nudge the corrected view's hue.
+  const AUDIO_TINT_BANDS = [
+    { hue: 262, fromHz: 20, toHz: 150 },   // violet — bass/kick
+    { hue: 189, fromHz: 150, toHz: 2000 }, // cyan — mids
+    { hue: 330, fromHz: 2000, toHz: 9000 } // pink — treble
+  ];
   const LONG_PRESS_MS = 450;
   const DRAG_CANCEL_PX = 10;
   const RECORD_FPS_KEY = "recordFps_colorVision_v1";
@@ -68,6 +80,10 @@
   const blendLabel = document.getElementById("blendLabel");
   const spreadSlider = document.getElementById("spreadSlider");
   const spreadLabel = document.getElementById("spreadLabel");
+  const audioTintBtn = document.getElementById("audioTintBtn");
+  const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
+  const audioTintStrengthSlider = document.getElementById("audioTintStrengthSlider");
+  const audioTintStrengthLabel = document.getElementById("audioTintStrengthLabel");
   const cvdTypeSelect = document.getElementById("cvdTypeSelect");
   const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
   const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
@@ -243,6 +259,16 @@
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
   let outlineColor = loadOutlineColorPref();
   let outlineColorRgb = hexToRgb01(outlineColor);
+  let audioTintEnabled = (() => {
+    try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let audioTintStrength = loadOutlineNumberPref(AUDIO_TINT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_STRENGTH);
+  let audioTintHue = 0;
+  let audioTintCtx = null;
+  let audioTintStream = null;
+  let audioTintAnalyser = null;
+  let audioTintFreqData = null;
+  let audioTintIntervalId = null;
   let cartoonEnabled = (() => {
     try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -505,6 +531,88 @@
     try { localStorage.setItem(OUTLINE_COLOR_KEY, outlineColor); } catch (e) {}
   }
 
+  function saveAudioTintEnabledPref() {
+    try { localStorage.setItem(AUDIO_TINT_ENABLED_KEY, audioTintEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveAudioTintStrengthPref() {
+    try { localStorage.setItem(AUDIO_TINT_STRENGTH_KEY, String(audioTintStrength)); } catch (e) {}
+  }
+
+  function updateAudioTintUi() {
+    audioTintBtn.textContent = audioTintEnabled ? "Audio colour tint: On" : "Audio colour tint: Off";
+    audioTintBtn.classList.toggle("active", audioTintEnabled);
+    audioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
+    audioTintStrengthWrap.classList.toggle("hide", !audioTintEnabled);
+  }
+
+  // Reads the live frequency spectrum and turns it into a single hue the
+  // same way Sound Nebula's beatColor() does — each band's average energy
+  // weights its own hue, so whichever band currently dominates the sound
+  // (bass/mid/treble) pulls the blended hue toward it.
+  function computeAudioTintHue() {
+    if (!audioTintAnalyser) return;
+    audioTintAnalyser.getByteFrequencyData(audioTintFreqData);
+    const n = audioTintFreqData.length;
+    let weightedHue = 0;
+    let totalEnergy = 0;
+    for (const band of AUDIO_TINT_BANDS) {
+      const start = Math.floor(band.from * n);
+      const end = Math.max(start + 1, Math.floor(band.to * n));
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += audioTintFreqData[i];
+      const energy = sum / (end - start) / 255;
+      weightedHue += band.hue * energy;
+      totalEnergy += energy;
+    }
+    if (totalEnergy > 0) audioTintHue = weightedHue / totalEnergy;
+  }
+
+  async function startAudioTint() {
+    try {
+      audioTintStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      showCameraStatus("Couldn't use the microphone for audio colour tint: " + (err.message || err.name || "unknown error"));
+      return false;
+    }
+    audioTintCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioTintCtx.createMediaStreamSource(audioTintStream);
+    audioTintAnalyser = audioTintCtx.createAnalyser();
+    audioTintAnalyser.fftSize = 1024;
+    audioTintAnalyser.smoothingTimeConstant = 0.7;
+    source.connect(audioTintAnalyser);
+    audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+    const nyquist = audioTintCtx.sampleRate / 2;
+    AUDIO_TINT_BANDS.forEach((band) => {
+      band.from = Math.min(1, band.fromHz / nyquist);
+      band.to = Math.min(1, band.toHz / nyquist);
+    });
+    audioTintIntervalId = setInterval(computeAudioTintHue, 80);
+    return true;
+  }
+
+  function stopAudioTint() {
+    if (audioTintIntervalId) { clearInterval(audioTintIntervalId); audioTintIntervalId = null; }
+    if (audioTintStream) { audioTintStream.getTracks().forEach((t) => t.stop()); audioTintStream = null; }
+    if (audioTintCtx) { audioTintCtx.close().catch(() => {}); audioTintCtx = null; }
+    audioTintAnalyser = null;
+    audioTintFreqData = null;
+  }
+
+  async function toggleAudioTint() {
+    if (audioTintEnabled) {
+      audioTintEnabled = false;
+      stopAudioTint();
+      saveAudioTintEnabledPref();
+      updateAudioTintUi();
+      return;
+    }
+    const started = await startAudioTint();
+    if (!started) return;
+    audioTintEnabled = true;
+    saveAudioTintEnabledPref();
+    updateAudioTintUi();
+  }
+
   function updateOutlinesUi() {
     outlinesBtn.textContent = outlinesEnabled ? "Outlines mode: On" : "Outlines mode: Off";
     outlinesBtn.classList.toggle("active", outlinesEnabled);
@@ -647,6 +755,9 @@
     uniform float uOutlineBlend;
     uniform float uOutlineOpacity;
     uniform vec3 uOutlineColor;
+    uniform float uAudioTintEnabled;
+    uniform float uAudioTintHue;
+    uniform float uAudioTintStrength;
     uniform float uCartoonEnabled;
     uniform float uCartoonLevels;
     uniform float uCartoonEdgeThickness;
@@ -868,6 +979,19 @@
         finalColor = mix(filled, outlineColor, uOutlineBlend);
       }
 
+      // Audio colour tint: a final hue-only nudge toward the live mic's
+      // dominant band hue, taking the shortest way around the colour
+      // wheel so it never jumps the long way round. Runs after everything
+      // else so it's a mood pass over whatever's already on screen,
+      // leaving lightness/saturation (and so the underlying correction)
+      // intact rather than washing it out with a flat overlay colour.
+      if (uAudioTintEnabled > 0.5) {
+        vec3 tintHsl = rgb2hsl(finalColor);
+        float hueDiff = mod(uAudioTintHue - tintHsl.x + 540.0, 360.0) - 180.0;
+        tintHsl.x = mod(tintHsl.x + hueDiff * uAudioTintStrength + 360.0, 360.0);
+        finalColor = hsl2rgb(tintHsl);
+      }
+
       gl_FragColor = vec4(finalColor, 1.0);
     }
   `;
@@ -937,6 +1061,9 @@
       uOutlineBlend: glCtx.getUniformLocation(prog, "uOutlineBlend"),
       uOutlineOpacity: glCtx.getUniformLocation(prog, "uOutlineOpacity"),
       uOutlineColor: glCtx.getUniformLocation(prog, "uOutlineColor"),
+      uAudioTintEnabled: glCtx.getUniformLocation(prog, "uAudioTintEnabled"),
+      uAudioTintHue: glCtx.getUniformLocation(prog, "uAudioTintHue"),
+      uAudioTintStrength: glCtx.getUniformLocation(prog, "uAudioTintStrength"),
       uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
       uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
       uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
@@ -1078,6 +1205,9 @@
       gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
       gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
       gl.uniform3f(uniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
+      gl.uniform1f(uniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uAudioTintHue, audioTintHue);
+      gl.uniform1f(uniforms.uAudioTintStrength, audioTintStrength);
       gl.uniform1f(uniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uCartoonLevels, cartoonLevels);
       gl.uniform1f(uniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
@@ -1133,6 +1263,9 @@
         fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
         fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
         fixedGl.uniform3f(fixedUniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintHue, audioTintHue);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintStrength, audioTintStrength);
         fixedGl.uniform1f(fixedUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uCartoonLevels, cartoonLevels);
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
@@ -2532,7 +2665,12 @@
       cartoonEdgeThickness,
       cartoonEdgeStrength,
       cartoonSaturation,
-      cartoonTheme
+      cartoonTheme,
+      // audioTintEnabled deliberately isn't captured here — loading a
+      // template shouldn't silently start capturing the microphone as a
+      // side effect. Only the strength (meaningless until it's turned on
+      // by hand) is remembered.
+      audioTintStrength
     };
   }
 
@@ -2619,6 +2757,12 @@
       cartoonTheme = s.cartoonTheme;
       cartoonThemeSelect.value = cartoonTheme;
       saveCartoonThemePref();
+    }
+    if (Number.isFinite(s.audioTintStrength)) {
+      audioTintStrength = s.audioTintStrength;
+      audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
+      audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
+      saveAudioTintStrengthPref();
     }
   }
 
@@ -2868,6 +3012,28 @@
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
   outlineColorInput.value = outlineColor;
   updateOutlinesUi();
+
+  audioTintBtn.addEventListener("click", toggleAudioTint);
+  audioTintStrengthSlider.addEventListener("input", () => {
+    audioTintStrength = parseFloat(audioTintStrengthSlider.value) / 100;
+    audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
+    saveAudioTintStrengthPref();
+  });
+  audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
+  audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
+  updateAudioTintUi();
+  if (audioTintEnabled) {
+    // Persisted as on from a previous session — try to silently resume
+    // (works if microphone permission was already granted; if not, this
+    // fails quietly via startAudioTint()'s own status message rather than
+    // blocking start-up on a fresh permission prompt).
+    audioTintEnabled = false;
+    startAudioTint().then((started) => {
+      audioTintEnabled = started;
+      saveAudioTintEnabledPref();
+      updateAudioTintUi();
+    });
+  }
 
   cartoonBtn.addEventListener("click", toggleCartoonMode);
   cartoonLevelsSlider.addEventListener("input", () => {
