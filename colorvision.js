@@ -29,8 +29,21 @@
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
   const CARTOON_THEME_KEY = "cartoonTheme_colorVision_v1";
-  const CARTOON_THEME_CODES = { none: 0, greyscale: 1, sepia: 2, desert: 3, oasis: 4 };
+  const CARTOON_THEME_NAMES = ["none", "greyscale", "sepia", "desert", "oasis"];
   const CARTOON_DEFAULT_THEME = "none";
+  // Presets just populate the two duotone colour pickers below — the shader
+  // itself no longer knows about named themes, only the live lo/hi colours.
+  const CARTOON_THEME_PRESETS = {
+    greyscale: { lo: "#0d0d0d", hi: "#f2f2f2" },
+    sepia: { lo: "#24170f", hi: "#e8d6a8" },
+    desert: { lo: "#4c240f", hi: "#e8b866" },
+    oasis: { lo: "#053d3b", hi: "#8fe3bf" }
+  };
+  const CARTOON_THEME_ENABLED_KEY = "cartoonThemeEnabled_colorVision_v1";
+  const CARTOON_THEME_LO_KEY = "cartoonThemeLo_colorVision_v1";
+  const CARTOON_THEME_HI_KEY = "cartoonThemeHi_colorVision_v1";
+  const CARTOON_THEME_DEFAULT_LO = "#0d0d0d";
+  const CARTOON_THEME_DEFAULT_HI = "#f2f2f2";
   const SHUTTER_MODE_KEY = "shutterMode_colorVision_v1";
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
@@ -39,12 +52,28 @@
   // A second, artistic source of colour besides the camera: live mic
   // input, split into the same bass/mid/treble bands (and violet/cyan/pink
   // hues) as Sound Nebula's particle visualiser, so the "mood" of
-  // whatever's playing can nudge the corrected view's hue.
-  const AUDIO_TINT_BANDS = [
-    { hue: 262, fromHz: 20, toHz: 150 },   // violet — bass/kick
-    { hue: 189, fromHz: 150, toHz: 2000 }, // cyan — mids
-    { hue: 330, fromHz: 2000, toHz: 9000 } // pink — treble
+  // whatever's playing can nudge the corrected view's hue. hue/gain/fromHz/
+  // toHz are all user-adjustable via sliders (see updateAudioTintBandsFromUi);
+  // these are just the shipped defaults and the id-prefix used to find each
+  // band's four sliders.
+  const AUDIO_TINT_BAND_DEFS = [
+    { key: "Bass", hue: 262, gain: 1.0, fromHz: 20, toHz: 150 },     // violet — bass/kick
+    { key: "Mid", hue: 189, gain: 1.0, fromHz: 150, toHz: 2000 },    // cyan — mids
+    { key: "Treble", hue: 330, gain: 0.85, fromHz: 2000, toHz: 9000 } // pink — treble
   ];
+  function audioTintBandKey(bandKey, field) {
+    return `audioTint${bandKey}${field}_colorVision_v1`;
+  }
+  // Populated from localStorage/sliders in updateAudioTintBandsFromUi(); from/to
+  // (fractions of the Nyquist frequency) are filled in once audio tint starts.
+  const AUDIO_TINT_BANDS = AUDIO_TINT_BAND_DEFS.map((def) => ({
+    hue: loadOutlineNumberPref(audioTintBandKey(def.key, "Hue"), def.hue),
+    gain: loadOutlineNumberPref(audioTintBandKey(def.key, "Gain"), def.gain),
+    fromHz: loadOutlineNumberPref(audioTintBandKey(def.key, "FromHz"), def.fromHz),
+    toHz: loadOutlineNumberPref(audioTintBandKey(def.key, "ToHz"), def.toHz),
+    from: 0,
+    to: 0
+  }));
   const LONG_PRESS_MS = 450;
   const DRAG_CANCEL_PX = 10;
   const RECORD_FPS_KEY = "recordFps_colorVision_v1";
@@ -84,6 +113,30 @@
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
   const audioTintStrengthSlider = document.getElementById("audioTintStrengthSlider");
   const audioTintStrengthLabel = document.getElementById("audioTintStrengthLabel");
+  // One { wrap, slider, label } triple per band per field (hue/gain/fromHz/toHz),
+  // keyed off AUDIO_TINT_BAND_DEFS' id-prefixes (audioTintBassHue*, audioTintMidGain*, ...).
+  const audioTintBandControls = AUDIO_TINT_BAND_DEFS.map((def) => ({
+    hue: {
+      wrap: document.getElementById(`audioTint${def.key}HueWrap`),
+      slider: document.getElementById(`audioTint${def.key}HueSlider`),
+      label: document.getElementById(`audioTint${def.key}HueLabel`)
+    },
+    gain: {
+      wrap: document.getElementById(`audioTint${def.key}GainWrap`),
+      slider: document.getElementById(`audioTint${def.key}GainSlider`),
+      label: document.getElementById(`audioTint${def.key}GainLabel`)
+    },
+    fromHz: {
+      wrap: document.getElementById(`audioTint${def.key}FromHzWrap`),
+      slider: document.getElementById(`audioTint${def.key}FromHzSlider`),
+      label: document.getElementById(`audioTint${def.key}FromHzLabel`)
+    },
+    toHz: {
+      wrap: document.getElementById(`audioTint${def.key}ToHzWrap`),
+      slider: document.getElementById(`audioTint${def.key}ToHzSlider`),
+      label: document.getElementById(`audioTint${def.key}ToHzLabel`)
+    }
+  }));
   const cvdTypeSelect = document.getElementById("cvdTypeSelect");
   const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
   const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
@@ -115,6 +168,12 @@
   const cartoonSaturationLabel = document.getElementById("cartoonSaturationLabel");
   const cartoonThemeWrap = document.getElementById("cartoonThemeWrap");
   const cartoonThemeSelect = document.getElementById("cartoonThemeSelect");
+  const cartoonThemeEnabledWrap = document.getElementById("cartoonThemeEnabledWrap");
+  const cartoonThemeEnabledCheckbox = document.getElementById("cartoonThemeEnabledCheckbox");
+  const cartoonThemeLoWrap = document.getElementById("cartoonThemeLoWrap");
+  const cartoonThemeLoInput = document.getElementById("cartoonThemeLoInput");
+  const cartoonThemeHiWrap = document.getElementById("cartoonThemeHiWrap");
+  const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
@@ -277,6 +336,13 @@
   let cartoonEdgeStrength = loadOutlineNumberPref(CARTOON_EDGE_STRENGTH_KEY, CARTOON_DEFAULT_EDGE_STRENGTH);
   let cartoonSaturation = loadOutlineNumberPref(CARTOON_SATURATION_KEY, CARTOON_DEFAULT_SATURATION);
   let cartoonTheme = loadCartoonThemePref();
+  let cartoonThemeEnabled = (() => {
+    try { return localStorage.getItem(CARTOON_THEME_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let cartoonThemeLo = loadCartoonThemeColorPref(CARTOON_THEME_LO_KEY, CARTOON_THEME_DEFAULT_LO);
+  let cartoonThemeHi = loadCartoonThemeColorPref(CARTOON_THEME_HI_KEY, CARTOON_THEME_DEFAULT_HI);
+  let cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+  let cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
   let shutterMode = (() => {
     try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
   })();
@@ -537,30 +603,58 @@
   function saveAudioTintStrengthPref() {
     try { localStorage.setItem(AUDIO_TINT_STRENGTH_KEY, String(audioTintStrength)); } catch (e) {}
   }
+  function saveAudioTintBandPref(bandKey, field, value) {
+    try { localStorage.setItem(audioTintBandKey(bandKey, field), String(value)); } catch (e) {}
+  }
+
+  // Reads the current value of all 12 band sliders (hue/gain/fromHz/toHz for
+  // bass/mid/treble) into the live AUDIO_TINT_BANDS objects. Called both on
+  // every slider's own input event and once up front when audio tint starts,
+  // so edits always take effect on the next computeAudioTintHue() tick
+  // without needing to restart the microphone.
+  function updateAudioTintBandsFromUi() {
+    AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
+      const band = AUDIO_TINT_BANDS[i];
+      const controls = audioTintBandControls[i];
+      band.hue = parseFloat(controls.hue.slider.value);
+      band.gain = parseFloat(controls.gain.slider.value) / 100;
+      band.fromHz = parseFloat(controls.fromHz.slider.value);
+      band.toHz = parseFloat(controls.toHz.slider.value);
+    });
+  }
 
   function updateAudioTintUi() {
     audioTintBtn.textContent = audioTintEnabled ? "Audio colour tint: On" : "Audio colour tint: Off";
     audioTintBtn.classList.toggle("active", audioTintEnabled);
     audioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
-    audioTintStrengthWrap.classList.toggle("hide", !audioTintEnabled);
+    const wraps = [audioTintStrengthWrap];
+    audioTintBandControls.forEach((controls) => {
+      wraps.push(controls.hue.wrap, controls.gain.wrap, controls.fromHz.wrap, controls.toHz.wrap);
+    });
+    wraps.forEach((el) => el.classList.toggle("hide", !audioTintEnabled));
   }
 
   // Reads the live frequency spectrum and turns it into a single hue the
   // same way Sound Nebula's beatColor() does — each band's average energy
-  // weights its own hue, so whichever band currently dominates the sound
-  // (bass/mid/treble) pulls the blended hue toward it.
+  // (scaled by that band's own gain) weights its own hue, so whichever band
+  // currently dominates the sound (bass/mid/treble) pulls the blended hue
+  // toward it. from/to are recomputed from fromHz/toHz on every call (not
+  // just once at start) so range slider edits take effect live.
   function computeAudioTintHue() {
-    if (!audioTintAnalyser) return;
+    if (!audioTintAnalyser || !audioTintCtx) return;
+    const nyquist = audioTintCtx.sampleRate / 2;
     audioTintAnalyser.getByteFrequencyData(audioTintFreqData);
     const n = audioTintFreqData.length;
     let weightedHue = 0;
     let totalEnergy = 0;
     for (const band of AUDIO_TINT_BANDS) {
+      band.from = Math.min(1, band.fromHz / nyquist);
+      band.to = Math.min(1, band.toHz / nyquist);
       const start = Math.floor(band.from * n);
       const end = Math.max(start + 1, Math.floor(band.to * n));
       let sum = 0;
       for (let i = start; i < end; i++) sum += audioTintFreqData[i];
-      const energy = sum / (end - start) / 255;
+      const energy = (sum / (end - start) / 255) * band.gain;
       weightedHue += band.hue * energy;
       totalEnergy += energy;
     }
@@ -581,6 +675,7 @@
     audioTintAnalyser.smoothingTimeConstant = 0.7;
     source.connect(audioTintAnalyser);
     audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+    updateAudioTintBandsFromUi();
     const nyquist = audioTintCtx.sampleRate / 2;
     AUDIO_TINT_BANDS.forEach((band) => {
       band.from = Math.min(1, band.fromHz / nyquist);
@@ -651,13 +746,30 @@
   function loadCartoonThemePref() {
     try {
       const raw = localStorage.getItem(CARTOON_THEME_KEY);
-      return Object.prototype.hasOwnProperty.call(CARTOON_THEME_CODES, raw) ? raw : CARTOON_DEFAULT_THEME;
+      return CARTOON_THEME_NAMES.includes(raw) ? raw : CARTOON_DEFAULT_THEME;
     } catch (e) {
       return CARTOON_DEFAULT_THEME;
     }
   }
   function saveCartoonThemePref() {
     try { localStorage.setItem(CARTOON_THEME_KEY, cartoonTheme); } catch (e) {}
+  }
+  function loadCartoonThemeColorPref(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return /^#[0-9a-f]{6}$/i.test(raw) ? raw : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+  function saveCartoonThemeEnabledPref() {
+    try { localStorage.setItem(CARTOON_THEME_ENABLED_KEY, cartoonThemeEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveCartoonThemeLoPref() {
+    try { localStorage.setItem(CARTOON_THEME_LO_KEY, cartoonThemeLo); } catch (e) {}
+  }
+  function saveCartoonThemeHiPref() {
+    try { localStorage.setItem(CARTOON_THEME_HI_KEY, cartoonThemeHi); } catch (e) {}
   }
 
   // Cartoon mode and Outlines mode both draw edge lines over the camera
@@ -667,9 +779,10 @@
     cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
     cartoonBtn.classList.toggle("active", cartoonEnabled);
     cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
-    [cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap, cartoonThemeWrap].forEach((el) =>
-      el.classList.toggle("hide", !cartoonEnabled)
-    );
+    [
+      cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap,
+      cartoonThemeWrap, cartoonThemeEnabledWrap, cartoonThemeLoWrap, cartoonThemeHiWrap
+    ].forEach((el) => el.classList.toggle("hide", !cartoonEnabled));
   }
 
   function toggleCartoonMode() {
@@ -763,7 +876,9 @@
     uniform float uCartoonEdgeThickness;
     uniform float uCartoonEdgeStrength;
     uniform float uCartoonSaturation;
-    uniform int uCartoonTheme; // 0=original, 1=greyscale, 2=sepia, 3=desert, 4=oasis
+    uniform float uCartoonThemeEnabled;
+    uniform vec3 uCartoonThemeLo;
+    uniform vec3 uCartoonThemeHi;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -912,15 +1027,11 @@
     // gradient keyed by its own luminance ("duotone" — the same technique
     // behind classic screen-printed poster art), instead of the original
     // hues. Runs after cvCartoonize so the colour bands stay bold/flat;
-    // this only remaps which colours those bands actually are.
-    vec3 cvCartoonTheme(vec3 c, int theme) {
-      if (theme == 0) return c;
+    // this only remaps which colours those bands actually are. lo/hi are
+    // live, user-picked colours (uCartoonThemeLo/Hi) rather than a fixed
+    // preset — callers only invoke this when uCartoonThemeEnabled is on.
+    vec3 cvCartoonTheme(vec3 c, vec3 lo, vec3 hi) {
       float lum = cvLuminance(c);
-      vec3 lo; vec3 hi;
-      if (theme == 1) { lo = vec3(0.05); hi = vec3(0.95); }
-      else if (theme == 2) { lo = vec3(0.14, 0.09, 0.06); hi = vec3(0.91, 0.84, 0.66); }
-      else if (theme == 3) { lo = vec3(0.30, 0.14, 0.06); hi = vec3(0.91, 0.72, 0.40); }
-      else { lo = vec3(0.02, 0.24, 0.23); hi = vec3(0.56, 0.89, 0.75); }
       return mix(lo, hi, lum);
     }
 
@@ -970,7 +1081,9 @@
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
         vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
-        toon = cvCartoonTheme(toon, uCartoonTheme);
+        if (uCartoonThemeEnabled > 0.5) {
+          toon = cvCartoonTheme(toon, uCartoonThemeLo, uCartoonThemeHi);
+        }
         float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
         finalColor = mix(toon, vec3(0.02), line);
       } else if (uOutlineEnabled > 0.5) {
@@ -1069,7 +1182,9 @@
       uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
       uCartoonEdgeStrength: glCtx.getUniformLocation(prog, "uCartoonEdgeStrength"),
       uCartoonSaturation: glCtx.getUniformLocation(prog, "uCartoonSaturation"),
-      uCartoonTheme: glCtx.getUniformLocation(prog, "uCartoonTheme"),
+      uCartoonThemeEnabled: glCtx.getUniformLocation(prog, "uCartoonThemeEnabled"),
+      uCartoonThemeLo: glCtx.getUniformLocation(prog, "uCartoonThemeLo"),
+      uCartoonThemeHi: glCtx.getUniformLocation(prog, "uCartoonThemeHi"),
       uTexelSize: glCtx.getUniformLocation(prog, "uTexelSize"),
       uSpread: glCtx.getUniformLocation(prog, "uSpread"),
       uRotate180: glCtx.getUniformLocation(prog, "uRotate180"),
@@ -1213,7 +1328,9 @@
       gl.uniform1f(uniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
       gl.uniform1f(uniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
       gl.uniform1f(uniforms.uCartoonSaturation, cartoonSaturation);
-      gl.uniform1i(uniforms.uCartoonTheme, CARTOON_THEME_CODES[cartoonTheme]);
+      gl.uniform1f(uniforms.uCartoonThemeEnabled, cartoonThemeEnabled ? 1 : 0);
+      gl.uniform3f(uniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
+      gl.uniform3f(uniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
       gl.uniform1f(uniforms.uSpread, spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
@@ -1271,7 +1388,9 @@
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
         fixedGl.uniform1f(fixedUniforms.uCartoonSaturation, cartoonSaturation);
-        fixedGl.uniform1i(fixedUniforms.uCartoonTheme, CARTOON_THEME_CODES[cartoonTheme]);
+        fixedGl.uniform1f(fixedUniforms.uCartoonThemeEnabled, cartoonThemeEnabled ? 1 : 0);
+        fixedGl.uniform3f(fixedUniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
+        fixedGl.uniform3f(fixedUniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
         fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
         fixedGl.uniform1f(fixedUniforms.uSpread, spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
@@ -2670,8 +2789,28 @@
       // template shouldn't silently start capturing the microphone as a
       // side effect. Only the strength (meaningless until it's turned on
       // by hand) is remembered.
-      audioTintStrength
+      audioTintStrength,
+      ...audioTintBandsSnapshot(),
+      cartoonThemeEnabled,
+      cartoonThemeLo,
+      cartoonThemeHi
     };
+  }
+
+  function audioTintBandSnapshotKey(bandKey, field) {
+    return `audioTint${bandKey}${field}`;
+  }
+
+  function audioTintBandsSnapshot() {
+    const snap = {};
+    AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
+      const band = AUDIO_TINT_BANDS[i];
+      snap[audioTintBandSnapshotKey(def.key, "Hue")] = band.hue;
+      snap[audioTintBandSnapshotKey(def.key, "Gain")] = band.gain;
+      snap[audioTintBandSnapshotKey(def.key, "FromHz")] = band.fromHz;
+      snap[audioTintBandSnapshotKey(def.key, "ToHz")] = band.toHz;
+    });
+    return snap;
   }
 
   function applySettingsSnapshot(s) {
@@ -2753,10 +2892,27 @@
       cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
       saveCartoonSaturationPref();
     }
-    if (typeof s.cartoonTheme === "string" && Object.prototype.hasOwnProperty.call(CARTOON_THEME_CODES, s.cartoonTheme)) {
+    if (typeof s.cartoonTheme === "string" && CARTOON_THEME_NAMES.includes(s.cartoonTheme)) {
       cartoonTheme = s.cartoonTheme;
       cartoonThemeSelect.value = cartoonTheme;
       saveCartoonThemePref();
+    }
+    if (typeof s.cartoonThemeEnabled === "boolean") {
+      cartoonThemeEnabled = s.cartoonThemeEnabled;
+      cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+      saveCartoonThemeEnabledPref();
+    }
+    if (typeof s.cartoonThemeLo === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeLo)) {
+      cartoonThemeLo = s.cartoonThemeLo;
+      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+      cartoonThemeLoInput.value = cartoonThemeLo;
+      saveCartoonThemeLoPref();
+    }
+    if (typeof s.cartoonThemeHi === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeHi)) {
+      cartoonThemeHi = s.cartoonThemeHi;
+      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+      cartoonThemeHiInput.value = cartoonThemeHi;
+      saveCartoonThemeHiPref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -2764,6 +2920,38 @@
       audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
       saveAudioTintStrengthPref();
     }
+    AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
+      const band = AUDIO_TINT_BANDS[i];
+      const controls = audioTintBandControls[i];
+      const hueKey = audioTintBandSnapshotKey(def.key, "Hue");
+      if (Number.isFinite(s[hueKey])) {
+        band.hue = s[hueKey];
+        controls.hue.slider.value = String(Math.round(band.hue));
+        controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+        saveAudioTintBandPref(def.key, "Hue", band.hue);
+      }
+      const gainKey = audioTintBandSnapshotKey(def.key, "Gain");
+      if (Number.isFinite(s[gainKey])) {
+        band.gain = s[gainKey];
+        controls.gain.slider.value = String(Math.round(band.gain * 100));
+        controls.gain.label.textContent = `${controls.gain.slider.value}%`;
+        saveAudioTintBandPref(def.key, "Gain", band.gain);
+      }
+      const fromKey = audioTintBandSnapshotKey(def.key, "FromHz");
+      if (Number.isFinite(s[fromKey])) {
+        band.fromHz = s[fromKey];
+        controls.fromHz.slider.value = String(Math.round(band.fromHz));
+        controls.fromHz.label.textContent = `${controls.fromHz.slider.value} Hz`;
+        saveAudioTintBandPref(def.key, "FromHz", band.fromHz);
+      }
+      const toKey = audioTintBandSnapshotKey(def.key, "ToHz");
+      if (Number.isFinite(s[toKey])) {
+        band.toHz = s[toKey];
+        controls.toHz.slider.value = String(Math.round(band.toHz));
+        controls.toHz.label.textContent = `${controls.toHz.slider.value} Hz`;
+        saveAudioTintBandPref(def.key, "ToHz", band.toHz);
+      }
+    });
   }
 
   function renderProfileSelect() {
@@ -3021,6 +3209,42 @@
   });
   audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
   audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
+  AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
+    const band = AUDIO_TINT_BANDS[i];
+    const controls = audioTintBandControls[i];
+
+    controls.hue.slider.value = String(Math.round(band.hue));
+    controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+    controls.hue.slider.addEventListener("input", () => {
+      updateAudioTintBandsFromUi();
+      controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+      saveAudioTintBandPref(def.key, "Hue", controls.hue.slider.value);
+    });
+
+    controls.gain.slider.value = String(Math.round(band.gain * 100));
+    controls.gain.label.textContent = `${controls.gain.slider.value}%`;
+    controls.gain.slider.addEventListener("input", () => {
+      updateAudioTintBandsFromUi();
+      controls.gain.label.textContent = `${controls.gain.slider.value}%`;
+      saveAudioTintBandPref(def.key, "Gain", parseFloat(controls.gain.slider.value) / 100);
+    });
+
+    controls.fromHz.slider.value = String(Math.round(band.fromHz));
+    controls.fromHz.label.textContent = `${controls.fromHz.slider.value} Hz`;
+    controls.fromHz.slider.addEventListener("input", () => {
+      updateAudioTintBandsFromUi();
+      controls.fromHz.label.textContent = `${controls.fromHz.slider.value} Hz`;
+      saveAudioTintBandPref(def.key, "FromHz", controls.fromHz.slider.value);
+    });
+
+    controls.toHz.slider.value = String(Math.round(band.toHz));
+    controls.toHz.label.textContent = `${controls.toHz.slider.value} Hz`;
+    controls.toHz.slider.addEventListener("input", () => {
+      updateAudioTintBandsFromUi();
+      controls.toHz.label.textContent = `${controls.toHz.slider.value} Hz`;
+      saveAudioTintBandPref(def.key, "ToHz", controls.toHz.slider.value);
+    });
+  });
   updateAudioTintUi();
   if (audioTintEnabled) {
     // Persisted as on from a previous session — try to silently resume
@@ -3067,8 +3291,43 @@
   cartoonThemeSelect.addEventListener("change", () => {
     cartoonTheme = cartoonThemeSelect.value;
     saveCartoonThemePref();
+    const preset = CARTOON_THEME_PRESETS[cartoonTheme];
+    cartoonThemeEnabled = !!preset;
+    if (preset) {
+      cartoonThemeLo = preset.lo;
+      cartoonThemeHi = preset.hi;
+      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+      cartoonThemeLoInput.value = cartoonThemeLo;
+      cartoonThemeHiInput.value = cartoonThemeHi;
+      saveCartoonThemeLoPref();
+      saveCartoonThemeHiPref();
+    }
+    cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+    saveCartoonThemeEnabledPref();
   });
   cartoonThemeSelect.value = cartoonTheme;
+
+  cartoonThemeEnabledCheckbox.addEventListener("change", () => {
+    cartoonThemeEnabled = cartoonThemeEnabledCheckbox.checked;
+    saveCartoonThemeEnabledPref();
+  });
+  cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+
+  cartoonThemeLoInput.addEventListener("input", () => {
+    cartoonThemeLo = cartoonThemeLoInput.value;
+    cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+    saveCartoonThemeLoPref();
+  });
+  cartoonThemeLoInput.value = cartoonThemeLo;
+
+  cartoonThemeHiInput.addEventListener("input", () => {
+    cartoonThemeHi = cartoonThemeHiInput.value;
+    cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+    saveCartoonThemeHiPref();
+  });
+  cartoonThemeHiInput.value = cartoonThemeHi;
+
   updateCartoonUi();
 
   pauseBtn.addEventListener("click", () => {

@@ -73,6 +73,54 @@
     Audio tint strength: <span id="audioTintStrengthLabel">40%</span>
     <input id="audioTintStrengthSlider" type="range" min="0" max="100" value="40">
   </label>
+  <label id="audioTintBassHueWrap" class="hud-slider hide" title="Hue used for the bass/kick band's colour.">
+    Bass hue: <span id="audioTintBassHueLabel">262&deg;</span>
+    <input id="audioTintBassHueSlider" type="range" min="0" max="360" value="262">
+  </label>
+  <label id="audioTintBassGainWrap" class="hud-slider hide" title="How strongly the bass/kick band's energy pulls the blended tint hue.">
+    Bass gain: <span id="audioTintBassGainLabel">100%</span>
+    <input id="audioTintBassGainSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="audioTintBassFromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of the bass/kick band sampled from the microphone.">
+    Bass low: <span id="audioTintBassFromHzLabel">20 Hz</span>
+    <input id="audioTintBassFromHzSlider" type="range" min="0" max="500" value="20">
+  </label>
+  <label id="audioTintBassToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of the bass/kick band sampled from the microphone.">
+    Bass high: <span id="audioTintBassToHzLabel">150 Hz</span>
+    <input id="audioTintBassToHzSlider" type="range" min="0" max="500" value="150">
+  </label>
+  <label id="audioTintMidHueWrap" class="hud-slider hide" title="Hue used for the mid band's colour.">
+    Mid hue: <span id="audioTintMidHueLabel">189&deg;</span>
+    <input id="audioTintMidHueSlider" type="range" min="0" max="360" value="189">
+  </label>
+  <label id="audioTintMidGainWrap" class="hud-slider hide" title="How strongly the mid band's energy pulls the blended tint hue.">
+    Mid gain: <span id="audioTintMidGainLabel">100%</span>
+    <input id="audioTintMidGainSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="audioTintMidFromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of the mid band sampled from the microphone.">
+    Mid low: <span id="audioTintMidFromHzLabel">150 Hz</span>
+    <input id="audioTintMidFromHzSlider" type="range" min="0" max="4000" value="150">
+  </label>
+  <label id="audioTintMidToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of the mid band sampled from the microphone.">
+    Mid high: <span id="audioTintMidToHzLabel">2000 Hz</span>
+    <input id="audioTintMidToHzSlider" type="range" min="0" max="4000" value="2000">
+  </label>
+  <label id="audioTintTrebleHueWrap" class="hud-slider hide" title="Hue used for the treble band's colour.">
+    Treble hue: <span id="audioTintTrebleHueLabel">330&deg;</span>
+    <input id="audioTintTrebleHueSlider" type="range" min="0" max="360" value="330">
+  </label>
+  <label id="audioTintTrebleGainWrap" class="hud-slider hide" title="How strongly the treble band's energy pulls the blended tint hue.">
+    Treble gain: <span id="audioTintTrebleGainLabel">85%</span>
+    <input id="audioTintTrebleGainSlider" type="range" min="0" max="300" step="5" value="85">
+  </label>
+  <label id="audioTintTrebleFromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of the treble band sampled from the microphone.">
+    Treble low: <span id="audioTintTrebleFromHzLabel">2000 Hz</span>
+    <input id="audioTintTrebleFromHzSlider" type="range" min="0" max="12000" value="2000">
+  </label>
+  <label id="audioTintTrebleToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of the treble band sampled from the microphone.">
+    Treble high: <span id="audioTintTrebleToHzLabel">9000 Hz</span>
+    <input id="audioTintTrebleToHzSlider" type="range" min="0" max="12000" value="9000">
+  </label>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view instead of (or blended with) the normal full-colour correction.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
     Outline thickness: <span id="outlineThicknessLabel">2px</span>
@@ -107,7 +155,7 @@
     Cartoon saturation: <span id="cartoonSaturationLabel">135%</span>
     <input id="cartoonSaturationSlider" type="range" min="100" max="300" step="5" value="135">
   </label>
-  <label id="cartoonThemeWrap" class="hud-slider hide" title="Recolours the cartoon effect through a themed colour gradient instead of the original hues — a stylised look layered on top of the normal posterize + ink-line effect.">
+  <label id="cartoonThemeWrap" class="hud-slider hide" title="Presets that fill in the duotone shadow/highlight colours below. Original colours turns the duotone recolour off.">
     Cartoon colour theme:
     <select id="cartoonThemeSelect">
       <option value="none">Original colours</option>
@@ -116,6 +164,18 @@
       <option value="desert">Desert</option>
       <option value="oasis">Oasis</option>
     </select>
+  </label>
+  <label id="cartoonThemeEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns the duotone recolour on or off. When off, cartoon mode keeps its normal flat colours regardless of the shadow/highlight colours below.">
+    <input id="cartoonThemeEnabledCheckbox" type="checkbox">
+    Duotone recolour
+  </label>
+  <label id="cartoonThemeLoWrap" class="hud-btn choose-picker-btn hide" title="Shadow colour for the cartoon duotone recolour.">
+    Duotone shadows
+    <input id="cartoonThemeLoInput" type="color" value="#0d0d0d" aria-label="Cartoon duotone shadow colour">
+  </label>
+  <label id="cartoonThemeHiWrap" class="hud-btn choose-picker-btn hide" title="Highlight colour for the cartoon duotone recolour.">
+    Duotone highlights
+    <input id="cartoonThemeHiInput" type="color" value="#f2f2f2" aria-label="Cartoon duotone highlight colour">
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
