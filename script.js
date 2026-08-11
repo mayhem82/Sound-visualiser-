@@ -882,7 +882,7 @@
     if (!vw || !vh) return;
 
     if (colourVisionEnabled && correctionGl) {
-      // Colour Vision Assist's full correction (calibrated points + CVD
+      // Colour Vision Extreme's full correction (calibrated points + CVD
       // simulation + blend), rendered into an off-screen WebGL canvas from
       // the same cameraFeed, then blitted here — this <video> element only
       // ever has one raw feed, so the corrected version needs somewhere
@@ -1087,7 +1087,7 @@
     updateCartoonUi();
   }
 
-  // ---- Colour Vision Assist, live on the camera background ----
+  // ---- Colour Vision Extreme, live on the camera background ----
   // The full correction engine from colorvision.html/colorvision.js —
   // calibrated points, colour-blindness-type simulation, blend — applied
   // to the same camera background above instead of navigating away to a

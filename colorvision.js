@@ -98,8 +98,35 @@
     toHz: loadOutlineNumberPref(audioTintBandKey(def.key, "ToHz"), def.toHz),
     enabled: loadAudioTintBandBoolPref(audioTintBandKey(def.key, "Enabled"), def.enabled),
     from: 0,
-    to: 0
+    to: 0,
+    rawEnergy: 0
   }));
+
+  // ---- Beat flash (ported from Sound Nebula's beat detection) ----
+  // Reuses the same microphone AudioContext/analyser as audio colour tint
+  // above (see audioAnalysisTick/audioAnalysisNeeded) rather than opening a
+  // second mic stream, and reuses the Bass band's own frequency range
+  // (AUDIO_TINT_BANDS[0]) as the beat detector's listening range.
+  const BEAT_FLASH_ENABLED_KEY = "beatFlashEnabled_colorVision_v1";
+  const BEAT_SENSITIVITY_KEY = "beatSensitivity_colorVision_v1";
+  const BEAT_FLASH_SPEED_KEY = "beatFlashSpeed_colorVision_v1";
+  const BEAT_DIM_FLICKER_KEY = "beatDimFlicker_colorVision_v1";
+  const BEAT_TORCH_INVERTED_KEY = "beatTorchInverted_colorVision_v1";
+  const BEAT_SCREEN_FLASH_KEY = "beatScreenFlash_colorVision_v1";
+  const BEAT_SYNC_DELAY_KEY = "beatSyncDelay_colorVision_v1";
+  const BEAT_HISTORY_LEN = 40;
+  // Beat strength (0..1, how far above the detection threshold a hit
+  // landed) at or above which the screen flash blacks out instead of
+  // showing the usual band-weighted colour.
+  const SCREEN_FLASH_BLACK_THRESHOLD = 0.65;
+  // There's no real brightness control for camera torch on the web
+  // platform — it's on/off only. This rapidly toggles the torch during
+  // each pulse to approximate a dimmer look; a rough illusion, not real
+  // dimming, capped by how fast the device's camera hardware can respond.
+  const FLICKER_PERIOD_MS = 30;
+  const FLICKER_DUTY = 0.45;
+  const BEAT_TORCH_MAX_FAILS = 5;
+
   const LONG_PRESS_MS = 450;
   const DRAG_CANCEL_PX = 10;
   const RECORD_FPS_KEY = "recordFps_colorVision_v1";
@@ -186,6 +213,24 @@
       label: document.getElementById(`audioTint${def.key}ToHzLabel`)
     }
   }));
+  const screenFlashEl = document.getElementById("screenFlash");
+  const beatFlashBtn = document.getElementById("beatFlashBtn");
+  const beatSensitivityWrap = document.getElementById("beatSensitivityWrap");
+  const beatSensitivitySlider = document.getElementById("beatSensitivitySlider");
+  const beatSensitivityLabel = document.getElementById("beatSensitivityLabel");
+  const beatFlashSpeedWrap = document.getElementById("beatFlashSpeedWrap");
+  const beatFlashSpeedSlider = document.getElementById("beatFlashSpeedSlider");
+  const beatFlashSpeedLabel = document.getElementById("beatFlashSpeedLabel");
+  const beatDimFlickerWrap = document.getElementById("beatDimFlickerWrap");
+  const beatDimFlickerCheckbox = document.getElementById("beatDimFlickerCheckbox");
+  const beatTorchInvertedWrap = document.getElementById("beatTorchInvertedWrap");
+  const beatTorchInvertedCheckbox = document.getElementById("beatTorchInvertedCheckbox");
+  const beatScreenFlashWrap = document.getElementById("beatScreenFlashWrap");
+  const beatScreenFlashCheckbox = document.getElementById("beatScreenFlashCheckbox");
+  const beatTestFlashBtn = document.getElementById("beatTestFlashBtn");
+  const beatSyncDelayWrap = document.getElementById("beatSyncDelayWrap");
+  const beatSyncDelaySlider = document.getElementById("beatSyncDelaySlider");
+  const beatSyncDelayLabel = document.getElementById("beatSyncDelayLabel");
   const cvdTypeSelect = document.getElementById("cvdTypeSelect");
   const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
   const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
@@ -394,6 +439,29 @@
   let audioTintAnalyser = null;
   let audioTintFreqData = null;
   let audioTintIntervalId = null;
+  let beatFlashEnabled = (() => {
+    try { return localStorage.getItem(BEAT_FLASH_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let beatSensitivity = loadOutlineNumberPref(BEAT_SENSITIVITY_KEY, 50) / 100; // 0 (least sensitive) .. 1 (most sensitive)
+  let beatFlashSpeed = loadOutlineNumberPref(BEAT_FLASH_SPEED_KEY, 50) / 100; // 0 (slow) .. 1 (fast strobe)
+  let beatCooldownMs = 180;
+  let beatMinFlashMs = 50;
+  let beatMaxFlashMs = 160;
+  let beatDimFlickerEnabled = (() => {
+    try { return localStorage.getItem(BEAT_DIM_FLICKER_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let beatTorchInverted = (() => {
+    try { return localStorage.getItem(BEAT_TORCH_INVERTED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let beatScreenFlashEnabled = (() => {
+    try { return localStorage.getItem(BEAT_SCREEN_FLASH_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let beatSyncDelayMs = loadOutlineNumberPref(BEAT_SYNC_DELAY_KEY, 0);
+  let bassHistory = [];
+  let lastBeatAt = 0;
+  let beatTorchBusy = false;
+  let beatTorchFailCount = 0;
+  const vibrateSupported = typeof navigator.vibrate === "function";
   let cartoonEnabled = (() => {
     try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -448,6 +516,9 @@
     fixedUniforms = null, fixedQuadBuffer = null, fixedVideoTexture = null;
   let rafId = null;
   let aimIntervalId = null;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
 
@@ -754,13 +825,17 @@
     for (const band of AUDIO_TINT_BANDS) {
       band.from = Math.min(1, band.fromHz / nyquist);
       band.to = Math.min(1, band.toHz / nyquist);
-      if (!band.enabled) continue;
-      activeBands++;
       const start = Math.floor(band.from * n);
       const end = Math.max(start + 1, Math.floor(band.to * n));
       let sum = 0;
       for (let i = start; i < end; i++) sum += audioTintFreqData[i];
-      const energy = (sum / (end - start) / 255) * band.gain;
+      // Computed for every band regardless of its own enabled toggle — beat
+      // detection reads AUDIO_TINT_BANDS[0] (Bass)'s rawEnergy directly, so
+      // it keeps working even if Bass is muted out of the hue tint itself.
+      band.rawEnergy = sum / (end - start) / 255;
+      if (!band.enabled) continue;
+      activeBands++;
+      const energy = band.rawEnergy * band.gain;
       weightedHue += band.hue * energy;
       totalEnergy += energy;
     }
@@ -768,11 +843,23 @@
     audioTintLevel = activeBands > 0 ? Math.min(1, totalEnergy / activeBands) : 0;
   }
 
+  // One shared microphone tick drives both audio colour tint (hue/level) and
+  // beat-flash detection, so turning either one on is enough to start it and
+  // both keep working off the same analyser without opening the mic twice.
+  function audioAnalysisTick() {
+    computeAudioTintHue();
+    if (beatFlashEnabled) detectBeat();
+  }
+
+  function audioAnalysisNeeded() {
+    return audioTintEnabled || beatFlashEnabled;
+  }
+
   async function startAudioTint() {
     try {
       audioTintStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
-      showCameraStatus("Couldn't use the microphone for audio colour tint: " + (err.message || err.name || "unknown error"));
+      showCameraStatus("Couldn't use the microphone for audio colour tint / beat flash: " + (err.message || err.name || "unknown error"));
       return false;
     }
     audioTintCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -788,7 +875,9 @@
       band.from = Math.min(1, band.fromHz / nyquist);
       band.to = Math.min(1, band.toHz / nyquist);
     });
-    audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
+    bassHistory = [];
+    lastBeatAt = 0;
+    audioTintIntervalId = setInterval(audioAnalysisTick, audioTintUpdateMs);
     return true;
   }
 
@@ -800,19 +889,240 @@
     audioTintFreqData = null;
   }
 
+  function maybeStopAudioAnalysis() {
+    if (!audioAnalysisNeeded()) stopAudioTint();
+  }
+
   async function toggleAudioTint() {
     if (audioTintEnabled) {
       audioTintEnabled = false;
-      stopAudioTint();
       saveAudioTintEnabledPref();
       updateAudioTintUi();
+      maybeStopAudioAnalysis();
       return;
     }
-    const started = await startAudioTint();
+    const started = audioTintCtx ? true : await startAudioTint();
     if (!started) return;
     audioTintEnabled = true;
     saveAudioTintEnabledPref();
     updateAudioTintUi();
+  }
+
+  // ---- Beat flash (ported from Sound Nebula) ----
+
+  // Same bass-energy-history threshold detector as Sound Nebula's
+  // detectBeat(): a hit only counts once it clears both an absolute floor
+  // and a multiple of its own recent rolling average, and only after a
+  // cooldown since the last one so a single sustained hit doesn't retrigger.
+  function detectBeat() {
+    const bass = AUDIO_TINT_BANDS[0].rawEnergy;
+    bassHistory.push(bass);
+    if (bassHistory.length > BEAT_HISTORY_LEN) bassHistory.shift();
+    if (bassHistory.length < 8) return;
+
+    // sensitivity 0 -> harder to trigger (high bar), 1 -> easier (low bar).
+    const absThreshold = lerp(0.30, 0.08, beatSensitivity);
+    const relThreshold = lerp(1.6, 1.12, beatSensitivity);
+
+    const avg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
+    const now = performance.now();
+    const isBeat =
+      bass > absThreshold &&
+      bass > avg * relThreshold &&
+      now - lastBeatAt > beatCooldownMs;
+
+    if (isBeat) {
+      lastBeatAt = now;
+      // How far above threshold this hit landed, 0 (just cleared the bar)
+      // to 1 (very strong hit) — drives a proportionally longer flash.
+      const strength = Math.min(1, Math.max(0, (bass - absThreshold) / (0.85 - absThreshold)));
+      if (beatSyncDelayMs > 0) {
+        setTimeout(() => fireBeatEffects(strength), beatSyncDelayMs);
+      } else {
+        fireBeatEffects(strength);
+      }
+    }
+  }
+
+  function fireBeatEffects(strength) {
+    if (vibrateSupported) {
+      try { navigator.vibrate(35); } catch (e) { /* ignore */ }
+    }
+    if (torchSupported && torchTrack && !beatTorchBusy) {
+      pulseBeatTorch(lerp(beatMinFlashMs, beatMaxFlashMs, strength));
+    }
+    if (beatScreenFlashEnabled) {
+      const duration = lerp(beatMinFlashMs, beatMaxFlashMs, strength) + 60;
+      // Strong hits black the screen instead of flashing colour.
+      const color = strength >= SCREEN_FLASH_BLACK_THRESHOLD ? "#000000" : beatColor(strength);
+      flashScreen(color, duration, strength);
+    }
+  }
+
+  // Reuses audioTintHue — the same gain/enabled-weighted band blend audio
+  // colour tint already computes each tick — instead of a separate
+  // bass/mid/treble average, so the beat flash colour always matches
+  // whichever bands are actually turned on above.
+  function beatColor(strength) {
+    const light = lerp(65, 92, strength) / 100;
+    const sat = lerp(90, 45, strength) / 100;
+    return rgbToCss(hsl2rgb(audioTintHue, sat, light));
+  }
+
+  function flashScreen(color, durationMs, strength) {
+    screenFlashEl.style.transition = "none";
+    screenFlashEl.style.backgroundColor = color;
+    screenFlashEl.style.opacity = String(lerp(0.45, 0.85, strength));
+    // Force a reflow so the transition below animates from this opacity
+    // instead of jumping straight to the end value.
+    void screenFlashEl.offsetHeight;
+    screenFlashEl.style.transition = `opacity ${durationMs}ms ease-out`;
+    screenFlashEl.style.opacity = "0";
+  }
+
+  function pulseBeatTorch(durationMs) {
+    beatTorchBusy = true;
+    if (beatTorchInverted) {
+      // Base state is ON (set when beat flash was armed); a beat briefly
+      // cuts it OFF then restores ON.
+      setBeatTorchConstraint(false).then(() => {
+        setTimeout(() => {
+          setBeatTorchConstraint(true).finally(() => { beatTorchBusy = false; });
+        }, durationMs);
+      }).catch(() => { beatTorchBusy = false; });
+      return;
+    }
+    if (beatDimFlickerEnabled) {
+      flickerBeatTorch(durationMs).finally(() => { beatTorchBusy = false; });
+      return;
+    }
+    setBeatTorchConstraint(true).then(() => {
+      setTimeout(() => {
+        setBeatTorchConstraint(false).finally(() => { beatTorchBusy = false; });
+      }, durationMs);
+    }).catch(() => { beatTorchBusy = false; });
+  }
+
+  async function flickerBeatTorch(durationMs) {
+    const cycles = Math.max(1, Math.round(durationMs / FLICKER_PERIOD_MS));
+    const onMs = FLICKER_PERIOD_MS * FLICKER_DUTY;
+    const offMs = FLICKER_PERIOD_MS - onMs;
+    for (let i = 0; i < cycles; i++) {
+      if (!beatDimFlickerEnabled || !torchTrack || torchTrack.readyState === "ended") break;
+      await setBeatTorchConstraint(true).catch(() => {});
+      await sleep(onMs);
+      if (!torchSupported) break;
+      await setBeatTorchConstraint(false).catch(() => {});
+      await sleep(offMs);
+    }
+    if (torchTrack && torchTrack.readyState !== "ended") {
+      await setBeatTorchConstraint(false).catch(() => {});
+    }
+  }
+
+  // Distinct from the manual flashlight's own toggleTorch() but shares the
+  // same underlying camera track — never stops that track on failure (it's
+  // also what the corrected view renders from), only stops offering torch.
+  function setBeatTorchConstraint(on) {
+    if (!torchTrack || !torchSupported) return Promise.reject(new Error("torch unavailable"));
+    return torchTrack.applyConstraints({ advanced: [{ torch: on }] })
+      .then(() => { beatTorchFailCount = 0; })
+      .catch((err) => {
+        beatTorchFailCount++;
+        if (beatTorchFailCount >= BEAT_TORCH_MAX_FAILS) {
+          torchSupported = false;
+          torchBtn.classList.add("hide");
+          showCameraStatus("The camera flash stopped responding for beat flash and has been disabled.");
+        }
+        throw err;
+      });
+  }
+
+  function saveBeatFlashEnabledPref() {
+    try { localStorage.setItem(BEAT_FLASH_ENABLED_KEY, beatFlashEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveBeatSensitivityPref() {
+    try { localStorage.setItem(BEAT_SENSITIVITY_KEY, String(beatSensitivity)); } catch (e) {}
+  }
+  function saveBeatFlashSpeedPref() {
+    try { localStorage.setItem(BEAT_FLASH_SPEED_KEY, String(beatFlashSpeed)); } catch (e) {}
+  }
+  function saveBeatDimFlickerPref() {
+    try { localStorage.setItem(BEAT_DIM_FLICKER_KEY, beatDimFlickerEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveBeatTorchInvertedPref() {
+    try { localStorage.setItem(BEAT_TORCH_INVERTED_KEY, beatTorchInverted ? "1" : "0"); } catch (e) {}
+  }
+  function saveBeatScreenFlashPref() {
+    try { localStorage.setItem(BEAT_SCREEN_FLASH_KEY, beatScreenFlashEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveBeatSyncDelayPref() {
+    try { localStorage.setItem(BEAT_SYNC_DELAY_KEY, String(beatSyncDelayMs)); } catch (e) {}
+  }
+
+  function updateBeatFlashSpeed() {
+    beatFlashSpeed = parseFloat(beatFlashSpeedSlider.value) / 100;
+    // Slowest: a beat can retrigger at most ~2.5x/sec. Fastest: ~14x/sec
+    // (close to a genuine strobe). Flash pulse length stays well inside the
+    // cooldown window so pulses never bleed into the next beat.
+    beatCooldownMs = lerp(400, 70, beatFlashSpeed);
+    beatMinFlashMs = Math.max(18, beatCooldownMs * 0.28);
+    beatMaxFlashMs = Math.max(beatMinFlashMs + 10, beatCooldownMs * 0.75);
+    beatFlashSpeedLabel.textContent = `${beatFlashSpeedSlider.value}%`;
+    saveBeatFlashSpeedPref();
+  }
+
+  function updateBeatSensitivity() {
+    beatSensitivity = parseFloat(beatSensitivitySlider.value) / 100;
+    beatSensitivityLabel.textContent = `${beatSensitivitySlider.value}%`;
+    saveBeatSensitivityPref();
+  }
+
+  function updateBeatSyncDelay() {
+    beatSyncDelayMs = parseFloat(beatSyncDelaySlider.value);
+    beatSyncDelayLabel.textContent = `${beatSyncDelayMs} ms`;
+    saveBeatSyncDelayPref();
+  }
+
+  function updateBeatFlashUi() {
+    beatFlashBtn.textContent = beatFlashEnabled ? "Flash + vibrate on beat: On" : "Flash + vibrate on beat: Off";
+    beatFlashBtn.classList.toggle("active", beatFlashEnabled);
+    beatFlashBtn.setAttribute("aria-pressed", String(beatFlashEnabled));
+    [
+      beatSensitivityWrap, beatFlashSpeedWrap, beatDimFlickerWrap, beatTorchInvertedWrap,
+      beatScreenFlashWrap, beatTestFlashBtn, beatSyncDelayWrap
+    ].forEach((el) => el.classList.toggle("hide", !beatFlashEnabled));
+  }
+
+  async function armBeatFlash() {
+    const started = audioTintCtx ? true : await startAudioTint();
+    if (!started) return;
+    beatFlashEnabled = true;
+    saveBeatFlashEnabledPref();
+    updateBeatFlashUi();
+    if (torchSupported && torchTrack && beatTorchInverted) {
+      beatTorchBusy = true;
+      try { await setBeatTorchConstraint(true); } catch (e) { /* ignore */ } finally { beatTorchBusy = false; }
+    }
+  }
+
+  async function disarmBeatFlash() {
+    beatFlashEnabled = false;
+    saveBeatFlashEnabledPref();
+    updateBeatFlashUi();
+    if (torchTrack && torchSupported) {
+      beatTorchBusy = true;
+      try { await setBeatTorchConstraint(false); } catch (e) { /* ignore */ } finally { beatTorchBusy = false; }
+    }
+    maybeStopAudioAnalysis();
+  }
+
+  async function toggleBeatFlash() {
+    if (beatFlashEnabled) {
+      await disarmBeatFlash();
+    } else {
+      await armBeatFlash();
+    }
   }
 
   function updateOutlinesUi() {
@@ -2922,7 +3232,16 @@
       ...audioTintBandsSnapshot(),
       cartoonThemeEnabled,
       cartoonThemeLo,
-      cartoonThemeHi
+      cartoonThemeHi,
+      // beatFlashEnabled deliberately isn't captured either, for the same
+      // reason as audioTintEnabled — loading a template shouldn't silently
+      // arm the torch/vibrate/screen flash. Its settings are remembered.
+      beatSensitivity,
+      beatFlashSpeed,
+      beatDimFlickerEnabled,
+      beatTorchInverted,
+      beatScreenFlashEnabled,
+      beatSyncDelayMs
     };
   }
 
@@ -3084,7 +3403,7 @@
       audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
       if (audioTintIntervalId) {
         clearInterval(audioTintIntervalId);
-        audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
+        audioTintIntervalId = setInterval(audioAnalysisTick, audioTintUpdateMs);
       }
       saveAudioTintUpdateMsPref();
     }
@@ -3132,6 +3451,34 @@
         saveAudioTintBandPref(def.key, "ToHz", band.toHz);
       }
     });
+    if (Number.isFinite(s.beatSensitivity)) {
+      beatSensitivitySlider.value = String(Math.round(s.beatSensitivity * 100));
+      updateBeatSensitivity();
+    }
+    if (Number.isFinite(s.beatFlashSpeed)) {
+      beatFlashSpeed = s.beatFlashSpeed;
+      beatFlashSpeedSlider.value = String(Math.round(beatFlashSpeed * 100));
+      updateBeatFlashSpeed();
+    }
+    if (typeof s.beatDimFlickerEnabled === "boolean") {
+      beatDimFlickerEnabled = s.beatDimFlickerEnabled;
+      beatDimFlickerCheckbox.checked = beatDimFlickerEnabled;
+      saveBeatDimFlickerPref();
+    }
+    if (typeof s.beatTorchInverted === "boolean") {
+      beatTorchInverted = s.beatTorchInverted;
+      beatTorchInvertedCheckbox.checked = beatTorchInverted;
+      saveBeatTorchInvertedPref();
+    }
+    if (typeof s.beatScreenFlashEnabled === "boolean") {
+      beatScreenFlashEnabled = s.beatScreenFlashEnabled;
+      beatScreenFlashCheckbox.checked = beatScreenFlashEnabled;
+      saveBeatScreenFlashPref();
+    }
+    if (Number.isFinite(s.beatSyncDelayMs)) {
+      beatSyncDelaySlider.value = String(s.beatSyncDelayMs);
+      updateBeatSyncDelay();
+    }
   }
 
   function renderProfileSelect() {
@@ -3430,7 +3777,7 @@
     audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
     if (audioTintIntervalId) {
       clearInterval(audioTintIntervalId);
-      audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
+      audioTintIntervalId = setInterval(audioAnalysisTick, audioTintUpdateMs);
     }
     saveAudioTintUpdateMsPref();
   });
@@ -3487,16 +3834,58 @@
     });
   });
   updateAudioTintUi();
-  if (audioTintEnabled) {
+
+  beatFlashBtn.addEventListener("click", toggleBeatFlash);
+  beatSensitivitySlider.addEventListener("input", updateBeatSensitivity);
+  beatSensitivitySlider.value = String(Math.round(beatSensitivity * 100));
+  beatSensitivityLabel.textContent = `${beatSensitivitySlider.value}%`;
+  beatFlashSpeedSlider.addEventListener("input", updateBeatFlashSpeed);
+  beatFlashSpeedSlider.value = String(Math.round(beatFlashSpeed * 100));
+  updateBeatFlashSpeed();
+  beatDimFlickerCheckbox.addEventListener("change", () => {
+    beatDimFlickerEnabled = beatDimFlickerCheckbox.checked;
+    saveBeatDimFlickerPref();
+  });
+  beatDimFlickerCheckbox.checked = beatDimFlickerEnabled;
+  beatTorchInvertedCheckbox.addEventListener("change", async () => {
+    beatTorchInverted = beatTorchInvertedCheckbox.checked;
+    saveBeatTorchInvertedPref();
+    if (beatFlashEnabled && torchSupported && torchTrack) {
+      beatTorchBusy = true;
+      try { await setBeatTorchConstraint(beatTorchInverted); } catch (e) { /* ignore */ } finally { beatTorchBusy = false; }
+    }
+  });
+  beatTorchInvertedCheckbox.checked = beatTorchInverted;
+  beatScreenFlashCheckbox.addEventListener("change", () => {
+    beatScreenFlashEnabled = beatScreenFlashCheckbox.checked;
+    saveBeatScreenFlashPref();
+  });
+  beatScreenFlashCheckbox.checked = beatScreenFlashEnabled;
+  beatTestFlashBtn.addEventListener("click", () => {
+    fireBeatEffects(0.7);
+  });
+  beatSyncDelaySlider.addEventListener("input", updateBeatSyncDelay);
+  beatSyncDelaySlider.value = String(beatSyncDelayMs);
+  beatSyncDelayLabel.textContent = `${beatSyncDelayMs} ms`;
+  updateBeatFlashUi();
+
+  if (audioTintEnabled || beatFlashEnabled) {
     // Persisted as on from a previous session — try to silently resume
     // (works if microphone permission was already granted; if not, this
     // fails quietly via startAudioTint()'s own status message rather than
-    // blocking start-up on a fresh permission prompt).
+    // blocking start-up on a fresh permission prompt). Both features share
+    // one mic connection, so this only ever calls startAudioTint() once.
+    const wantAudioTint = audioTintEnabled;
+    const wantBeatFlash = beatFlashEnabled;
     audioTintEnabled = false;
+    beatFlashEnabled = false;
     startAudioTint().then((started) => {
-      audioTintEnabled = started;
+      audioTintEnabled = started && wantAudioTint;
+      beatFlashEnabled = started && wantBeatFlash;
       saveAudioTintEnabledPref();
+      saveBeatFlashEnabledPref();
       updateAudioTintUi();
+      updateBeatFlashUi();
     });
   }
 

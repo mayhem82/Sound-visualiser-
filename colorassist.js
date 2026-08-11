@@ -1,11 +1,11 @@
 (() => {
   "use strict";
 
-  // Colour Assist is the trimmed, everyday sibling of Colour Vision Assist
+  // Colour Assist is the trimmed, everyday sibling of Colour Vision Extreme
   // (colorvision.js) — same calibration engine (Lab-space matching, hue/
   // saturation/lightness/contrast/exposure tuning, Sobel-edge outlines,
   // camera/exposure controls), reduced to just that control surface.
-  // Colour Vision Assist stays the full experimental page (cartoon mode,
+  // Colour Vision Extreme stays the full experimental page (cartoon mode,
   // diagnosed-CVD-type correction, photo/video capture, two-device tablet
   // pairing, Templates) where new techniques keep getting tried; anything
   // that proves useful there can graduate into this page individually.
@@ -17,7 +17,7 @@
   const ROTATE_KEY = "caRotate180_v1";
   const SPREAD_KEY = "caSpread_v1";
   const DEFAULT_SPREAD = 4;
-  // Colour Vision Assist's diagnosed-CVD-type correction and Cartoon mode
+  // Colour Vision Extreme's diagnosed-CVD-type correction and Cartoon mode
   // are deliberately not exposed here (see the file-level comment above) —
   // the shader still declares their uniforms (kept byte-for-byte identical
   // to colorvision.js's proven correction engine) but this page always

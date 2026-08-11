@@ -8,7 +8,7 @@ share a dark visual style and a lot of underlying plumbing:
 
 - **`index.html`** ("Sound Nebula") — a mic-reactive particle visualiser,
   with an optional live camera background that can be colour-corrected.
-- **`colorvision.html`** ("Colour Vision Assist") — live camera colour
+- **`colorvision.html`** ("Colour Vision Extreme") — live camera colour
   correction for colourblind users, built around colours you calibrate by
   hand (or a diagnosed deficiency type). The full experimental version of
   the correction engine — cartoon mode, diagnosed-CVD-type correction,
@@ -17,7 +17,7 @@ share a dark visual style and a lot of underlying plumbing:
   that same engine: personal colour calibration, structural outlines, and
   the camera/lighting controls that keep a calibration trustworthy, with
   everything else trimmed away. See its own section below for why it
-  exists alongside Colour Vision Assist rather than replacing it.
+  exists alongside Colour Vision Extreme rather than replacing it.
 - **`restore.html`** ("Property Colour Reference") — live camera colour
   correction for real-estate photography, built around a known-true
   reference colour (a paint chip or swatch) rather than a generic filter.
@@ -176,7 +176,7 @@ particles instead of a plain dark background ("party mode"). Once it's on
 and more than one camera is available, a **Camera** dropdown appears to
 pick which one feeds it.
 
-The **Colour vision** button applies Colour Vision Assist's correction (see
+The **Colour vision** button applies Colour Vision Extreme's correction (see
 below) to that camera background — the same calibration system used by
 `colorvision.html`, sharing the same saved colour points, CVD type, spread,
 and blend controls. It turns the camera background on automatically if it
@@ -265,7 +265,7 @@ Both directions degrade gracefully if the public relays are unreachable
 (e.g. no internet, or a restrictive network) — the status line explains
 what went wrong rather than hanging silently.
 
-## Colour Vision Assist (`colorvision.html`)
+## Colour Vision Extreme (`colorvision.html`)
 
 Live camera colour correction for colourblind users. Click **Enable camera
 & start**, then either:
@@ -288,7 +288,7 @@ capture bar, volume-button shutter, and two-device tablet pairing
 
 ## Colour Assist (`colorassist.html`)
 
-A focused, everyday sibling of Colour Vision Assist, built on the exact
+A focused, everyday sibling of Colour Vision Extreme, built on the exact
 same correction engine rather than a rewrite of it — `colorvision.html`
 stays the full experimental page where new techniques (cartoon mode,
 diagnosed-CVD-type correction, capture, tablet pairing, Templates) keep
@@ -297,11 +297,11 @@ page individually later. Colour Assist's control surface is deliberately
 just six things:
 
 - **Calibrate Colour** / **Saved Colours** — the same aim-freeze-tune-save
-  workflow as Colour Vision Assist, tuning hue, saturation, lightness,
+  workflow as Colour Vision Extreme, tuning hue, saturation, lightness,
   contrast, and exposure until a real-world colour reads right.
 - **Correction Spread** — how far a saved calibration's correction
   generalises to perceptually nearby colours, using the same Lab-space
-  colour-distance weighting as Colour Vision Assist, not just an exact RGB
+  colour-distance weighting as Colour Vision Extreme, not just an exact RGB
   match.
 - **True ↔ Corrected** — blends between the raw and corrected view.
 - **Outlines** — the same Sobel edge-detection overlay as elsewhere, with
@@ -318,7 +318,7 @@ just six things:
 
 Saved colours use their own storage, separate from `colorvision.html` —
 calibrating one doesn't affect the other. The underlying WebGL shader is
-kept identical to Colour Vision Assist's (including its cartoon/CVD-type
+kept identical to Colour Vision Extreme's (including its cartoon/CVD-type
 branches, which this page simply never turns on), so any correction-quality
 improvement made to one engine applies to both without being ported by hand.
 

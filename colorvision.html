@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Colour Vision Assist</title>
+<title>Colour Vision Extreme</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="colorvision.css">
@@ -12,10 +12,11 @@
 <canvas id="stage"></canvas>
 <video id="cameraFeed" playsinline muted hidden></video>
 <canvas id="sampleCanvas" hidden></canvas>
+<div id="screenFlash" aria-hidden="true"></div>
 
 <div id="overlay">
   <div id="panel">
-    <h1>Colour Vision Assist</h1>
+    <h1>Colour Vision Extreme</h1>
     <p>Live camera correction built from colours you calibrate yourself, not a generic filter. Aim at a colour, tune it until it reads right, save it — corrections blend outward from every point you save.</p>
     <button id="startBtn">Enable camera &amp; start</button>
     <label id="cameraOnlyModeWrap" class="hud-slider camera-only-mode-wrap" title="For a two-device setup: this device just points somewhere and broadcasts, with no controls of its own. Do all the calibration and correction on the other (receiving) device instead.">
@@ -223,6 +224,32 @@
   <label id="audioTintBand6ToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of tint band 6 sampled from the microphone.">
     Band 6 high: <span id="audioTintBand6ToHzLabel">20000 Hz</span>
     <input id="audioTintBand6ToHzSlider" type="range" min="0" max="20000" value="20000">
+  </label>
+  <button id="beatFlashBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone to detect beats (borrowed from Sound Nebula) and fires camera torch, phone vibration, and/or a full-screen colour flash in time with them. Beat detection listens to the Bass band's frequency range above.">Flash + vibrate on beat: Off</button>
+  <label id="beatSensitivityWrap" class="hud-slider hide" title="How easily a beat triggers. Higher reacts to quieter/softer hits too; lower only fires on strong, obvious beats.">
+    Beat sensitivity: <span id="beatSensitivityLabel">50%</span>
+    <input id="beatSensitivitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="beatFlashSpeedWrap" class="hud-slider hide" title="How fast beat flashes can retrigger, and how long each pulse lasts.">
+    Flash speed: <span id="beatFlashSpeedLabel">50%</span>
+    <input id="beatFlashSpeedSlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="beatDimFlickerWrap" class="hud-slider camera-only-mode-wrap hide" title="Camera flashes are hardware on/off only — there's no real brightness control on the web. This flickers the torch rapidly to approximate a dimmer look; experimental and may look janky on slower hardware.">
+    <input id="beatDimFlickerCheckbox" type="checkbox">
+    Dim flicker (experimental)
+  </label>
+  <label id="beatTorchInvertedWrap" class="hud-slider camera-only-mode-wrap hide" title="Keeps the torch on continuously and briefly cuts it off on each beat, instead of the normal off-then-flash-on-beat behaviour.">
+    <input id="beatTorchInvertedCheckbox" type="checkbox">
+    Invert torch (on, cuts on beat)
+  </label>
+  <label id="beatScreenFlashWrap" class="hud-slider camera-only-mode-wrap hide" title="Flashes the whole screen on each beat, colour-blended from the same weighted band hue as audio colour tint above. Works on every device, even ones without a camera flash.">
+    <input id="beatScreenFlashCheckbox" type="checkbox">
+    Screen flash on beat
+  </label>
+  <button id="beatTestFlashBtn" class="hud-btn hide" title="Manually fires one flash, independent of beat detection — use this to check it works.">Test flash</button>
+  <label id="beatSyncDelayWrap" class="hud-slider hide" title="Delays torch/vibrate/screen flash after a beat is detected, to compensate for a slower device's own hardware response lag, or to match timing with another device.">
+    Sync delay: <span id="beatSyncDelayLabel">0 ms</span>
+    <input id="beatSyncDelaySlider" type="range" min="0" max="500" step="10" value="0">
   </label>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view instead of (or blended with) the normal full-colour correction.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
