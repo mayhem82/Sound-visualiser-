@@ -49,20 +49,45 @@
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
+  const AUDIO_TINT_SAT_STRENGTH_KEY = "audioTintSatStrength_colorVision_v1";
+  const AUDIO_TINT_LIGHT_STRENGTH_KEY = "audioTintLightStrength_colorVision_v1";
+  const AUDIO_TINT_DEFAULT_SAT_STRENGTH = 0;
+  const AUDIO_TINT_DEFAULT_LIGHT_STRENGTH = 0;
+  const AUDIO_TINT_SMOOTHING_KEY = "audioTintSmoothing_colorVision_v1";
+  const AUDIO_TINT_DEFAULT_SMOOTHING = 0.7;
+  const AUDIO_TINT_FFT_SIZE_KEY = "audioTintFftSize_colorVision_v1";
+  const AUDIO_TINT_DEFAULT_FFT_SIZE = 1024;
+  const AUDIO_TINT_FFT_SIZE_OPTIONS = [256, 512, 1024, 2048, 4096, 8192];
+  const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
+  const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
+  const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
   // A second, artistic source of colour besides the camera: live mic
-  // input, split into the same bass/mid/treble bands (and violet/cyan/pink
-  // hues) as Sound Nebula's particle visualiser, so the "mood" of
-  // whatever's playing can nudge the corrected view's hue. hue/gain/fromHz/
-  // toHz are all user-adjustable via sliders (see updateAudioTintBandsFromUi);
-  // these are just the shipped defaults and the id-prefix used to find each
-  // band's four sliders.
+  // input, split into bands (and hues) similar to Sound Nebula's particle
+  // visualiser, so the "mood" of whatever's playing can nudge the corrected
+  // view's hue. hue/gain/fromHz/toHz/enabled are all user-adjustable via
+  // sliders (see updateAudioTintBandsFromUi); these are just the shipped
+  // defaults and the id-prefix used to find each band's five controls.
+  // Bass/Mid/Treble are on by default; Band4-6 are extra, fully open
+  // (20Hz-20kHz) bands a user can tune and switch on for more customisation,
+  // off by default so they don't change the out-of-the-box sound.
   const AUDIO_TINT_BAND_DEFS = [
-    { key: "Bass", hue: 262, gain: 1.0, fromHz: 20, toHz: 150 },     // violet — bass/kick
-    { key: "Mid", hue: 189, gain: 1.0, fromHz: 150, toHz: 2000 },    // cyan — mids
-    { key: "Treble", hue: 330, gain: 0.85, fromHz: 2000, toHz: 9000 } // pink — treble
+    { key: "Bass", hue: 262, gain: 1.0, fromHz: 20, toHz: 150, enabled: true },     // violet — bass/kick
+    { key: "Mid", hue: 189, gain: 1.0, fromHz: 150, toHz: 2000, enabled: true },    // cyan — mids
+    { key: "Treble", hue: 330, gain: 0.85, fromHz: 2000, toHz: 9000, enabled: true }, // pink — treble
+    { key: "Band4", hue: 30, gain: 1.0, fromHz: 20, toHz: 20000, enabled: false },
+    { key: "Band5", hue: 90, gain: 1.0, fromHz: 20, toHz: 20000, enabled: false },
+    { key: "Band6", hue: 210, gain: 1.0, fromHz: 20, toHz: 20000, enabled: false }
   ];
   function audioTintBandKey(bandKey, field) {
     return `audioTint${bandKey}${field}_colorVision_v1`;
+  }
+  function loadAudioTintBandBoolPref(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : raw === "1";
+    } catch (e) {
+      return fallback;
+    }
   }
   // Populated from localStorage/sliders in updateAudioTintBandsFromUi(); from/to
   // (fractions of the Nyquist frequency) are filled in once audio tint starts.
@@ -71,6 +96,7 @@
     gain: loadOutlineNumberPref(audioTintBandKey(def.key, "Gain"), def.gain),
     fromHz: loadOutlineNumberPref(audioTintBandKey(def.key, "FromHz"), def.fromHz),
     toHz: loadOutlineNumberPref(audioTintBandKey(def.key, "ToHz"), def.toHz),
+    enabled: loadAudioTintBandBoolPref(audioTintBandKey(def.key, "Enabled"), def.enabled),
     from: 0,
     to: 0
   }));
@@ -113,9 +139,32 @@
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
   const audioTintStrengthSlider = document.getElementById("audioTintStrengthSlider");
   const audioTintStrengthLabel = document.getElementById("audioTintStrengthLabel");
+  const audioTintSatStrengthWrap = document.getElementById("audioTintSatStrengthWrap");
+  const audioTintSatStrengthSlider = document.getElementById("audioTintSatStrengthSlider");
+  const audioTintSatStrengthLabel = document.getElementById("audioTintSatStrengthLabel");
+  const audioTintLightStrengthWrap = document.getElementById("audioTintLightStrengthWrap");
+  const audioTintLightStrengthSlider = document.getElementById("audioTintLightStrengthSlider");
+  const audioTintLightStrengthLabel = document.getElementById("audioTintLightStrengthLabel");
+  const audioTintSmoothingWrap = document.getElementById("audioTintSmoothingWrap");
+  const audioTintSmoothingSlider = document.getElementById("audioTintSmoothingSlider");
+  const audioTintSmoothingLabel = document.getElementById("audioTintSmoothingLabel");
+  const audioTintFftSizeWrap = document.getElementById("audioTintFftSizeWrap");
+  const audioTintFftSizeSelect = document.getElementById("audioTintFftSizeSelect");
+  const audioTintUpdateMsWrap = document.getElementById("audioTintUpdateMsWrap");
+  const audioTintUpdateMsSlider = document.getElementById("audioTintUpdateMsSlider");
+  const audioTintUpdateMsLabel = document.getElementById("audioTintUpdateMsLabel");
+  const audioTintExtraBandsWrap = document.getElementById("audioTintExtraBandsWrap");
+  const audioTintExtraBandsCheckbox = document.getElementById("audioTintExtraBandsCheckbox");
   // One { wrap, slider, label } triple per band per field (hue/gain/fromHz/toHz),
-  // keyed off AUDIO_TINT_BAND_DEFS' id-prefixes (audioTintBassHue*, audioTintMidGain*, ...).
+  // plus a { wrap, input } pair for enabled, keyed off AUDIO_TINT_BAND_DEFS'
+  // id-prefixes (audioTintBassHue*, audioTintMidGain*, audioTintBand4Enabled*, ...).
+  // Band4-6 are the "extra" bands, shown only when audioTintExtraBandsVisible.
+  const AUDIO_TINT_EXTRA_BAND_KEYS = ["Band4", "Band5", "Band6"];
   const audioTintBandControls = AUDIO_TINT_BAND_DEFS.map((def) => ({
+    enabled: {
+      wrap: document.getElementById(`audioTint${def.key}EnabledWrap`),
+      input: document.getElementById(`audioTint${def.key}EnabledCheckbox`)
+    },
     hue: {
       wrap: document.getElementById(`audioTint${def.key}HueWrap`),
       slider: document.getElementById(`audioTint${def.key}HueSlider`),
@@ -322,7 +371,24 @@
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let audioTintStrength = loadOutlineNumberPref(AUDIO_TINT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_STRENGTH);
+  let audioTintSatStrength = loadOutlineNumberPref(AUDIO_TINT_SAT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_SAT_STRENGTH);
+  let audioTintLightStrength = loadOutlineNumberPref(AUDIO_TINT_LIGHT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_LIGHT_STRENGTH);
+  let audioTintSmoothing = loadOutlineNumberPref(AUDIO_TINT_SMOOTHING_KEY, AUDIO_TINT_DEFAULT_SMOOTHING);
+  let audioTintFftSize = (() => {
+    try {
+      const raw = parseInt(localStorage.getItem(AUDIO_TINT_FFT_SIZE_KEY), 10);
+      return AUDIO_TINT_FFT_SIZE_OPTIONS.includes(raw) ? raw : AUDIO_TINT_DEFAULT_FFT_SIZE;
+    } catch (e) {
+      return AUDIO_TINT_DEFAULT_FFT_SIZE;
+    }
+  })();
+  let audioTintUpdateMs = loadOutlineNumberPref(AUDIO_TINT_UPDATE_MS_KEY, AUDIO_TINT_DEFAULT_UPDATE_MS);
+  let audioTintExtraBandsVisible = (() => {
+    try { return localStorage.getItem(AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY) === "1"; } catch (e) { return false; }
+  })();
   let audioTintHue = 0;
+  // 0..1 live loudness (post per-band gain), used by the saturation/lightness push.
+  let audioTintLevel = 0;
   let audioTintCtx = null;
   let audioTintStream = null;
   let audioTintAnalyser = null;
@@ -603,19 +669,38 @@
   function saveAudioTintStrengthPref() {
     try { localStorage.setItem(AUDIO_TINT_STRENGTH_KEY, String(audioTintStrength)); } catch (e) {}
   }
+  function saveAudioTintSatStrengthPref() {
+    try { localStorage.setItem(AUDIO_TINT_SAT_STRENGTH_KEY, String(audioTintSatStrength)); } catch (e) {}
+  }
+  function saveAudioTintLightStrengthPref() {
+    try { localStorage.setItem(AUDIO_TINT_LIGHT_STRENGTH_KEY, String(audioTintLightStrength)); } catch (e) {}
+  }
+  function saveAudioTintSmoothingPref() {
+    try { localStorage.setItem(AUDIO_TINT_SMOOTHING_KEY, String(audioTintSmoothing)); } catch (e) {}
+  }
+  function saveAudioTintFftSizePref() {
+    try { localStorage.setItem(AUDIO_TINT_FFT_SIZE_KEY, String(audioTintFftSize)); } catch (e) {}
+  }
+  function saveAudioTintUpdateMsPref() {
+    try { localStorage.setItem(AUDIO_TINT_UPDATE_MS_KEY, String(audioTintUpdateMs)); } catch (e) {}
+  }
+  function saveAudioTintExtraBandsVisiblePref() {
+    try { localStorage.setItem(AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY, audioTintExtraBandsVisible ? "1" : "0"); } catch (e) {}
+  }
   function saveAudioTintBandPref(bandKey, field, value) {
     try { localStorage.setItem(audioTintBandKey(bandKey, field), String(value)); } catch (e) {}
   }
 
-  // Reads the current value of all 12 band sliders (hue/gain/fromHz/toHz for
-  // bass/mid/treble) into the live AUDIO_TINT_BANDS objects. Called both on
-  // every slider's own input event and once up front when audio tint starts,
-  // so edits always take effect on the next computeAudioTintHue() tick
-  // without needing to restart the microphone.
+  // Reads the current value of all band controls (enabled/hue/gain/fromHz/toHz
+  // for bass/mid/treble/band4-6) into the live AUDIO_TINT_BANDS objects. Called
+  // both on every slider/checkbox's own input event and once up front when
+  // audio tint starts, so edits always take effect on the next
+  // computeAudioTintHue() tick without needing to restart the microphone.
   function updateAudioTintBandsFromUi() {
     AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
       const band = AUDIO_TINT_BANDS[i];
       const controls = audioTintBandControls[i];
+      band.enabled = controls.enabled.input.checked;
       band.hue = parseFloat(controls.hue.slider.value);
       band.gain = parseFloat(controls.gain.slider.value) / 100;
       band.fromHz = parseFloat(controls.fromHz.slider.value);
@@ -623,23 +708,41 @@
     });
   }
 
+  function updateAudioTintExtraBandsVisibility() {
+    const show = audioTintEnabled && audioTintExtraBandsVisible;
+    AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
+      if (!AUDIO_TINT_EXTRA_BAND_KEYS.includes(def.key)) return;
+      const controls = audioTintBandControls[i];
+      [controls.enabled.wrap, controls.hue.wrap, controls.gain.wrap, controls.fromHz.wrap, controls.toHz.wrap].forEach((el) =>
+        el.classList.toggle("hide", !show)
+      );
+    });
+  }
+
   function updateAudioTintUi() {
     audioTintBtn.textContent = audioTintEnabled ? "Audio colour tint: On" : "Audio colour tint: Off";
     audioTintBtn.classList.toggle("active", audioTintEnabled);
     audioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
-    const wraps = [audioTintStrengthWrap];
-    audioTintBandControls.forEach((controls) => {
-      wraps.push(controls.hue.wrap, controls.gain.wrap, controls.fromHz.wrap, controls.toHz.wrap);
+    const wraps = [
+      audioTintStrengthWrap, audioTintSatStrengthWrap, audioTintLightStrengthWrap,
+      audioTintSmoothingWrap, audioTintFftSizeWrap, audioTintUpdateMsWrap, audioTintExtraBandsWrap
+    ];
+    audioTintBandControls.forEach((controls, i) => {
+      if (AUDIO_TINT_EXTRA_BAND_KEYS.includes(AUDIO_TINT_BAND_DEFS[i].key)) return; // handled by updateAudioTintExtraBandsVisibility
+      wraps.push(controls.enabled.wrap, controls.hue.wrap, controls.gain.wrap, controls.fromHz.wrap, controls.toHz.wrap);
     });
     wraps.forEach((el) => el.classList.toggle("hide", !audioTintEnabled));
+    updateAudioTintExtraBandsVisibility();
   }
 
   // Reads the live frequency spectrum and turns it into a single hue the
-  // same way Sound Nebula's beatColor() does — each band's average energy
-  // (scaled by that band's own gain) weights its own hue, so whichever band
-  // currently dominates the sound (bass/mid/treble) pulls the blended hue
-  // toward it. from/to are recomputed from fromHz/toHz on every call (not
-  // just once at start) so range slider edits take effect live.
+  // same way Sound Nebula's beatColor() does — each enabled band's average
+  // energy (scaled by that band's own gain) weights its own hue, so whichever
+  // band currently dominates the sound pulls the blended hue toward it.
+  // from/to are recomputed from fromHz/toHz on every call (not just once at
+  // start) so range slider edits take effect live. Also tracks
+  // audioTintLevel, the overall (post-gain) loudness across enabled bands,
+  // which drives the separate saturation/lightness push.
   function computeAudioTintHue() {
     if (!audioTintAnalyser || !audioTintCtx) return;
     const nyquist = audioTintCtx.sampleRate / 2;
@@ -647,9 +750,12 @@
     const n = audioTintFreqData.length;
     let weightedHue = 0;
     let totalEnergy = 0;
+    let activeBands = 0;
     for (const band of AUDIO_TINT_BANDS) {
       band.from = Math.min(1, band.fromHz / nyquist);
       band.to = Math.min(1, band.toHz / nyquist);
+      if (!band.enabled) continue;
+      activeBands++;
       const start = Math.floor(band.from * n);
       const end = Math.max(start + 1, Math.floor(band.to * n));
       let sum = 0;
@@ -659,6 +765,7 @@
       totalEnergy += energy;
     }
     if (totalEnergy > 0) audioTintHue = weightedHue / totalEnergy;
+    audioTintLevel = activeBands > 0 ? Math.min(1, totalEnergy / activeBands) : 0;
   }
 
   async function startAudioTint() {
@@ -671,8 +778,8 @@
     audioTintCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioTintCtx.createMediaStreamSource(audioTintStream);
     audioTintAnalyser = audioTintCtx.createAnalyser();
-    audioTintAnalyser.fftSize = 1024;
-    audioTintAnalyser.smoothingTimeConstant = 0.7;
+    audioTintAnalyser.fftSize = audioTintFftSize;
+    audioTintAnalyser.smoothingTimeConstant = audioTintSmoothing;
     source.connect(audioTintAnalyser);
     audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
     updateAudioTintBandsFromUi();
@@ -681,7 +788,7 @@
       band.from = Math.min(1, band.fromHz / nyquist);
       band.to = Math.min(1, band.toHz / nyquist);
     });
-    audioTintIntervalId = setInterval(computeAudioTintHue, 80);
+    audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
     return true;
   }
 
@@ -871,6 +978,9 @@
     uniform float uAudioTintEnabled;
     uniform float uAudioTintHue;
     uniform float uAudioTintStrength;
+    uniform float uAudioTintSatStrength;
+    uniform float uAudioTintLightStrength;
+    uniform float uAudioTintLevel;
     uniform float uCartoonEnabled;
     uniform float uCartoonLevels;
     uniform float uCartoonEdgeThickness;
@@ -1092,16 +1202,20 @@
         finalColor = mix(filled, outlineColor, uOutlineBlend);
       }
 
-      // Audio colour tint: a final hue-only nudge toward the live mic's
-      // dominant band hue, taking the shortest way around the colour
-      // wheel so it never jumps the long way round. Runs after everything
-      // else so it's a mood pass over whatever's already on screen,
-      // leaving lightness/saturation (and so the underlying correction)
-      // intact rather than washing it out with a flat overlay colour.
+      // Audio colour tint: a final nudge toward the live mic's dominant band
+      // hue, taking the shortest way around the colour wheel so it never
+      // jumps the long way round. Runs after everything else so it's a mood
+      // pass over whatever's already on screen. Saturation/lightness are
+      // optional (0 by default — pure hue-only tint, same as before);
+      // uAudioTintLevel is the live overall loudness across enabled bands,
+      // so louder audio pushes sat/lightness further in whichever direction
+      // each strength slider is set (negative pulls the other way).
       if (uAudioTintEnabled > 0.5) {
         vec3 tintHsl = rgb2hsl(finalColor);
         float hueDiff = mod(uAudioTintHue - tintHsl.x + 540.0, 360.0) - 180.0;
         tintHsl.x = mod(tintHsl.x + hueDiff * uAudioTintStrength + 360.0, 360.0);
+        tintHsl.y = clamp(tintHsl.y + uAudioTintLevel * uAudioTintSatStrength, 0.0, 1.0);
+        tintHsl.z = clamp(tintHsl.z + uAudioTintLevel * uAudioTintLightStrength, 0.0, 1.0);
         finalColor = hsl2rgb(tintHsl);
       }
 
@@ -1177,6 +1291,9 @@
       uAudioTintEnabled: glCtx.getUniformLocation(prog, "uAudioTintEnabled"),
       uAudioTintHue: glCtx.getUniformLocation(prog, "uAudioTintHue"),
       uAudioTintStrength: glCtx.getUniformLocation(prog, "uAudioTintStrength"),
+      uAudioTintSatStrength: glCtx.getUniformLocation(prog, "uAudioTintSatStrength"),
+      uAudioTintLightStrength: glCtx.getUniformLocation(prog, "uAudioTintLightStrength"),
+      uAudioTintLevel: glCtx.getUniformLocation(prog, "uAudioTintLevel"),
       uCartoonEnabled: glCtx.getUniformLocation(prog, "uCartoonEnabled"),
       uCartoonLevels: glCtx.getUniformLocation(prog, "uCartoonLevels"),
       uCartoonEdgeThickness: glCtx.getUniformLocation(prog, "uCartoonEdgeThickness"),
@@ -1323,6 +1440,9 @@
       gl.uniform1f(uniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uAudioTintHue, audioTintHue);
       gl.uniform1f(uniforms.uAudioTintStrength, audioTintStrength);
+      gl.uniform1f(uniforms.uAudioTintSatStrength, audioTintSatStrength);
+      gl.uniform1f(uniforms.uAudioTintLightStrength, audioTintLightStrength);
+      gl.uniform1f(uniforms.uAudioTintLevel, audioTintLevel);
       gl.uniform1f(uniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uCartoonLevels, cartoonLevels);
       gl.uniform1f(uniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
@@ -1383,6 +1503,9 @@
         fixedGl.uniform1f(fixedUniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uAudioTintHue, audioTintHue);
         fixedGl.uniform1f(fixedUniforms.uAudioTintStrength, audioTintStrength);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintSatStrength, audioTintSatStrength);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintLightStrength, audioTintLightStrength);
+        fixedGl.uniform1f(fixedUniforms.uAudioTintLevel, audioTintLevel);
         fixedGl.uniform1f(fixedUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uCartoonLevels, cartoonLevels);
         fixedGl.uniform1f(fixedUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
@@ -2790,6 +2913,12 @@
       // side effect. Only the strength (meaningless until it's turned on
       // by hand) is remembered.
       audioTintStrength,
+      audioTintSatStrength,
+      audioTintLightStrength,
+      audioTintSmoothing,
+      audioTintFftSize,
+      audioTintUpdateMs,
+      audioTintExtraBandsVisible,
       ...audioTintBandsSnapshot(),
       cartoonThemeEnabled,
       cartoonThemeLo,
@@ -2805,6 +2934,7 @@
     const snap = {};
     AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
       const band = AUDIO_TINT_BANDS[i];
+      snap[audioTintBandSnapshotKey(def.key, "Enabled")] = band.enabled;
       snap[audioTintBandSnapshotKey(def.key, "Hue")] = band.hue;
       snap[audioTintBandSnapshotKey(def.key, "Gain")] = band.gain;
       snap[audioTintBandSnapshotKey(def.key, "FromHz")] = band.fromHz;
@@ -2920,9 +3050,59 @@
       audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
       saveAudioTintStrengthPref();
     }
+    if (Number.isFinite(s.audioTintSatStrength)) {
+      audioTintSatStrength = s.audioTintSatStrength;
+      audioTintSatStrengthSlider.value = String(Math.round(audioTintSatStrength * 100));
+      audioTintSatStrengthLabel.textContent = `${audioTintSatStrengthSlider.value}%`;
+      saveAudioTintSatStrengthPref();
+    }
+    if (Number.isFinite(s.audioTintLightStrength)) {
+      audioTintLightStrength = s.audioTintLightStrength;
+      audioTintLightStrengthSlider.value = String(Math.round(audioTintLightStrength * 100));
+      audioTintLightStrengthLabel.textContent = `${audioTintLightStrengthSlider.value}%`;
+      saveAudioTintLightStrengthPref();
+    }
+    if (Number.isFinite(s.audioTintSmoothing)) {
+      audioTintSmoothing = s.audioTintSmoothing;
+      audioTintSmoothingSlider.value = String(Math.round(audioTintSmoothing * 100));
+      audioTintSmoothingLabel.textContent = `${audioTintSmoothingSlider.value}%`;
+      if (audioTintAnalyser) audioTintAnalyser.smoothingTimeConstant = audioTintSmoothing;
+      saveAudioTintSmoothingPref();
+    }
+    if (AUDIO_TINT_FFT_SIZE_OPTIONS.includes(s.audioTintFftSize)) {
+      audioTintFftSize = s.audioTintFftSize;
+      audioTintFftSizeSelect.value = String(audioTintFftSize);
+      if (audioTintAnalyser) {
+        audioTintAnalyser.fftSize = audioTintFftSize;
+        audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+      }
+      saveAudioTintFftSizePref();
+    }
+    if (Number.isFinite(s.audioTintUpdateMs)) {
+      audioTintUpdateMs = s.audioTintUpdateMs;
+      audioTintUpdateMsSlider.value = String(audioTintUpdateMs);
+      audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
+      if (audioTintIntervalId) {
+        clearInterval(audioTintIntervalId);
+        audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
+      }
+      saveAudioTintUpdateMsPref();
+    }
+    if (typeof s.audioTintExtraBandsVisible === "boolean") {
+      audioTintExtraBandsVisible = s.audioTintExtraBandsVisible;
+      audioTintExtraBandsCheckbox.checked = audioTintExtraBandsVisible;
+      saveAudioTintExtraBandsVisiblePref();
+      updateAudioTintExtraBandsVisibility();
+    }
     AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
       const band = AUDIO_TINT_BANDS[i];
       const controls = audioTintBandControls[i];
+      const enabledKey = audioTintBandSnapshotKey(def.key, "Enabled");
+      if (typeof s[enabledKey] === "boolean") {
+        band.enabled = s[enabledKey];
+        controls.enabled.input.checked = band.enabled;
+        saveAudioTintBandPref(def.key, "Enabled", band.enabled ? "1" : "0");
+      }
       const hueKey = audioTintBandSnapshotKey(def.key, "Hue");
       if (Number.isFinite(s[hueKey])) {
         band.hue = s[hueKey];
@@ -3209,9 +3389,70 @@
   });
   audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
   audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;
+
+  audioTintSatStrengthSlider.addEventListener("input", () => {
+    audioTintSatStrength = parseFloat(audioTintSatStrengthSlider.value) / 100;
+    audioTintSatStrengthLabel.textContent = `${audioTintSatStrengthSlider.value}%`;
+    saveAudioTintSatStrengthPref();
+  });
+  audioTintSatStrengthSlider.value = String(Math.round(audioTintSatStrength * 100));
+  audioTintSatStrengthLabel.textContent = `${audioTintSatStrengthSlider.value}%`;
+
+  audioTintLightStrengthSlider.addEventListener("input", () => {
+    audioTintLightStrength = parseFloat(audioTintLightStrengthSlider.value) / 100;
+    audioTintLightStrengthLabel.textContent = `${audioTintLightStrengthSlider.value}%`;
+    saveAudioTintLightStrengthPref();
+  });
+  audioTintLightStrengthSlider.value = String(Math.round(audioTintLightStrength * 100));
+  audioTintLightStrengthLabel.textContent = `${audioTintLightStrengthSlider.value}%`;
+
+  audioTintSmoothingSlider.addEventListener("input", () => {
+    audioTintSmoothing = parseFloat(audioTintSmoothingSlider.value) / 100;
+    audioTintSmoothingLabel.textContent = `${audioTintSmoothingSlider.value}%`;
+    if (audioTintAnalyser) audioTintAnalyser.smoothingTimeConstant = audioTintSmoothing;
+    saveAudioTintSmoothingPref();
+  });
+  audioTintSmoothingSlider.value = String(Math.round(audioTintSmoothing * 100));
+  audioTintSmoothingLabel.textContent = `${audioTintSmoothingSlider.value}%`;
+
+  audioTintFftSizeSelect.addEventListener("change", () => {
+    audioTintFftSize = parseInt(audioTintFftSizeSelect.value, 10);
+    if (audioTintAnalyser) {
+      audioTintAnalyser.fftSize = audioTintFftSize;
+      audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+    }
+    saveAudioTintFftSizePref();
+  });
+  audioTintFftSizeSelect.value = String(audioTintFftSize);
+
+  audioTintUpdateMsSlider.addEventListener("input", () => {
+    audioTintUpdateMs = parseFloat(audioTintUpdateMsSlider.value);
+    audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
+    if (audioTintIntervalId) {
+      clearInterval(audioTintIntervalId);
+      audioTintIntervalId = setInterval(computeAudioTintHue, audioTintUpdateMs);
+    }
+    saveAudioTintUpdateMsPref();
+  });
+  audioTintUpdateMsSlider.value = String(audioTintUpdateMs);
+  audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
+
+  audioTintExtraBandsCheckbox.addEventListener("change", () => {
+    audioTintExtraBandsVisible = audioTintExtraBandsCheckbox.checked;
+    saveAudioTintExtraBandsVisiblePref();
+    updateAudioTintExtraBandsVisibility();
+  });
+  audioTintExtraBandsCheckbox.checked = audioTintExtraBandsVisible;
+
   AUDIO_TINT_BAND_DEFS.forEach((def, i) => {
     const band = AUDIO_TINT_BANDS[i];
     const controls = audioTintBandControls[i];
+
+    controls.enabled.input.checked = band.enabled;
+    controls.enabled.input.addEventListener("change", () => {
+      updateAudioTintBandsFromUi();
+      saveAudioTintBandPref(def.key, "Enabled", controls.enabled.input.checked ? "1" : "0");
+    });
 
     controls.hue.slider.value = String(Math.round(band.hue));
     controls.hue.label.textContent = `${controls.hue.slider.value}°`;

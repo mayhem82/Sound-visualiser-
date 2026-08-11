@@ -73,6 +73,37 @@
     Audio tint strength: <span id="audioTintStrengthLabel">40%</span>
     <input id="audioTintStrengthSlider" type="range" min="0" max="100" value="40">
   </label>
+  <label id="audioTintSatStrengthWrap" class="hud-slider hide" title="How much the live audio's overall loudness pushes saturation, on top of the hue tint. Negative desaturates on loud sound instead of boosting it.">
+    Audio tint saturation push: <span id="audioTintSatStrengthLabel">0%</span>
+    <input id="audioTintSatStrengthSlider" type="range" min="-100" max="100" step="5" value="0">
+  </label>
+  <label id="audioTintLightStrengthWrap" class="hud-slider hide" title="How much the live audio's overall loudness pushes lightness, on top of the hue tint. Negative darkens on loud sound instead of brightening.">
+    Audio tint lightness push: <span id="audioTintLightStrengthLabel">0%</span>
+    <input id="audioTintLightStrengthSlider" type="range" min="-100" max="100" step="5" value="0">
+  </label>
+  <label id="audioTintSmoothingWrap" class="hud-slider hide" title="How much the live audio analysis smooths out spikes. Lower reacts instantly and looks twitchy; higher glides between changes.">
+    Tint smoothing: <span id="audioTintSmoothingLabel">70%</span>
+    <input id="audioTintSmoothingSlider" type="range" min="0" max="95" step="5" value="70">
+  </label>
+  <label id="audioTintFftSizeWrap" class="hud-slider hide" title="Frequency resolution used to analyse the microphone. Higher gives finer-grained bands but reacts a little slower.">
+    Tint resolution:
+    <select id="audioTintFftSizeSelect">
+      <option value="256">Low (256)</option>
+      <option value="512">Low+ (512)</option>
+      <option value="1024" selected>Medium (1024)</option>
+      <option value="2048">High (2048)</option>
+      <option value="4096">Very high (4096)</option>
+      <option value="8192">Maximum (8192)</option>
+    </select>
+  </label>
+  <label id="audioTintUpdateMsWrap" class="hud-slider hide" title="How often the tint hue is recalculated from the microphone. Lower updates more often (smoother motion, more CPU); higher updates less often.">
+    Tint update rate: <span id="audioTintUpdateMsLabel">80ms</span>
+    <input id="audioTintUpdateMsSlider" type="range" min="20" max="300" step="10" value="80">
+  </label>
+  <label id="audioTintBassEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Mutes the bass/kick band without losing its hue/gain/range settings.">
+    <input id="audioTintBassEnabledCheckbox" type="checkbox" checked>
+    Bass band on
+  </label>
   <label id="audioTintBassHueWrap" class="hud-slider hide" title="Hue used for the bass/kick band's colour.">
     Bass hue: <span id="audioTintBassHueLabel">262&deg;</span>
     <input id="audioTintBassHueSlider" type="range" min="0" max="360" value="262">
@@ -88,6 +119,10 @@
   <label id="audioTintBassToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of the bass/kick band sampled from the microphone.">
     Bass high: <span id="audioTintBassToHzLabel">150 Hz</span>
     <input id="audioTintBassToHzSlider" type="range" min="0" max="500" value="150">
+  </label>
+  <label id="audioTintMidEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Mutes the mid band without losing its hue/gain/range settings.">
+    <input id="audioTintMidEnabledCheckbox" type="checkbox" checked>
+    Mid band on
   </label>
   <label id="audioTintMidHueWrap" class="hud-slider hide" title="Hue used for the mid band's colour.">
     Mid hue: <span id="audioTintMidHueLabel">189&deg;</span>
@@ -105,6 +140,10 @@
     Mid high: <span id="audioTintMidToHzLabel">2000 Hz</span>
     <input id="audioTintMidToHzSlider" type="range" min="0" max="4000" value="2000">
   </label>
+  <label id="audioTintTrebleEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Mutes the treble band without losing its hue/gain/range settings.">
+    <input id="audioTintTrebleEnabledCheckbox" type="checkbox" checked>
+    Treble band on
+  </label>
   <label id="audioTintTrebleHueWrap" class="hud-slider hide" title="Hue used for the treble band's colour.">
     Treble hue: <span id="audioTintTrebleHueLabel">330&deg;</span>
     <input id="audioTintTrebleHueSlider" type="range" min="0" max="360" value="330">
@@ -120,6 +159,70 @@
   <label id="audioTintTrebleToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of the treble band sampled from the microphone.">
     Treble high: <span id="audioTintTrebleToHzLabel">9000 Hz</span>
     <input id="audioTintTrebleToHzSlider" type="range" min="0" max="12000" value="9000">
+  </label>
+  <label id="audioTintExtraBandsWrap" class="hud-slider camera-only-mode-wrap hide" title="Reveals three more fully configurable frequency bands beyond bass/mid/treble, each off by default until you tune and enable it.">
+    <input id="audioTintExtraBandsCheckbox" type="checkbox">
+    Show extra tint bands (4&ndash;6)
+  </label>
+  <label id="audioTintBand4EnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns on tint band 4.">
+    <input id="audioTintBand4EnabledCheckbox" type="checkbox">
+    Band 4 on
+  </label>
+  <label id="audioTintBand4HueWrap" class="hud-slider hide" title="Hue used for tint band 4's colour.">
+    Band 4 hue: <span id="audioTintBand4HueLabel">30&deg;</span>
+    <input id="audioTintBand4HueSlider" type="range" min="0" max="360" value="30">
+  </label>
+  <label id="audioTintBand4GainWrap" class="hud-slider hide" title="How strongly tint band 4's energy pulls the blended tint hue.">
+    Band 4 gain: <span id="audioTintBand4GainLabel">100%</span>
+    <input id="audioTintBand4GainSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="audioTintBand4FromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of tint band 4 sampled from the microphone.">
+    Band 4 low: <span id="audioTintBand4FromHzLabel">20 Hz</span>
+    <input id="audioTintBand4FromHzSlider" type="range" min="0" max="20000" value="20">
+  </label>
+  <label id="audioTintBand4ToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of tint band 4 sampled from the microphone.">
+    Band 4 high: <span id="audioTintBand4ToHzLabel">20000 Hz</span>
+    <input id="audioTintBand4ToHzSlider" type="range" min="0" max="20000" value="20000">
+  </label>
+  <label id="audioTintBand5EnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns on tint band 5.">
+    <input id="audioTintBand5EnabledCheckbox" type="checkbox">
+    Band 5 on
+  </label>
+  <label id="audioTintBand5HueWrap" class="hud-slider hide" title="Hue used for tint band 5's colour.">
+    Band 5 hue: <span id="audioTintBand5HueLabel">90&deg;</span>
+    <input id="audioTintBand5HueSlider" type="range" min="0" max="360" value="90">
+  </label>
+  <label id="audioTintBand5GainWrap" class="hud-slider hide" title="How strongly tint band 5's energy pulls the blended tint hue.">
+    Band 5 gain: <span id="audioTintBand5GainLabel">100%</span>
+    <input id="audioTintBand5GainSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="audioTintBand5FromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of tint band 5 sampled from the microphone.">
+    Band 5 low: <span id="audioTintBand5FromHzLabel">20 Hz</span>
+    <input id="audioTintBand5FromHzSlider" type="range" min="0" max="20000" value="20">
+  </label>
+  <label id="audioTintBand5ToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of tint band 5 sampled from the microphone.">
+    Band 5 high: <span id="audioTintBand5ToHzLabel">20000 Hz</span>
+    <input id="audioTintBand5ToHzSlider" type="range" min="0" max="20000" value="20000">
+  </label>
+  <label id="audioTintBand6EnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns on tint band 6.">
+    <input id="audioTintBand6EnabledCheckbox" type="checkbox">
+    Band 6 on
+  </label>
+  <label id="audioTintBand6HueWrap" class="hud-slider hide" title="Hue used for tint band 6's colour.">
+    Band 6 hue: <span id="audioTintBand6HueLabel">210&deg;</span>
+    <input id="audioTintBand6HueSlider" type="range" min="0" max="360" value="210">
+  </label>
+  <label id="audioTintBand6GainWrap" class="hud-slider hide" title="How strongly tint band 6's energy pulls the blended tint hue.">
+    Band 6 gain: <span id="audioTintBand6GainLabel">100%</span>
+    <input id="audioTintBand6GainSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="audioTintBand6FromHzWrap" class="hud-slider hide" title="Lower edge (Hz) of tint band 6 sampled from the microphone.">
+    Band 6 low: <span id="audioTintBand6FromHzLabel">20 Hz</span>
+    <input id="audioTintBand6FromHzSlider" type="range" min="0" max="20000" value="20">
+  </label>
+  <label id="audioTintBand6ToHzWrap" class="hud-slider hide" title="Upper edge (Hz) of tint band 6 sampled from the microphone.">
+    Band 6 high: <span id="audioTintBand6ToHzLabel">20000 Hz</span>
+    <input id="audioTintBand6ToHzSlider" type="range" min="0" max="20000" value="20000">
   </label>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view instead of (or blended with) the normal full-colour correction.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
