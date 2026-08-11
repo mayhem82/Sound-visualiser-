@@ -170,6 +170,7 @@
   const spreadSlider = document.getElementById("spreadSlider");
   const spreadLabel = document.getElementById("spreadLabel");
   const audioTintBtn = document.getElementById("audioTintBtn");
+  const audioTintResetBtn = document.getElementById("audioTintResetBtn");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
   const audioTintStrengthSlider = document.getElementById("audioTintStrengthSlider");
   const audioTintStrengthLabel = document.getElementById("audioTintStrengthLabel");
@@ -803,7 +804,7 @@
     audioTintBtn.classList.toggle("active", audioTintEnabled);
     audioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
     const wraps = [
-      audioTintStrengthWrap, audioTintSatStrengthWrap, audioTintLightStrengthWrap,
+      audioTintResetBtn, audioTintStrengthWrap, audioTintSatStrengthWrap, audioTintLightStrengthWrap,
       audioTintSmoothingWrap, audioTintFftSizeWrap, audioTintUpdateMsWrap, audioTintExtraBandsWrap
     ];
     audioTintBandControls.forEach((controls, i) => {
@@ -3221,10 +3222,12 @@
       cartoonEdgeStrength,
       cartoonSaturation,
       cartoonTheme,
-      // audioTintEnabled deliberately isn't captured here — loading a
-      // template shouldn't silently start capturing the microphone as a
-      // side effect. Only the strength (meaningless until it's turned on
-      // by hand) is remembered.
+      // audioTintEnabled/beatFlashEnabled ARE captured — loading a template
+      // is an explicit user action (clicking Load), so restoring them tries
+      // the same silent-resume path already used for a page reload (works
+      // if mic/camera permission is already granted; otherwise it prompts,
+      // same as clicking the button by hand would).
+      audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
       audioTintLightStrength,
@@ -3236,9 +3239,7 @@
       cartoonThemeEnabled,
       cartoonThemeLo,
       cartoonThemeHi,
-      // beatFlashEnabled deliberately isn't captured either, for the same
-      // reason as audioTintEnabled — loading a template shouldn't silently
-      // arm the torch/vibrate/screen flash. Its settings are remembered.
+      beatFlashEnabled,
       beatSensitivity,
       beatFlashSpeed,
       beatDimFlickerEnabled,
@@ -3263,6 +3264,36 @@
       snap[audioTintBandSnapshotKey(def.key, "ToHz")] = band.toHz;
     });
     return snap;
+  }
+
+  // Every audio tint field's shipped default, in the exact same shape
+  // applySettingsSnapshot() already knows how to restore — resetting is just
+  // "load this instead of a saved template" rather than a separate code path.
+  function audioTintDefaultsSnapshot() {
+    const snap = {
+      audioTintStrength: AUDIO_TINT_DEFAULT_STRENGTH,
+      audioTintSatStrength: AUDIO_TINT_DEFAULT_SAT_STRENGTH,
+      audioTintLightStrength: AUDIO_TINT_DEFAULT_LIGHT_STRENGTH,
+      audioTintSmoothing: AUDIO_TINT_DEFAULT_SMOOTHING,
+      audioTintFftSize: AUDIO_TINT_DEFAULT_FFT_SIZE,
+      audioTintUpdateMs: AUDIO_TINT_DEFAULT_UPDATE_MS,
+      audioTintExtraBandsVisible: false
+    };
+    AUDIO_TINT_BAND_DEFS.forEach((def) => {
+      snap[audioTintBandSnapshotKey(def.key, "Enabled")] = def.enabled;
+      snap[audioTintBandSnapshotKey(def.key, "Hue")] = def.hue;
+      snap[audioTintBandSnapshotKey(def.key, "Gain")] = def.gain;
+      snap[audioTintBandSnapshotKey(def.key, "FromHz")] = def.fromHz;
+      snap[audioTintBandSnapshotKey(def.key, "ToHz")] = def.toHz;
+    });
+    return snap;
+  }
+
+  // Resets every audio tint slider/band back to its shipped default.
+  // Deliberately doesn't touch audioTintEnabled — this resets the tuning,
+  // not whether the feature itself is currently on.
+  function resetAudioTint() {
+    applySettingsSnapshot(audioTintDefaultsSnapshot());
   }
 
   function applySettingsSnapshot(s) {
@@ -3482,6 +3513,14 @@
     if (Number.isFinite(s.beatSyncDelayMs)) {
       beatSyncDelaySlider.value = String(s.beatSyncDelayMs);
       updateBeatSyncDelay();
+    }
+    // On/off state, restored last so the mic (re)connects using whichever
+    // tuning was just restored above, not stale values from before the load.
+    if (typeof s.audioTintEnabled === "boolean" && s.audioTintEnabled !== audioTintEnabled) {
+      toggleAudioTint();
+    }
+    if (typeof s.beatFlashEnabled === "boolean" && s.beatFlashEnabled !== beatFlashEnabled) {
+      toggleBeatFlash();
     }
   }
 
@@ -3733,6 +3772,7 @@
   updateOutlinesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
+  audioTintResetBtn.addEventListener("click", resetAudioTint);
   audioTintStrengthSlider.addEventListener("input", () => {
     audioTintStrength = parseFloat(audioTintStrengthSlider.value) / 100;
     audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;

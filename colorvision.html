@@ -70,6 +70,7 @@
     <input id="spreadSlider" type="range" min="1" max="40" value="4">
   </label>
   <button id="audioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone as a second, artistic source of colour: live bass/mid/treble energy (same violet/cyan/pink mapping as Sound Nebula) nudges the corrected view's hue toward whatever's playing, instead of relying only on the camera.">Audio colour tint: Off</button>
+  <button id="audioTintResetBtn" class="hud-btn reticle-btn-secondary hide" title="Resets every audio colour tint slider below back to its shipped default (strength, saturation/lightness push, smoothing, resolution, update rate, and all 6 bands). Doesn't turn audio colour tint off.">Reset audio tint</button>
   <label id="audioTintStrengthWrap" class="hud-slider hide" title="How strongly the live audio hue pulls the corrected view's colour, from a subtle nudge to a full wash.">
     Audio tint strength: <span id="audioTintStrengthLabel">40%</span>
     <input id="audioTintStrengthSlider" type="range" min="0" max="100" value="40">
