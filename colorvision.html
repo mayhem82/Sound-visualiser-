@@ -87,15 +87,8 @@
     <input id="audioTintSmoothingSlider" type="range" min="0" max="95" step="5" value="70">
   </label>
   <label id="audioTintFftSizeWrap" class="hud-slider hide" title="Frequency resolution used to analyse the microphone. Higher gives finer-grained bands but reacts a little slower.">
-    Tint resolution:
-    <select id="audioTintFftSizeSelect">
-      <option value="256">Low (256)</option>
-      <option value="512">Low+ (512)</option>
-      <option value="1024" selected>Medium (1024)</option>
-      <option value="2048">High (2048)</option>
-      <option value="4096">Very high (4096)</option>
-      <option value="8192">Maximum (8192)</option>
-    </select>
+    Tint resolution: <span id="audioTintFftSizeLabel">1024</span>
+    <input id="audioTintFftSizeSlider" type="range" min="0" max="5" step="1" value="2">
   </label>
   <label id="audioTintUpdateMsWrap" class="hud-slider hide" title="How often the tint hue is recalculated from the microphone. Lower updates more often (smoother motion, more CPU); higher updates less often.">
     Tint update rate: <span id="audioTintUpdateMsLabel">80ms</span>

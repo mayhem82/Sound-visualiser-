@@ -58,6 +58,13 @@
   const AUDIO_TINT_FFT_SIZE_KEY = "audioTintFftSize_colorVision_v1";
   const AUDIO_TINT_DEFAULT_FFT_SIZE = 1024;
   const AUDIO_TINT_FFT_SIZE_OPTIONS = [256, 512, 1024, 2048, 4096, 8192];
+  // audioTintFftSizeSlider is index-based (0..options.length-1) like every
+  // other audio tint control is a plain <input type="range"> — these two
+  // convert between that index and the actual FFT size value.
+  function audioTintFftSizeIndex(value) {
+    const idx = AUDIO_TINT_FFT_SIZE_OPTIONS.indexOf(value);
+    return idx === -1 ? AUDIO_TINT_FFT_SIZE_OPTIONS.indexOf(AUDIO_TINT_DEFAULT_FFT_SIZE) : idx;
+  }
   const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
   const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
   const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
@@ -176,7 +183,8 @@
   const audioTintSmoothingSlider = document.getElementById("audioTintSmoothingSlider");
   const audioTintSmoothingLabel = document.getElementById("audioTintSmoothingLabel");
   const audioTintFftSizeWrap = document.getElementById("audioTintFftSizeWrap");
-  const audioTintFftSizeSelect = document.getElementById("audioTintFftSizeSelect");
+  const audioTintFftSizeSlider = document.getElementById("audioTintFftSizeSlider");
+  const audioTintFftSizeLabel = document.getElementById("audioTintFftSizeLabel");
   const audioTintUpdateMsWrap = document.getElementById("audioTintUpdateMsWrap");
   const audioTintUpdateMsSlider = document.getElementById("audioTintUpdateMsSlider");
   const audioTintUpdateMsLabel = document.getElementById("audioTintUpdateMsLabel");
@@ -3385,7 +3393,8 @@
     }
     if (AUDIO_TINT_FFT_SIZE_OPTIONS.includes(s.audioTintFftSize)) {
       audioTintFftSize = s.audioTintFftSize;
-      audioTintFftSizeSelect.value = String(audioTintFftSize);
+      audioTintFftSizeSlider.value = String(audioTintFftSizeIndex(audioTintFftSize));
+      audioTintFftSizeLabel.textContent = String(audioTintFftSize);
       if (audioTintAnalyser) {
         audioTintAnalyser.fftSize = audioTintFftSize;
         audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
@@ -3757,15 +3766,17 @@
   audioTintSmoothingSlider.value = String(Math.round(audioTintSmoothing * 100));
   audioTintSmoothingLabel.textContent = `${audioTintSmoothingSlider.value}%`;
 
-  audioTintFftSizeSelect.addEventListener("change", () => {
-    audioTintFftSize = parseInt(audioTintFftSizeSelect.value, 10);
+  audioTintFftSizeSlider.addEventListener("input", () => {
+    audioTintFftSize = AUDIO_TINT_FFT_SIZE_OPTIONS[parseInt(audioTintFftSizeSlider.value, 10)];
+    audioTintFftSizeLabel.textContent = String(audioTintFftSize);
     if (audioTintAnalyser) {
       audioTintAnalyser.fftSize = audioTintFftSize;
       audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
     }
     saveAudioTintFftSizePref();
   });
-  audioTintFftSizeSelect.value = String(audioTintFftSize);
+  audioTintFftSizeSlider.value = String(audioTintFftSizeIndex(audioTintFftSize));
+  audioTintFftSizeLabel.textContent = String(audioTintFftSize);
 
   audioTintUpdateMsSlider.addEventListener("input", () => {
     audioTintUpdateMs = parseFloat(audioTintUpdateMsSlider.value);
