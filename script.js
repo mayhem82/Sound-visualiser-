@@ -31,6 +31,7 @@
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
   const nebulaBtn = document.getElementById("nebulaBtn");
+  const particleResetBtn = document.getElementById("particleResetBtn");
   const outlinesBtn = document.getElementById("outlinesBtn");
   const outlineThicknessWrap = document.getElementById("outlineThicknessWrap");
   const outlineThicknessSlider = document.getElementById("outlineThicknessSlider");
@@ -162,6 +163,100 @@
     { name: "mid", fromHz: 150, toHz: 2000, hue: 189, count: 90 }, // cyan — guitars, vocals, snare body
     { name: "treble", fromHz: 2000, toHz: 9000, hue: 330, count: 90 } // pink — cymbals, presence
   ];
+  const PARTICLE_BAND_LABELS = { bass: "Bass", mid: "Mid", treble: "Treble" };
+  const PARTICLE_DEFAULTS = { hue: {}, count: {}, sizeMul: 1, speedMul: 1, jitterMul: 1 };
+  BANDS.forEach((band) => { PARTICLE_DEFAULTS.hue[band.name] = band.hue; PARTICLE_DEFAULTS.count[band.name] = band.count; });
+  function particleBandKey(bandName, field) {
+    return `particle${PARTICLE_BAND_LABELS[bandName]}${field}_soundNebula_v1`;
+  }
+  // hue/count/sizeMul/speedMul/jitterMul are all user-adjustable (see the
+  // particle sliders below) and persisted per-band; style is resolved live
+  // each frame from the colour-triggered style settings (resolveBandStyles).
+  BANDS.forEach((band) => {
+    band.hue = loadOutlineNumberPref(particleBandKey(band.name, "Hue"), band.hue);
+    band.count = loadOutlineNumberPref(particleBandKey(band.name, "Count"), band.count);
+    band.sizeMul = loadOutlineNumberPref(particleBandKey(band.name, "Size"), 1);
+    band.speedMul = loadOutlineNumberPref(particleBandKey(band.name, "Speed"), 1);
+    band.jitterMul = loadOutlineNumberPref(particleBandKey(band.name, "Jitter"), 1);
+    band.style = "normal";
+  });
+  // Colour-triggered particle styles: when a band's own hue above lands
+  // close enough to one of these trigger colours, that band's particles
+  // switch from the normal orbit to a themed motion (see resolveBandStyles
+  // and initParticleStyleState). Off by default so the shipped look is
+  // unchanged until a user deliberately pairs a band's hue with one of these.
+  const PARTICLE_STYLE_HUE_TOLERANCE = 20;
+  const PARTICLE_STYLE_DEFAULT_COLORS = { fireworks: "#ffcc00", flames: "#ff5500", dripping: "#3399ff" };
+  const particleStyles = {};
+  ["fireworks", "flames", "dripping"].forEach((key) => {
+    particleStyles[key] = {
+      enabled: loadBoolPref(`particle${key[0].toUpperCase()}${key.slice(1)}Enabled_soundNebula_v1`, false),
+      color: (() => {
+        try {
+          const raw = localStorage.getItem(`particle${key[0].toUpperCase()}${key.slice(1)}Color_soundNebula_v1`);
+          return /^#[0-9a-f]{6}$/i.test(raw) ? raw : PARTICLE_STYLE_DEFAULT_COLORS[key];
+        } catch (e) {
+          return PARTICLE_STYLE_DEFAULT_COLORS[key];
+        }
+      })()
+    };
+    particleStyles[key].hue = cvRgbToHue(...cvHexToRgb01(particleStyles[key].color));
+  });
+  function saveParticleBandPref(bandName, field, value) {
+    try { localStorage.setItem(particleBandKey(bandName, field), String(value)); } catch (e) {}
+  }
+  function saveParticleStyleEnabledPref(key) {
+    try { localStorage.setItem(`particle${key[0].toUpperCase()}${key.slice(1)}Enabled_soundNebula_v1`, particleStyles[key].enabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveParticleStyleColorPref(key) {
+    try { localStorage.setItem(`particle${key[0].toUpperCase()}${key.slice(1)}Color_soundNebula_v1`, particleStyles[key].color); } catch (e) {}
+  }
+
+  // One { wrap, slider, label } triple per band per field (hue/count/size/
+  // speed/jitter), keyed off PARTICLE_BAND_LABELS' id-prefixes
+  // (particleBassHue*, particleMidCount*, ...).
+  const particleBandControls = {};
+  BANDS.forEach((band) => {
+    const label = PARTICLE_BAND_LABELS[band.name];
+    particleBandControls[band.name] = {
+      hue: {
+        wrap: document.getElementById(`particle${label}HueWrap`),
+        slider: document.getElementById(`particle${label}HueSlider`),
+        label: document.getElementById(`particle${label}HueLabel`)
+      },
+      count: {
+        wrap: document.getElementById(`particle${label}CountWrap`),
+        slider: document.getElementById(`particle${label}CountSlider`),
+        label: document.getElementById(`particle${label}CountLabel`)
+      },
+      size: {
+        wrap: document.getElementById(`particle${label}SizeWrap`),
+        slider: document.getElementById(`particle${label}SizeSlider`),
+        label: document.getElementById(`particle${label}SizeLabel`)
+      },
+      speed: {
+        wrap: document.getElementById(`particle${label}SpeedWrap`),
+        slider: document.getElementById(`particle${label}SpeedSlider`),
+        label: document.getElementById(`particle${label}SpeedLabel`)
+      },
+      jitter: {
+        wrap: document.getElementById(`particle${label}JitterWrap`),
+        slider: document.getElementById(`particle${label}JitterSlider`),
+        label: document.getElementById(`particle${label}JitterLabel`)
+      }
+    };
+  });
+  // One { enabledWrap, enabledCheckbox, colorWrap, colorInput } quad per
+  // colour-triggered style.
+  const particleStyleControls = {};
+  ["Fireworks", "Flames", "Dripping"].forEach((label) => {
+    particleStyleControls[label.toLowerCase()] = {
+      enabledWrap: document.getElementById(`particle${label}EnabledWrap`),
+      enabledCheckbox: document.getElementById(`particle${label}EnabledCheckbox`),
+      colorWrap: document.getElementById(`particle${label}ColorWrap`),
+      colorInput: document.getElementById(`particle${label}ColorInput`)
+    };
+  });
 
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
@@ -457,6 +552,110 @@
     };
   }
 
+  // Checks each band's own hue against the 3 (optional) style trigger
+  // colours and picks whichever one it's closest to, within tolerance —
+  // called once per frame in draw(), not per-particle, since it only
+  // depends on the 3 bands' hues, not any individual particle.
+  function resolveBandStyles() {
+    for (const band of BANDS) {
+      let matched = "normal";
+      for (const key of ["fireworks", "flames", "dripping"]) {
+        const trig = particleStyles[key];
+        if (!trig.enabled) continue;
+        const diff = Math.abs(((band.hue - trig.hue + 540) % 360) - 180);
+        if (diff <= PARTICLE_STYLE_HUE_TOLERANCE) { matched = key; break; }
+      }
+      band.style = matched;
+    }
+  }
+
+  // Seeds the fixed random constants a particle's special-style motion is
+  // deterministically derived from each frame (see the style branches in
+  // draw()) — called once whenever a particle's band switches to a new
+  // style, not every frame, so the same "explosion"/flicker/wiggle shape
+  // replays every cycle instead of jittering randomly frame to frame.
+  function initParticleStyleState(p) {
+    const style = p.band.style;
+    if (style === "fireworks") {
+      p.fxCycleMs = 1800 + Math.random() * 1200;
+      p.fxPhaseOffset = Math.random() * p.fxCycleMs;
+      p.fxDriftX = (Math.random() - 0.5) * 60;
+      p.fxSeedAngle = Math.random() * Math.PI * 2;
+      p.fxSeedSpeed = 2 + Math.random() * 4;
+    } else if (style === "flames") {
+      p.flCycleMs = 1400 + Math.random() * 1000;
+      p.flPhaseOffset = Math.random() * p.flCycleMs;
+      p.flBaseX = (Math.random() - 0.5) * Math.min(width, height) * 0.25;
+      p.flFlickerSpeed = 3 + Math.random() * 4;
+      p.flFlickerAmt = 6 + Math.random() * 14;
+    } else if (style === "dripping") {
+      p.drCycleMs = 1600 + Math.random() * 1400;
+      p.drPhaseOffset = Math.random() * p.drCycleMs;
+      p.drBaseX = (Math.random() - 0.5) * width * 0.7;
+      p.drWiggleSpeed = 1 + Math.random() * 2;
+      p.drWiggleAmt = 4 + Math.random() * 10;
+    }
+  }
+
+  // Each returns { x, y, size, alpha } purely as a function of `time` and
+  // the particle's own fixed seed constants from initParticleStyleState —
+  // no accumulated per-frame state, so nothing to reset between cycles.
+  function fireworksPosition(p, time, energy) {
+    const cycle = p.fxCycleMs;
+    const tInCycle = (time + p.fxPhaseOffset) % cycle;
+    const ascendMs = cycle * 0.28;
+    const explodeMs = cycle * 0.55;
+    const burstX = cx + p.fxDriftX;
+    const burstY = cy - Math.min(width, height) * 0.32;
+    if (tInCycle < ascendMs) {
+      const prog = tInCycle / ascendMs;
+      return {
+        x: cx + p.fxDriftX * prog,
+        y: cy - prog * Math.min(width, height) * 0.32,
+        size: p.size * p.band.sizeMul * 0.7 * (0.5 + prog * 0.5),
+        alpha: 0.5 + energy * 0.5
+      };
+    }
+    if (tInCycle < ascendMs + explodeMs) {
+      const et = (tInCycle - ascendMs) / explodeMs;
+      const travel = et * 60;
+      const grav = 0.12;
+      return {
+        x: burstX + Math.cos(p.fxSeedAngle) * p.fxSeedSpeed * travel,
+        y: burstY + Math.sin(p.fxSeedAngle) * p.fxSeedSpeed * travel + 0.5 * grav * travel * travel,
+        size: p.size * p.band.sizeMul * (1 - et * 0.5),
+        alpha: Math.max(0, 1 - et) * (0.4 + energy * 0.6)
+      };
+    }
+    return { x: burstX, y: burstY, size: 0, alpha: 0 };
+  }
+
+  function flamesPosition(p, time, energy) {
+    const cycle = p.flCycleMs;
+    const tInCycle = ((time + p.flPhaseOffset) % cycle) / cycle;
+    const riseHeight = Math.min(width, height) * 0.42;
+    const baseY = cy + Math.min(width, height) * 0.18;
+    return {
+      x: cx + p.flBaseX + Math.sin(time * 0.001 * p.flFlickerSpeed) * p.flFlickerAmt * (1 - tInCycle * 0.4),
+      y: baseY - tInCycle * riseHeight * (0.7 + energy * 0.6),
+      size: p.size * p.band.sizeMul * (1 - tInCycle * 0.7) * (0.8 + energy * 0.6),
+      alpha: (1 - tInCycle) * (0.5 + energy * 0.5)
+    };
+  }
+
+  function drippingPosition(p, time, energy) {
+    const cycle = p.drCycleMs;
+    const tInCycle = ((time + p.drPhaseOffset) % cycle) / cycle;
+    const fallHeight = height * 1.15;
+    const startY = -height * 0.15;
+    return {
+      x: cx + p.drBaseX + Math.sin(time * 0.001 * p.drWiggleSpeed) * p.drWiggleAmt,
+      y: startY + tInCycle * tInCycle * fallHeight,
+      size: p.size * p.band.sizeMul * (0.6 + energy * 0.8),
+      alpha: (0.3 + energy * 0.7) * (tInCycle < 0.9 ? 1 : (1 - tInCycle) * 10)
+    };
+  }
+
   function seedParticles() {
     particles = [];
     for (const band of BANDS) {
@@ -703,16 +902,31 @@
       ctx.arc(cx, cy, coreRadius * 3.2, 0, Math.PI * 2);
       ctx.fill();
 
+      resolveBandStyles();
       for (const p of particles) {
+        if (p.styleAtInit !== p.band.style) {
+          p.styleAtInit = p.band.style;
+          initParticleStyleState(p);
+        }
         const energy = bandEnergySmoothed[p.band.name];
-        p.angle += p.angularSpeed * (1 + energy * 6);
-        const jitter =
-          Math.sin(time * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter;
-        const radius = p.baseRadius * (1 + energy * 1.4) + jitter;
-        const x = cx + Math.cos(p.angle) * radius;
-        const y = cy + Math.sin(p.angle) * radius * 0.72; // slight ellipse flattening
-        const size = p.size * (1 + energy * 3.2);
-        const alpha = 0.25 + energy * 0.65;
+        let x, y, size, alpha;
+        if (p.band.style === "fireworks") {
+          ({ x, y, size, alpha } = fireworksPosition(p, time, energy));
+        } else if (p.band.style === "flames") {
+          ({ x, y, size, alpha } = flamesPosition(p, time, energy));
+        } else if (p.band.style === "dripping") {
+          ({ x, y, size, alpha } = drippingPosition(p, time, energy));
+        } else {
+          p.angle += p.angularSpeed * p.band.speedMul * (1 + energy * 6);
+          const jitter =
+            Math.sin(time * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * p.band.jitterMul;
+          const radius = p.baseRadius * (1 + energy * 1.4) + jitter;
+          x = cx + Math.cos(p.angle) * radius;
+          y = cy + Math.sin(p.angle) * radius * 0.72; // slight ellipse flattening
+          size = p.size * p.band.sizeMul * (1 + energy * 3.2);
+          alpha = 0.25 + energy * 0.65;
+        }
+        if (alpha <= 0.001) continue;
         const hue = p.band.hue + p.hueOffset;
 
         if (cartoonEnabled) {
@@ -1043,6 +1257,20 @@
     nebulaBtn.classList.toggle("active", !nebulaEnabled);
     nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
     saveBoolPref(NEBULA_ENABLED_KEY, nebulaEnabled);
+    updateParticleControlsVisibility();
+  }
+
+  // Particle sliders/style triggers are pointless to see (or tune) while
+  // the nebula itself is hidden, so they hide/show along with it.
+  function updateParticleControlsVisibility() {
+    const wraps = [particleResetBtn];
+    Object.values(particleBandControls).forEach((controls) => {
+      wraps.push(controls.hue.wrap, controls.count.wrap, controls.size.wrap, controls.speed.wrap, controls.jitter.wrap);
+    });
+    Object.values(particleStyleControls).forEach((controls) => {
+      wraps.push(controls.enabledWrap, controls.colorWrap);
+    });
+    wraps.forEach((el) => el.classList.toggle("hide", !nebulaEnabled));
   }
 
   function updateOutlinesUi() {
@@ -1238,6 +1466,24 @@
     const g = parseInt(m.substring(2, 4), 16) / 255;
     const b = parseInt(m.substring(4, 6), 16) / 255;
     return [r, g, b];
+  }
+
+  // Hue only (0-360) — used to compare a picked particle-style trigger
+  // colour against a band's own hue (see resolveBandStyles).
+  function cvRgbToHue(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (d === 0) return 0;
+    let h;
+    switch (max) {
+      case r: h = ((g - b) / d) % 6; break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h *= 60;
+    if (h < 0) h += 360;
+    return h;
   }
 
   // A colour swatch alone doesn't help the people this is for — the whole
@@ -2516,8 +2762,31 @@
       rotate180,
       spread,
       cvdType,
-      cvdStrength
+      cvdStrength,
+      ...particleBandsSnapshot(),
+      particleFireworksEnabled: particleStyles.fireworks.enabled,
+      particleFireworksColor: particleStyles.fireworks.color,
+      particleFlamesEnabled: particleStyles.flames.enabled,
+      particleFlamesColor: particleStyles.flames.color,
+      particleDrippingEnabled: particleStyles.dripping.enabled,
+      particleDrippingColor: particleStyles.dripping.color
     };
+  }
+
+  function particleBandsSnapshot() {
+    const snap = {};
+    BANDS.forEach((band) => {
+      snap[particleBandSnapshotKey(band.name, "Hue")] = band.hue;
+      snap[particleBandSnapshotKey(band.name, "Count")] = band.count;
+      snap[particleBandSnapshotKey(band.name, "Size")] = band.sizeMul;
+      snap[particleBandSnapshotKey(band.name, "Speed")] = band.speedMul;
+      snap[particleBandSnapshotKey(band.name, "Jitter")] = band.jitterMul;
+    });
+    return snap;
+  }
+
+  function particleBandSnapshotKey(bandName, field) {
+    return `particle${PARTICLE_BAND_LABELS[bandName]}${field}`;
   }
 
   function applySettingsSnapshot(s) {
@@ -2622,6 +2891,64 @@
       cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
       saveCvdStrengthPref();
     }
+    let needsReseed = false;
+    BANDS.forEach((band) => {
+      const controls = particleBandControls[band.name];
+      const hueKey = particleBandSnapshotKey(band.name, "Hue");
+      if (Number.isFinite(s[hueKey])) {
+        band.hue = s[hueKey];
+        controls.hue.slider.value = String(Math.round(band.hue));
+        controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+        saveParticleBandPref(band.name, "Hue", band.hue);
+      }
+      const countKey = particleBandSnapshotKey(band.name, "Count");
+      if (Number.isFinite(s[countKey])) {
+        band.count = s[countKey];
+        controls.count.slider.value = String(band.count);
+        controls.count.label.textContent = String(band.count);
+        saveParticleBandPref(band.name, "Count", band.count);
+        needsReseed = true;
+      }
+      const sizeKey = particleBandSnapshotKey(band.name, "Size");
+      if (Number.isFinite(s[sizeKey])) {
+        band.sizeMul = s[sizeKey];
+        controls.size.slider.value = String(Math.round(band.sizeMul * 100));
+        controls.size.label.textContent = `${controls.size.slider.value}%`;
+        saveParticleBandPref(band.name, "Size", band.sizeMul);
+      }
+      const speedKey = particleBandSnapshotKey(band.name, "Speed");
+      if (Number.isFinite(s[speedKey])) {
+        band.speedMul = s[speedKey];
+        controls.speed.slider.value = String(Math.round(band.speedMul * 100));
+        controls.speed.label.textContent = `${controls.speed.slider.value}%`;
+        saveParticleBandPref(band.name, "Speed", band.speedMul);
+      }
+      const jitterKey = particleBandSnapshotKey(band.name, "Jitter");
+      if (Number.isFinite(s[jitterKey])) {
+        band.jitterMul = s[jitterKey];
+        controls.jitter.slider.value = String(Math.round(band.jitterMul * 100));
+        controls.jitter.label.textContent = `${controls.jitter.slider.value}%`;
+        saveParticleBandPref(band.name, "Jitter", band.jitterMul);
+      }
+    });
+    if (needsReseed) seedParticles();
+    ["fireworks", "flames", "dripping"].forEach((key) => {
+      const label = key[0].toUpperCase() + key.slice(1);
+      const controls = particleStyleControls[key];
+      const trig = particleStyles[key];
+      if (typeof s[`particle${label}Enabled`] === "boolean") {
+        trig.enabled = s[`particle${label}Enabled`];
+        controls.enabledCheckbox.checked = trig.enabled;
+        saveParticleStyleEnabledPref(key);
+      }
+      if (typeof s[`particle${label}Color`] === "string" && /^#[0-9a-f]{6}$/i.test(s[`particle${label}Color`])) {
+        trig.color = s[`particle${label}Color`];
+        trig.hue = cvRgbToHue(...cvHexToRgb01(trig.color));
+        controls.colorInput.value = trig.color;
+        saveParticleStyleColorPref(key);
+      }
+    });
+    resolveBandStyles();
   }
 
   function renderProfileSelect() {
@@ -3543,6 +3870,119 @@
     navigator.mediaDevices.addEventListener("devicechange", refreshCameraDeviceList);
   }
   nebulaBtn.addEventListener("click", toggleNebula);
+
+  BANDS.forEach((band) => {
+    const controls = particleBandControls[band.name];
+
+    controls.hue.slider.value = String(Math.round(band.hue));
+    controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+    controls.hue.slider.addEventListener("input", () => {
+      band.hue = parseFloat(controls.hue.slider.value);
+      controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+      saveParticleBandPref(band.name, "Hue", band.hue);
+      // Style is normally re-resolved every draw() frame; called here too so
+      // a hue edit made while paused still shows correctly right away.
+      resolveBandStyles();
+    });
+
+    controls.count.slider.value = String(Math.round(band.count));
+    controls.count.label.textContent = String(Math.round(band.count));
+    controls.count.slider.addEventListener("input", () => {
+      band.count = parseFloat(controls.count.slider.value);
+      controls.count.label.textContent = String(Math.round(band.count));
+      saveParticleBandPref(band.name, "Count", band.count);
+      seedParticles();
+    });
+
+    controls.size.slider.value = String(Math.round(band.sizeMul * 100));
+    controls.size.label.textContent = `${controls.size.slider.value}%`;
+    controls.size.slider.addEventListener("input", () => {
+      band.sizeMul = parseFloat(controls.size.slider.value) / 100;
+      controls.size.label.textContent = `${controls.size.slider.value}%`;
+      saveParticleBandPref(band.name, "Size", band.sizeMul);
+    });
+
+    controls.speed.slider.value = String(Math.round(band.speedMul * 100));
+    controls.speed.label.textContent = `${controls.speed.slider.value}%`;
+    controls.speed.slider.addEventListener("input", () => {
+      band.speedMul = parseFloat(controls.speed.slider.value) / 100;
+      controls.speed.label.textContent = `${controls.speed.slider.value}%`;
+      saveParticleBandPref(band.name, "Speed", band.speedMul);
+    });
+
+    controls.jitter.slider.value = String(Math.round(band.jitterMul * 100));
+    controls.jitter.label.textContent = `${controls.jitter.slider.value}%`;
+    controls.jitter.slider.addEventListener("input", () => {
+      band.jitterMul = parseFloat(controls.jitter.slider.value) / 100;
+      controls.jitter.label.textContent = `${controls.jitter.slider.value}%`;
+      saveParticleBandPref(band.name, "Jitter", band.jitterMul);
+    });
+  });
+
+  Object.keys(particleStyleControls).forEach((key) => {
+    const controls = particleStyleControls[key];
+    const trig = particleStyles[key];
+
+    controls.enabledCheckbox.checked = trig.enabled;
+    controls.enabledCheckbox.addEventListener("change", () => {
+      trig.enabled = controls.enabledCheckbox.checked;
+      saveParticleStyleEnabledPref(key);
+      resolveBandStyles();
+    });
+
+    controls.colorInput.value = trig.color;
+    controls.colorInput.addEventListener("input", () => {
+      trig.color = controls.colorInput.value;
+      trig.hue = cvRgbToHue(...cvHexToRgb01(trig.color));
+      saveParticleStyleColorPref(key);
+      resolveBandStyles();
+    });
+  });
+
+  // Resets every particle slider/style to its shipped default without
+  // touching whether the nebula itself is shown.
+  function resetParticles() {
+    BANDS.forEach((band) => {
+      const def = { hue: PARTICLE_DEFAULTS.hue[band.name], count: PARTICLE_DEFAULTS.count[band.name] };
+      const controls = particleBandControls[band.name];
+      band.hue = def.hue;
+      band.count = def.count;
+      band.sizeMul = 1;
+      band.speedMul = 1;
+      band.jitterMul = 1;
+      controls.hue.slider.value = String(Math.round(band.hue));
+      controls.hue.label.textContent = `${controls.hue.slider.value}°`;
+      saveParticleBandPref(band.name, "Hue", band.hue);
+      controls.count.slider.value = String(band.count);
+      controls.count.label.textContent = String(band.count);
+      saveParticleBandPref(band.name, "Count", band.count);
+      controls.size.slider.value = "100";
+      controls.size.label.textContent = "100%";
+      saveParticleBandPref(band.name, "Size", 1);
+      controls.speed.slider.value = "100";
+      controls.speed.label.textContent = "100%";
+      saveParticleBandPref(band.name, "Speed", 1);
+      controls.jitter.slider.value = "100";
+      controls.jitter.label.textContent = "100%";
+      saveParticleBandPref(band.name, "Jitter", 1);
+    });
+    Object.keys(particleStyleControls).forEach((key) => {
+      const controls = particleStyleControls[key];
+      const trig = particleStyles[key];
+      trig.enabled = false;
+      trig.color = PARTICLE_STYLE_DEFAULT_COLORS[key];
+      trig.hue = cvRgbToHue(...cvHexToRgb01(trig.color));
+      controls.enabledCheckbox.checked = false;
+      controls.colorInput.value = trig.color;
+      saveParticleStyleEnabledPref(key);
+      saveParticleStyleColorPref(key);
+    });
+    seedParticles();
+    resolveBandStyles();
+  }
+  particleResetBtn.addEventListener("click", resetParticles);
+  updateParticleControlsVisibility();
+
   outlinesBtn.addEventListener("click", toggleOutlinesMode);
   outlineThicknessSlider.addEventListener("input", () => {
     outlineThickness = parseFloat(outlineThicknessSlider.value);

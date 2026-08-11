@@ -76,6 +76,91 @@
   </label>
   <button id="cameraOnlyBtn" class="hud-btn hide" aria-pressed="false" title="For a two-device setup: this device just streams its raw camera feed, with no controls of its own — do all the calibration and control on the other (receiving) device instead. Needs Camera background on.">Camera-only broadcast: Off</button>
   <button id="nebulaBtn" class="hud-btn" aria-pressed="false" title="Hide the swirling particle nebula so the camera feed behind it shows through clearly — handy while looking closely at the colour vision correction.">Nebula: On</button>
+  <button id="particleResetBtn" class="hud-btn reticle-btn-secondary" title="Resets every particle slider below back to its shipped default (count, size, speed, jitter, hue per band) and turns off all 3 colour-triggered styles.">Reset particles</button>
+  <label id="particleBassHueWrap" class="hud-slider" title="Hue used for bass/kick particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Bass particle hue: <span id="particleBassHueLabel">262&deg;</span>
+    <input id="particleBassHueSlider" type="range" min="0" max="360" value="262">
+  </label>
+  <label id="particleBassCountWrap" class="hud-slider" title="How many bass/kick particles swarm around the core.">
+    Bass particle count: <span id="particleBassCountLabel">90</span>
+    <input id="particleBassCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleBassSizeWrap" class="hud-slider" title="Size of bass/kick particles.">
+    Bass particle size: <span id="particleBassSizeLabel">100%</span>
+    <input id="particleBassSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleBassSpeedWrap" class="hud-slider" title="How fast bass/kick particles orbit.">
+    Bass particle speed: <span id="particleBassSpeedLabel">100%</span>
+    <input id="particleBassSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleBassJitterWrap" class="hud-slider" title="How much bass/kick particles wobble in and out.">
+    Bass particle jitter: <span id="particleBassJitterLabel">100%</span>
+    <input id="particleBassJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidHueWrap" class="hud-slider" title="Hue used for mid particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Mid particle hue: <span id="particleMidHueLabel">189&deg;</span>
+    <input id="particleMidHueSlider" type="range" min="0" max="360" value="189">
+  </label>
+  <label id="particleMidCountWrap" class="hud-slider" title="How many mid particles swarm around the core.">
+    Mid particle count: <span id="particleMidCountLabel">90</span>
+    <input id="particleMidCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleMidSizeWrap" class="hud-slider" title="Size of mid particles.">
+    Mid particle size: <span id="particleMidSizeLabel">100%</span>
+    <input id="particleMidSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidSpeedWrap" class="hud-slider" title="How fast mid particles orbit.">
+    Mid particle speed: <span id="particleMidSpeedLabel">100%</span>
+    <input id="particleMidSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidJitterWrap" class="hud-slider" title="How much mid particles wobble in and out.">
+    Mid particle jitter: <span id="particleMidJitterLabel">100%</span>
+    <input id="particleMidJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleHueWrap" class="hud-slider" title="Hue used for treble particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Treble particle hue: <span id="particleTrebleHueLabel">330&deg;</span>
+    <input id="particleTrebleHueSlider" type="range" min="0" max="360" value="330">
+  </label>
+  <label id="particleTrebleCountWrap" class="hud-slider" title="How many treble particles swarm around the core.">
+    Treble particle count: <span id="particleTrebleCountLabel">90</span>
+    <input id="particleTrebleCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleTrebleSizeWrap" class="hud-slider" title="Size of treble particles.">
+    Treble particle size: <span id="particleTrebleSizeLabel">100%</span>
+    <input id="particleTrebleSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleSpeedWrap" class="hud-slider" title="How fast treble particles orbit.">
+    Treble particle speed: <span id="particleTrebleSpeedLabel">100%</span>
+    <input id="particleTrebleSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleJitterWrap" class="hud-slider" title="How much treble particles wobble in and out.">
+    Treble particle jitter: <span id="particleTrebleJitterLabel">100%</span>
+    <input id="particleTrebleJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleFireworksEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the fireworks trigger colour, that band's particles launch from the core and burst outward instead of orbiting.">
+    Fireworks style on colour match
+    <input id="particleFireworksEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleFireworksColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the fireworks particle style.">
+    Fireworks trigger colour
+    <input id="particleFireworksColorInput" type="color" value="#ffcc00" aria-label="Fireworks trigger colour">
+  </label>
+  <label id="particleFlamesEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the flames trigger colour, that band's particles rise and flicker like flames instead of orbiting.">
+    Flames style on colour match
+    <input id="particleFlamesEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleFlamesColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the flames particle style.">
+    Flames trigger colour
+    <input id="particleFlamesColorInput" type="color" value="#ff5500" aria-label="Flames trigger colour">
+  </label>
+  <label id="particleDrippingEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the dripping trigger colour, that band's particles fall from the top instead of orbiting.">
+    Dripping style on colour match
+    <input id="particleDrippingEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleDrippingColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the dripping particle style.">
+    Dripping trigger colour
+    <input id="particleDrippingColorInput" type="color" value="#3399ff" aria-label="Dripping trigger colour">
+  </label>
   <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Redraws the particle nebula as hollow/stroked shapes instead of solid glow blobs, and (when Colour vision is on) overlays detected edges on the camera view. The three sliders control both at once.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the outline strokes/edge lines are.">
     Outline thickness: <span id="outlineThicknessLabel">2px</span>
