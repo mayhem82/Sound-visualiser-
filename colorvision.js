@@ -4,6 +4,7 @@
   const MAX_POINTS = 32;
   const STORAGE_KEY = "cvCalibrationPoints_v1";
   const PROFILES_KEY = "cvProfiles_colorVision_v1";
+  const BUILTIN_TEMPLATES_SEEDED_KEY = "builtinTemplatesSeeded_colorVision_v1";
   const ROTATE_KEY = "cvRotate180_v1";
   const SPREAD_KEY = "cvSpread_v1";
   const DEFAULT_SPREAD = 4;
@@ -669,6 +670,117 @@
     } catch (e) {
       profileStatus.textContent = "Could not save template (storage full or unavailable).";
     }
+  }
+
+  // Every setting's shipped default, in the same shape currentSettingsSnapshot()
+  // produces — the "nothing tuned yet" baseline the 7 built-in templates below
+  // each start from and override just the handful of fields that define them.
+  function fullDefaultsSnapshot() {
+    return {
+      blend: 100,
+      spread: DEFAULT_SPREAD,
+      rotate180: false,
+      cvdType: "none",
+      cvdStrength: 1,
+      outlinesEnabled: false,
+      outlineThickness: OUTLINE_DEFAULT_THICKNESS,
+      outlineBlend: OUTLINE_DEFAULT_BLEND,
+      outlineOpacity: OUTLINE_DEFAULT_OPACITY,
+      outlineColor: OUTLINE_DEFAULT_COLOR,
+      cartoonEnabled: false,
+      cartoonLevels: CARTOON_DEFAULT_LEVELS,
+      cartoonEdgeThickness: CARTOON_DEFAULT_EDGE_THICKNESS,
+      cartoonEdgeStrength: CARTOON_DEFAULT_EDGE_STRENGTH,
+      cartoonSaturation: CARTOON_DEFAULT_SATURATION,
+      cartoonTheme: CARTOON_DEFAULT_THEME,
+      cartoonThemeEnabled: false,
+      cartoonThemeLo: CARTOON_THEME_DEFAULT_LO,
+      cartoonThemeHi: CARTOON_THEME_DEFAULT_HI,
+      audioTintEnabled: false,
+      ...audioTintDefaultsSnapshot(),
+      beatFlashEnabled: false,
+      beatSensitivity: 0.5,
+      beatFlashSpeed: 0.5,
+      beatDimFlickerEnabled: false,
+      beatTorchInverted: false,
+      beatScreenFlashEnabled: false,
+      beatSyncDelayMs: 0
+    };
+  }
+
+  // 7 ready-made "everything tuned" templates, seeded once into the user's
+  // own templates list (see seedBuiltinTemplatesIfNeeded) so they show up
+  // in Saved colours -> Templates immediately, with 0 calibrated colours —
+  // calibration is inherently personal/live-camera, so these only cover the
+  // settings that don't depend on it (CVD type, audio tint, cartoon, beat
+  // flash, outlines).
+  function builtinTemplates() {
+    const base = fullDefaultsSnapshot();
+    const preset = (id, name, overrides) => ({ id, name, points: [], settings: { ...base, ...overrides } });
+    return [
+      preset("builtin-protan", "Protanopia correction", { cvdType: "protan", cvdStrength: 1 }),
+      preset("builtin-deutan", "Deuteranopia correction", { cvdType: "deutan", cvdStrength: 1 }),
+      preset("builtin-tritan", "Tritanopia correction", { cvdType: "tritan", cvdStrength: 1 }),
+      preset("builtin-chill-glow", "Chill audio glow", {
+        audioTintEnabled: true,
+        audioTintStrength: 0.25,
+        audioTintSatStrength: 0.1,
+        audioTintLightStrength: 0.05,
+        audioTintSmoothing: 0.85,
+        audioTintUpdateMs: 150
+      }),
+      preset("builtin-rave", "Rave mode", {
+        cartoonEnabled: true,
+        cartoonLevels: 5,
+        cartoonSaturation: 2.0,
+        cartoonThemeEnabled: true,
+        cartoonThemeLo: "#1a0033",
+        cartoonThemeHi: "#00f0ff",
+        audioTintEnabled: true,
+        audioTintStrength: 0.85,
+        audioTintSatStrength: 0.4,
+        audioTintLightStrength: 0.15,
+        audioTintSmoothing: 0.4,
+        audioTintExtraBandsVisible: true,
+        audioTintBand4Enabled: true,
+        audioTintBand5Enabled: true,
+        audioTintBand6Enabled: true,
+        beatFlashEnabled: true,
+        beatSensitivity: 0.8,
+        beatFlashSpeed: 0.9,
+        beatScreenFlashEnabled: true
+      }),
+      preset("builtin-cartoon-sketch", "Cartoon sketch (outlined)", {
+        cartoonEnabled: true,
+        cartoonLevels: 6,
+        cartoonEdgeThickness: 3,
+        cartoonEdgeStrength: 0.8,
+        cartoonSaturation: 1.5,
+        outlinesEnabled: true,
+        outlineThickness: 3,
+        outlineBlend: 0.6,
+        outlineOpacity: 1,
+        outlineColor: "#ffcc00"
+      }),
+      preset("builtin-clean", "Clean correction (reset)", { spread: 12 })
+    ];
+  }
+
+  // Adds the 7 built-ins to the user's own template list exactly once —
+  // tracked by a separate flag rather than "profiles is empty", so deleting
+  // one (or all of them) later doesn't bring it back on the next reload.
+  function seedBuiltinTemplatesIfNeeded() {
+    try {
+      if (localStorage.getItem(BUILTIN_TEMPLATES_SEEDED_KEY) === "1") return;
+    } catch (e) {
+      return;
+    }
+    const existingIds = new Set(profiles.map((p) => p.id));
+    builtinTemplates().forEach((tpl) => {
+      if (!existingIds.has(tpl.id)) profiles.push(tpl);
+    });
+    saveProfiles();
+    try { localStorage.setItem(BUILTIN_TEMPLATES_SEEDED_KEY, "1"); } catch (e) {}
   }
 
   function loadRotatePref() {
@@ -4183,6 +4295,7 @@
   });
 
   updatePointsCount();
+  seedBuiltinTemplatesIfNeeded();
   renderProfileSelect();
   blendLabel.textContent = `${blendSlider.value}%`;
   spreadSlider.value = String(spread);
