@@ -23,6 +23,17 @@
   const freqHighSlider = document.getElementById("freqHighSlider");
   const freqRangeLabel = document.getElementById("freqRangeLabel");
   const freqAllBtn = document.getElementById("freqAllBtn");
+  const bassBeatTriggerCheckbox = document.getElementById("bassBeatTriggerCheckbox");
+  const midBeatTriggerCheckbox = document.getElementById("midBeatTriggerCheckbox");
+  const trebleBeatTriggerCheckbox = document.getElementById("trebleBeatTriggerCheckbox");
+  const volumeSpikeTriggerCheckbox = document.getElementById("volumeSpikeTriggerCheckbox");
+  const colourMatchTriggerCheckbox = document.getElementById("colourMatchTriggerCheckbox");
+  const colourMatchTriggerColorInput = document.getElementById("colourMatchTriggerColorInput");
+  const colourMatchIntervalSlider = document.getElementById("colourMatchIntervalSlider");
+  const colourMatchIntervalLabel = document.getElementById("colourMatchIntervalLabel");
+  const timerTriggerCheckbox = document.getElementById("timerTriggerCheckbox");
+  const timerIntervalSlider = document.getElementById("timerIntervalSlider");
+  const timerIntervalLabel = document.getElementById("timerIntervalLabel");
   const blackoutEl = document.getElementById("blackout");
   const syncDelaySlider = document.getElementById("syncDelaySlider");
   const syncDelayLabel = document.getElementById("syncDelayLabel");
@@ -288,6 +299,19 @@
   const SYNC_DELAY_KEY = "syncDelay_soundNebula_v1";
   const NEBULA_ENABLED_KEY = "nebulaEnabled_soundNebula_v1";
   const BLEND_KEY = "blend_soundNebula_v1";
+  // Flash trigger sources — combinable: any enabled one independently fires
+  // the same torch/vibrate/screen-flash/colour-vision-flash pulse a bass
+  // beat always fired. Bass defaults on (the original always-on behaviour);
+  // everything else is new and defaults off.
+  const BASS_BEAT_TRIGGER_KEY = "bassBeatTrigger_soundNebula_v1";
+  const MID_BEAT_TRIGGER_KEY = "midBeatTrigger_soundNebula_v1";
+  const TREBLE_BEAT_TRIGGER_KEY = "trebleBeatTrigger_soundNebula_v1";
+  const VOLUME_SPIKE_TRIGGER_KEY = "volumeSpikeTrigger_soundNebula_v1";
+  const COLOUR_MATCH_TRIGGER_KEY = "colourMatchTrigger_soundNebula_v1";
+  const COLOUR_MATCH_TRIGGER_COLOR_KEY = "colourMatchTriggerColor_soundNebula_v1";
+  const COLOUR_MATCH_INTERVAL_KEY = "colourMatchInterval_soundNebula_v1";
+  const TIMER_TRIGGER_KEY = "timerTrigger_soundNebula_v1";
+  const TIMER_INTERVAL_KEY = "timerInterval_soundNebula_v1";
 
   function loadBoolPref(key, fallback) {
     try {
@@ -456,6 +480,29 @@
   let vibrateSupported = typeof navigator.vibrate === "function";
   let bassHistory = [];
   let lastBeatAt = 0;
+  let bassBeatTriggerEnabled = loadBoolPref(BASS_BEAT_TRIGGER_KEY, true);
+  let midBeatTriggerEnabled = loadBoolPref(MID_BEAT_TRIGGER_KEY, false);
+  let trebleBeatTriggerEnabled = loadBoolPref(TREBLE_BEAT_TRIGGER_KEY, false);
+  let volumeSpikeTriggerEnabled = loadBoolPref(VOLUME_SPIKE_TRIGGER_KEY, false);
+  let colourMatchTriggerEnabled = loadBoolPref(COLOUR_MATCH_TRIGGER_KEY, false);
+  let colourMatchTriggerColor = (() => {
+    try {
+      const raw = localStorage.getItem(COLOUR_MATCH_TRIGGER_COLOR_KEY);
+      return /^#[0-9a-f]{6}$/i.test(raw) ? raw : "#ffffff";
+    } catch (e) {
+      return "#ffffff";
+    }
+  })();
+  let colourMatchTriggerHue = cvRgbToHue(...cvHexToRgb01(colourMatchTriggerColor));
+  let colourMatchIntervalMs = loadOutlineNumberPref(COLOUR_MATCH_INTERVAL_KEY, 400);
+  let timerTriggerEnabled = loadBoolPref(TIMER_TRIGGER_KEY, false);
+  let timerIntervalMs = loadOutlineNumberPref(TIMER_INTERVAL_KEY, 1000);
+  let lastRms = 0;
+  let lastColourMatchFlashAt = 0;
+  let lastTimerFlashAt = 0;
+  const midTriggerState = { history: [], lastAt: 0 };
+  const trebleTriggerState = { history: [], lastAt: 0 };
+  const volumeTriggerState = { history: [], lastAt: 0 };
   let sensitivity = loadOutlineNumberPref(SENSITIVITY_KEY, 50) / 100; // 0 (least sensitive) .. 1 (most sensitive)
   let flashSpeed = loadOutlineNumberPref(FLASH_SPEED_KEY, 50) / 100; // 0 (slow) .. 1 (fast strobe)
   let beatCooldownMs = 180;
@@ -683,6 +730,7 @@
       sumSq += v * v;
     }
     const rms = Math.sqrt(sumSq / timeData.length);
+    lastRms = rms;
     smoothedVolume += (rms - smoothedVolume) * 0.15;
 
     for (const band of BANDS) {
@@ -690,10 +738,14 @@
         (bandEnergy[band.name] - bandEnergySmoothed[band.name]) * 0.2;
     }
 
-    if (flashEnabled || screenFlashEnabled || colourVisionFlashEnabled) detectBeat();
+    if (flashEnabled || screenFlashEnabled || colourVisionFlashEnabled) detectTriggers();
   }
 
-  function detectBeat() {
+  // Bass beat: the original absolute-floor + relative-jump detector,
+  // unchanged — kept separate from the generic detector below so its
+  // already-tuned feel doesn't shift now that it's one of several
+  // combinable triggers instead of the only one.
+  function detectBassBeat() {
     const bass = bandEnergy.bass;
     bassHistory.push(bass);
     if (bassHistory.length > BEAT_HISTORY_LEN) bassHistory.shift();
@@ -715,12 +767,72 @@
       // How far above threshold this hit landed, 0 (just cleared the bar)
       // to 1 (very strong hit) — drives a proportionally longer flash.
       const strength = Math.min(1, Math.max(0, (bass - absThreshold) / (0.85 - absThreshold)));
-      if (syncDelayMs > 0) {
-        setTimeout(() => fireBeatEffects(strength), syncDelayMs);
-      } else {
-        fireBeatEffects(strength);
-      }
+      fireTrigger(strength);
     }
+  }
+
+  // Generic relative-jump detector for the newer trigger sources (mid/
+  // treble beats, volume spikes) — scale-independent (works whether value
+  // is band energy 0..1 or RMS volume, which sits on a much smaller scale),
+  // using a small absolute floor just to ignore near-silence.
+  function detectEnergyTrigger(state, value, floor) {
+    state.history.push(value);
+    if (state.history.length > BEAT_HISTORY_LEN) state.history.shift();
+    if (state.history.length < 8) return;
+    if (value < floor) return;
+
+    const relThreshold = lerp(1.6, 1.12, sensitivity);
+    const avg = state.history.reduce((a, b) => a + b, 0) / state.history.length;
+    const now = performance.now();
+    if (value > avg * relThreshold && now - state.lastAt > beatCooldownMs) {
+      state.lastAt = now;
+      const strength = Math.min(1, Math.max(0, value / (avg * relThreshold) - 1));
+      fireTrigger(strength);
+    }
+  }
+
+  // While any particle band's own hue is close to the trigger colour,
+  // fires on a steady interval instead of reacting to a specific audio
+  // event — a colour-gated pulse rather than a beat.
+  function detectColourMatchTrigger() {
+    if (!colourMatchTriggerEnabled) return;
+    const matched = BANDS.some((band) => {
+      const diff = Math.abs(((band.hue - colourMatchTriggerHue + 540) % 360) - 180);
+      return diff <= PARTICLE_STYLE_HUE_TOLERANCE;
+    });
+    if (!matched) return;
+    const now = performance.now();
+    if (now - lastColourMatchFlashAt < colourMatchIntervalMs) return;
+    lastColourMatchFlashAt = now;
+    fireTrigger(Math.min(1, smoothedVolume * 3));
+  }
+
+  // Fires on a steady timer, entirely independent of audio.
+  function detectTimerTrigger() {
+    if (!timerTriggerEnabled) return;
+    const now = performance.now();
+    if (now - lastTimerFlashAt < timerIntervalMs) return;
+    lastTimerFlashAt = now;
+    fireTrigger(Math.min(1, smoothedVolume * 3 + 0.3));
+  }
+
+  function fireTrigger(strength) {
+    if (syncDelayMs > 0) {
+      setTimeout(() => fireBeatEffects(strength), syncDelayMs);
+    } else {
+      fireBeatEffects(strength);
+    }
+  }
+
+  // Checks every enabled trigger source each frame — any number can be on
+  // together, each independently firing the same pulse.
+  function detectTriggers() {
+    if (bassBeatTriggerEnabled) detectBassBeat();
+    if (midBeatTriggerEnabled) detectEnergyTrigger(midTriggerState, bandEnergy.mid, 0.05);
+    if (trebleBeatTriggerEnabled) detectEnergyTrigger(trebleTriggerState, bandEnergy.treble, 0.05);
+    if (volumeSpikeTriggerEnabled) detectEnergyTrigger(volumeTriggerState, lastRms, 0.015);
+    detectColourMatchTrigger();
+    detectTimerTrigger();
   }
 
   function fireBeatEffects(strength) {
@@ -2769,7 +2881,16 @@
       particleFlamesEnabled: particleStyles.flames.enabled,
       particleFlamesColor: particleStyles.flames.color,
       particleDrippingEnabled: particleStyles.dripping.enabled,
-      particleDrippingColor: particleStyles.dripping.color
+      particleDrippingColor: particleStyles.dripping.color,
+      bassBeatTriggerEnabled,
+      midBeatTriggerEnabled,
+      trebleBeatTriggerEnabled,
+      volumeSpikeTriggerEnabled,
+      colourMatchTriggerEnabled,
+      colourMatchTriggerColor,
+      colourMatchIntervalMs,
+      timerTriggerEnabled,
+      timerIntervalMs
     };
   }
 
@@ -2949,6 +3070,50 @@
       }
     });
     resolveBandStyles();
+    if (typeof s.bassBeatTriggerEnabled === "boolean") {
+      bassBeatTriggerEnabled = s.bassBeatTriggerEnabled;
+      bassBeatTriggerCheckbox.checked = bassBeatTriggerEnabled;
+      saveBoolPref(BASS_BEAT_TRIGGER_KEY, bassBeatTriggerEnabled);
+    }
+    if (typeof s.midBeatTriggerEnabled === "boolean") {
+      midBeatTriggerEnabled = s.midBeatTriggerEnabled;
+      midBeatTriggerCheckbox.checked = midBeatTriggerEnabled;
+      saveBoolPref(MID_BEAT_TRIGGER_KEY, midBeatTriggerEnabled);
+    }
+    if (typeof s.trebleBeatTriggerEnabled === "boolean") {
+      trebleBeatTriggerEnabled = s.trebleBeatTriggerEnabled;
+      trebleBeatTriggerCheckbox.checked = trebleBeatTriggerEnabled;
+      saveBoolPref(TREBLE_BEAT_TRIGGER_KEY, trebleBeatTriggerEnabled);
+    }
+    if (typeof s.volumeSpikeTriggerEnabled === "boolean") {
+      volumeSpikeTriggerEnabled = s.volumeSpikeTriggerEnabled;
+      volumeSpikeTriggerCheckbox.checked = volumeSpikeTriggerEnabled;
+      saveBoolPref(VOLUME_SPIKE_TRIGGER_KEY, volumeSpikeTriggerEnabled);
+    }
+    if (typeof s.colourMatchTriggerEnabled === "boolean") {
+      colourMatchTriggerEnabled = s.colourMatchTriggerEnabled;
+      colourMatchTriggerCheckbox.checked = colourMatchTriggerEnabled;
+      saveBoolPref(COLOUR_MATCH_TRIGGER_KEY, colourMatchTriggerEnabled);
+    }
+    if (typeof s.colourMatchTriggerColor === "string" && /^#[0-9a-f]{6}$/i.test(s.colourMatchTriggerColor)) {
+      colourMatchTriggerColor = s.colourMatchTriggerColor;
+      colourMatchTriggerHue = cvRgbToHue(...cvHexToRgb01(colourMatchTriggerColor));
+      colourMatchTriggerColorInput.value = colourMatchTriggerColor;
+      try { localStorage.setItem(COLOUR_MATCH_TRIGGER_COLOR_KEY, colourMatchTriggerColor); } catch (e) {}
+    }
+    if (Number.isFinite(s.colourMatchIntervalMs)) {
+      colourMatchIntervalSlider.value = String(s.colourMatchIntervalMs);
+      updateColourMatchInterval();
+    }
+    if (typeof s.timerTriggerEnabled === "boolean") {
+      timerTriggerEnabled = s.timerTriggerEnabled;
+      timerTriggerCheckbox.checked = timerTriggerEnabled;
+      saveBoolPref(TIMER_TRIGGER_KEY, timerTriggerEnabled);
+    }
+    if (Number.isFinite(s.timerIntervalMs)) {
+      timerIntervalSlider.value = String(s.timerIntervalMs);
+      updateTimerInterval();
+    }
   }
 
   function renderProfileSelect() {
@@ -3322,6 +3487,18 @@
     syncDelayMs = Number(syncDelaySlider.value);
     syncDelayLabel.textContent = `${syncDelayMs} ms`;
     saveNumberPref(SYNC_DELAY_KEY, syncDelayMs);
+  }
+
+  function updateColourMatchInterval() {
+    colourMatchIntervalMs = Number(colourMatchIntervalSlider.value);
+    colourMatchIntervalLabel.textContent = `${colourMatchIntervalMs} ms`;
+    saveNumberPref(COLOUR_MATCH_INTERVAL_KEY, colourMatchIntervalMs);
+  }
+
+  function updateTimerInterval() {
+    timerIntervalMs = Number(timerIntervalSlider.value);
+    timerIntervalLabel.textContent = `${timerIntervalMs} ms`;
+    saveNumberPref(TIMER_INTERVAL_KEY, timerIntervalMs);
   }
 
   // ---- Tablet viewer (WebRTC, signaled over public MQTT relays) ----
@@ -3864,6 +4041,50 @@
     updateFreqRange("low");
   });
   syncDelaySlider.addEventListener("input", updateSyncDelay);
+
+  bassBeatTriggerCheckbox.checked = bassBeatTriggerEnabled;
+  bassBeatTriggerCheckbox.addEventListener("change", () => {
+    bassBeatTriggerEnabled = bassBeatTriggerCheckbox.checked;
+    saveBoolPref(BASS_BEAT_TRIGGER_KEY, bassBeatTriggerEnabled);
+  });
+  midBeatTriggerCheckbox.checked = midBeatTriggerEnabled;
+  midBeatTriggerCheckbox.addEventListener("change", () => {
+    midBeatTriggerEnabled = midBeatTriggerCheckbox.checked;
+    saveBoolPref(MID_BEAT_TRIGGER_KEY, midBeatTriggerEnabled);
+  });
+  trebleBeatTriggerCheckbox.checked = trebleBeatTriggerEnabled;
+  trebleBeatTriggerCheckbox.addEventListener("change", () => {
+    trebleBeatTriggerEnabled = trebleBeatTriggerCheckbox.checked;
+    saveBoolPref(TREBLE_BEAT_TRIGGER_KEY, trebleBeatTriggerEnabled);
+  });
+  volumeSpikeTriggerCheckbox.checked = volumeSpikeTriggerEnabled;
+  volumeSpikeTriggerCheckbox.addEventListener("change", () => {
+    volumeSpikeTriggerEnabled = volumeSpikeTriggerCheckbox.checked;
+    saveBoolPref(VOLUME_SPIKE_TRIGGER_KEY, volumeSpikeTriggerEnabled);
+  });
+  colourMatchTriggerCheckbox.checked = colourMatchTriggerEnabled;
+  colourMatchTriggerCheckbox.addEventListener("change", () => {
+    colourMatchTriggerEnabled = colourMatchTriggerCheckbox.checked;
+    saveBoolPref(COLOUR_MATCH_TRIGGER_KEY, colourMatchTriggerEnabled);
+  });
+  colourMatchTriggerColorInput.value = colourMatchTriggerColor;
+  colourMatchTriggerColorInput.addEventListener("input", () => {
+    colourMatchTriggerColor = colourMatchTriggerColorInput.value;
+    colourMatchTriggerHue = cvRgbToHue(...cvHexToRgb01(colourMatchTriggerColor));
+    try { localStorage.setItem(COLOUR_MATCH_TRIGGER_COLOR_KEY, colourMatchTriggerColor); } catch (e) {}
+  });
+  colourMatchIntervalSlider.addEventListener("input", updateColourMatchInterval);
+  colourMatchIntervalSlider.value = String(colourMatchIntervalMs);
+  colourMatchIntervalLabel.textContent = `${colourMatchIntervalMs} ms`;
+  timerTriggerCheckbox.checked = timerTriggerEnabled;
+  timerTriggerCheckbox.addEventListener("change", () => {
+    timerTriggerEnabled = timerTriggerCheckbox.checked;
+    saveBoolPref(TIMER_TRIGGER_KEY, timerTriggerEnabled);
+  });
+  timerIntervalSlider.addEventListener("input", updateTimerInterval);
+  timerIntervalSlider.value = String(timerIntervalMs);
+  timerIntervalLabel.textContent = `${timerIntervalMs} ms`;
+
   cameraBgBtn.addEventListener("click", toggleCameraBackground);
   cameraSelect.addEventListener("change", () => switchCamera(cameraSelect.value));
   if ("mediaDevices" in navigator && navigator.mediaDevices.addEventListener) {
