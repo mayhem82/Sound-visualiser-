@@ -1136,11 +1136,6 @@
 
   function toggleOutlinesMode() {
     outlinesEnabled = !outlinesEnabled;
-    if (outlinesEnabled && cartoonEnabled) {
-      cartoonEnabled = false;
-      saveCartoonEnabledPref();
-      updateCartoonUi();
-    }
     saveOutlinesEnabledPref();
     updateOutlinesUi();
   }
@@ -1189,9 +1184,9 @@
     try { localStorage.setItem(CARTOON_THEME_HI_KEY, cartoonThemeHi); } catch (e) {}
   }
 
-  // Cartoon mode and Outlines mode both draw edge lines over the camera
-  // view, so they're mutually exclusive rather than stacked — turning one
-  // on turns the other off, same as how the shader picks only one branch.
+  // Cartoon mode and Outlines mode can both be on at once — the shader
+  // applies Cartoon's posterize + ink lines first, then layers Outlines'
+  // own coloured edge overlay on top of that result (see main()).
   function updateCartoonUi() {
     cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
     cartoonBtn.classList.toggle("active", cartoonEnabled);
@@ -1204,11 +1199,6 @@
 
   function toggleCartoonMode() {
     cartoonEnabled = !cartoonEnabled;
-    if (cartoonEnabled && outlinesEnabled) {
-      outlinesEnabled = false;
-      saveOutlinesEnabledPref();
-      updateOutlinesUi();
-    }
     saveCartoonEnabledPref();
     updateCartoonUi();
   }
@@ -1499,6 +1489,10 @@
 
       vec3 filled = mix(original, corrected, uBlend);
       vec3 finalColor = filled;
+      // Cartoon and Outlines can both be on at once: Cartoon's posterize +
+      // ink lines run first (if enabled), then Outlines' own coloured edge
+      // overlay layers on top of whatever that produced — a plain outline
+      // over flat cartoon colours instead of one replacing the other.
       if (uCartoonEnabled > 0.5) {
         vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
         if (uCartoonThemeEnabled > 0.5) {
@@ -1506,10 +1500,11 @@
         }
         float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
         finalColor = mix(toon, vec3(0.02), line);
-      } else if (uOutlineEnabled > 0.5) {
+      }
+      if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv, uOutlineThickness) * uOutlineOpacity;
         vec3 outlineColor = uOutlineColor * edge;
-        finalColor = mix(filled, outlineColor, uOutlineBlend);
+        finalColor = mix(finalColor, outlineColor, uOutlineBlend);
       }
 
       // Audio colour tint: a final nudge toward the live mic's dominant band
