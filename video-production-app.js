@@ -286,6 +286,15 @@
     PARAMS.forEach((p) => { if (p.kind !== "trigger") setParam(p.id, p.default); });
   }
 
+  // Puts liveState back to exactly how it looked before a recording
+  // session started, so finishing (Restart/Discard/Save) never leaves
+  // the working canvas — and whatever tab you switch to next, Live
+  // included — parked on whatever the recording happened to end on.
+  function restoreStartingState(startingState) {
+    resetAllParams();
+    Object.entries(startingState).forEach(([id, v]) => setParam(id, v));
+  }
+
   // ============================================================
   // RECORDER — captures parameter changes with time relative to
   // record-start. Continuous params become keyframe tracks; discrete
@@ -534,10 +543,10 @@
   });
   restartBtn.addEventListener("click", () => {
     if (!draft) return;
-    resetAllParams();
-    Object.entries(draft.startingState).forEach(([id, v]) => setParam(id, v));
+    restoreStartingState(draft.startingState);
   });
   discardBtn.addEventListener("click", () => {
+    if (draft) restoreStartingState(draft.startingState);
     draft = null;
     studioStop();
     nameInput.value = "";
@@ -559,6 +568,7 @@
       chainTemplateId: chainSelect.value || null,
       thumbnail: thumbImg.src && !thumbImg.classList.contains("hide") ? thumbImg.src : null
     });
+    restoreStartingState(draft.startingState);
     draft = null;
     nameInput.value = "";
     durationEl.textContent = "0.00s";
