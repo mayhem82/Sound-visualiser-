@@ -282,19 +282,13 @@
     if (recorder.isRecording) recorder.log(id, value);
   }
 
-  function resetAllParams() {
-    PARAMS.forEach((p) => { if (p.kind !== "trigger") setParam(p.id, p.default); });
-  }
-
-  // Snaps the params that were actually touched during a recording
-  // session back to their pre-recording values, so finishing
-  // (Restart/Discard/Save) doesn't leave those specific sliders parked
-  // on wherever the recording happened to end. Deliberately does NOT
-  // touch anything else: a Template plays back "against whatever's
-  // live right now" (see the file-header note above), so ambient
-  // toggles like Cartoon/Duo Colour that were switched on before
-  // Record was pressed — and never touched again — must survive
-  // Save/Discard, or the template has nothing left to play against.
+  // Snaps every param back to its full pre-recording snapshot, so
+  // finishing (Restart/Discard/Save) doesn't leave Studio parked on
+  // wherever the recording happened to end — and so Studio's control
+  // panel never bleeds into what Live mode shows next. This is the
+  // same full snapshot PlaybackInstance applies when a Template is
+  // triggered, so Studio and Live always agree on what the recording
+  // actually looked like.
   function restoreStartingState(startingState) {
     Object.entries(startingState).forEach(([id, v]) => setParam(id, v));
   }
@@ -346,7 +340,15 @@
         tracks: Object.entries(this.tracks).map(([param, keyframes]) => ({ param, keyframes })),
         events: this.events.slice().sort((a, b) => a.t - b.t),
         duration: Math.max(duration, trackDuration, 1),
-        startingState: Object.fromEntries([...this.touched].map((id) => [id, this.startingState[id]]))
+        // Full snapshot, not just touched params: a saved Template must
+        // reproduce the exact look it was authored with — ambient
+        // toggles (Cartoon mode, Duo Colour) that were switched on
+        // before Record was pressed and never touched again are still
+        // part of that look. touchedIds tracks which params the
+        // recording itself actually animates, for end-of-playback
+        // "return"/"base" behaviour.
+        startingState: { ...this.startingState },
+        touchedIds: [...this.touched]
       };
     }
   };
@@ -389,6 +391,14 @@
       this.reflectDom = reflectDom;
       this.chainDepth = chainDepth;
       this.status = "running";
+      // Studio only generates Templates — it isn't a live preview feed
+      // into Live mode. Triggering a Template must reproduce exactly
+      // what was recorded, so snap straight to its full authored base
+      // (including ambient toggles that were on throughout recording)
+      // before tick() starts layering the recorded tracks/events on top.
+      if (template.startingState) {
+        Object.entries(template.startingState).forEach(([id, v]) => setParam(id, v, { reflectDom }));
+      }
     }
     elapsed() { return performance.now() - this.startPerf; }
     tick() {
@@ -412,7 +422,7 @@
       if (this.finished) return;
       this.finished = true;
       this.status = "completed";
-      const touched = Object.keys(tpl_startingState(this.template));
+      const touched = this.template.touchedIds || Object.keys(tpl_startingState(this.template));
       switch (this.template.endBehavior) {
         case "return":
           touched.forEach((id) => setParam(id, this.template.startingState[id], { reflectDom: this.reflectDom }));
@@ -474,13 +484,13 @@
     // Every save is a brand-new immutable record — editing a Template
     // (re-recording under the same name) never mutates an existing row,
     // so Takes that reference an old version keep working identically.
-    save({ name, tracks, events, duration, startingState, endBehavior, chainTemplateId, thumbnail }) {
+    save({ name, tracks, events, duration, startingState, touchedIds, endBehavior, chainTemplateId, thumbnail }) {
       const version = this.latestVersionFor(name) + 1;
       const tpl = {
         id: "tpl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         name, version,
         createdAt: new Date().toISOString(),
-        duration, startingState, tracks, events,
+        duration, startingState, touchedIds: touchedIds || Object.keys(startingState), tracks, events,
         endBehavior: endBehavior || "return",
         chainTemplateId: chainTemplateId || null,
         thumbnail: thumbnail || null,
@@ -568,6 +578,7 @@
       events: draft.events,
       duration: draft.duration,
       startingState: draft.startingState,
+      touchedIds: draft.touchedIds,
       endBehavior: endBehaviorSelect.value,
       chainTemplateId: chainSelect.value || null,
       thumbnail: thumbImg.src && !thumbImg.classList.contains("hide") ? thumbImg.src : null

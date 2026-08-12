@@ -12,10 +12,13 @@
   // explicit that colorvision.html must not be touched or broken.
   //
   // On top of that pipeline sits the actual point of this page: a
-  // recorded-automation engine. A Template is NOT a saved settings
-  // snapshot — it is a recording of parameter values *changing over
-  // time*, played back against whatever's live in front of the
-  // camera right now. See PARAMS/Recorder/Player/TemplateStore below.
+  // recorded-automation engine. A Template is a full snapshot of the
+  // control panel at record-start, plus a recording of the params
+  // that changed *over time* on top of it. Triggering a Template —
+  // in Studio or in Live — always reproduces that exact snapshot
+  // first, so playback never depends on whatever's currently live;
+  // Studio only authors Templates, it isn't a live preview feed into
+  // Live mode. See PARAMS/Recorder/Player/TemplateStore below.
   // ============================================================
 
   const CALIBRATION_STORAGE_KEY = "cvCalibrationPoints_v1";
