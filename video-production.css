@@ -59,6 +59,8 @@
 .vp-btn-secondary { background: rgba(255, 255, 255, 0.03); }
 .vp-btn-record { background: #7f1d1d; border-color: #ef4444; color: #fff; }
 .vp-btn-small { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.vp-btn-danger { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #fca5a5; }
+.vp-btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
 .vp-file-btn { display: inline-flex; align-items: center; justify-content: center; }
 
 input[type="text"], select {
@@ -289,6 +291,8 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
 .vp-take-card video { width: 100%; border-radius: 10px; }
 .vp-take-card-novideo { grid-template-columns: 1fr auto; }
 .vp-take-info { font-size: 14px; line-height: 1.5; }
+.vp-take-actions { display: flex; gap: 8px; grid-column: 1 / -1; }
+.vp-take-card-novideo .vp-take-actions { grid-column: auto; }
 
 @media (min-width: 900px) {
   .vp-controls-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }

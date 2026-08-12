@@ -790,6 +790,30 @@
     renderTakesList();
   }
 
+  function deleteTake(id) {
+    if (!window.confirm("Delete this take? This can't be undone.")) return;
+    const idx = takesInMemory.findIndex((k) => k.meta.id === id);
+    if (idx !== -1) {
+      URL.revokeObjectURL(takesInMemory[idx].videoUrl);
+      takesInMemory.splice(idx, 1);
+    }
+    saveTakesMeta(loadTakesMeta().filter((m) => m.id !== id));
+    renderTakesList();
+  }
+
+  function makeTakeActions(meta) {
+    const actions = document.createElement("div");
+    actions.className = "vp-take-actions";
+    const exportBtn = document.createElement("button");
+    exportBtn.type = "button"; exportBtn.className = "vp-btn vp-btn-small"; exportBtn.textContent = "Export JSON";
+    exportBtn.addEventListener("click", () => downloadJson(meta, `take-${meta.id}.json`));
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button"; deleteBtn.className = "vp-btn vp-btn-small vp-btn-danger"; deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", () => deleteTake(meta.id));
+    actions.append(exportBtn, deleteBtn);
+    return actions;
+  }
+
   function renderTakesList() {
     takesList.innerHTML = "";
     takesInMemory.slice().reverse().forEach(({ meta, videoUrl }) => {
@@ -800,10 +824,7 @@
       const info = document.createElement("div");
       info.className = "vp-take-info";
       info.innerHTML = `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s)<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}`;
-      const exportBtn = document.createElement("button");
-      exportBtn.type = "button"; exportBtn.className = "vp-btn vp-btn-small"; exportBtn.textContent = "Export JSON";
-      exportBtn.addEventListener("click", () => downloadJson(meta, `take-${meta.id}.json`));
-      card.append(v, info, exportBtn);
+      card.append(v, info, makeTakeActions(meta));
       takesList.appendChild(card);
     });
     // Restore any takes metadata (video not persisted) from a prior session.
@@ -811,11 +832,10 @@
     persistedOnly.slice().reverse().forEach((meta) => {
       const card = document.createElement("div");
       card.className = "vp-take-card vp-take-card-novideo";
-      card.innerHTML = `<div class="vp-take-info"><strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s) · video not kept across reloads<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}</div>`;
-      const exportBtn = document.createElement("button");
-      exportBtn.type = "button"; exportBtn.className = "vp-btn vp-btn-small"; exportBtn.textContent = "Export JSON";
-      exportBtn.addEventListener("click", () => downloadJson(meta, `take-${meta.id}.json`));
-      card.appendChild(exportBtn);
+      const info = document.createElement("div");
+      info.className = "vp-take-info";
+      info.innerHTML = `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s) · video not kept across reloads<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}`;
+      card.append(info, makeTakeActions(meta));
       takesList.appendChild(card);
     });
   }
