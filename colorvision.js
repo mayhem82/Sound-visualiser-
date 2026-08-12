@@ -283,6 +283,7 @@
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
+  const glassesModeBtn = document.getElementById("glassesModeBtn");
   const torchBtn = document.getElementById("torchBtn");
   const exposureModeBtn = document.getElementById("exposureModeBtn");
   const shutterWrap = document.getElementById("shutterWrap");
@@ -4129,6 +4130,55 @@
     rotateBtn.classList.toggle("active", rotate180);
     rotateBtn.setAttribute("aria-pressed", String(rotate180));
     saveRotatePref();
+  });
+
+  // ---- Glasses mode ----
+  // Fullscreen + HUD hidden + landscape where the browser allows it —
+  // meant for viewing this corrected feed on tethered AR/smart glasses (or
+  // any other external display mirroring the screen), which are typically
+  // landscape and have no room or need for the on-screen HUD. Whatever the
+  // glasses actually show is whatever this page already renders — this
+  // doesn't change the correction pipeline at all, only how the page
+  // presents itself once it's on an external display.
+  let glassesModeActive = false;
+
+  async function enterGlassesMode() {
+    try {
+      const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (req) await req.call(document.documentElement);
+    } catch (e) { /* fullscreen not available/permitted — still hide the HUD below */ }
+    try {
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape");
+    } catch (e) { /* not supported on this device/browser — ignore */ }
+    glassesModeActive = true;
+    hud.classList.add("hide");
+    glassesModeBtn.classList.add("active");
+    glassesModeBtn.setAttribute("aria-pressed", "true");
+  }
+
+  function exitGlassesMode() {
+    glassesModeActive = false;
+    glassesModeBtn.classList.remove("active");
+    glassesModeBtn.setAttribute("aria-pressed", "false");
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* ignore */ }
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) {
+      exit.call(document).catch ? exit.call(document).catch(() => {}) : exit.call(document);
+    }
+  }
+
+  glassesModeBtn.addEventListener("click", () => {
+    if (glassesModeActive) exitGlassesMode();
+    else enterGlassesMode();
+  });
+
+  // The browser's own fullscreen-exit gesture (Esc key, swipe-down on
+  // mobile, back gesture) doesn't go through exitGlassesMode() above, so
+  // this catches that path too and keeps the button/HUD state in sync.
+  ["fullscreenchange", "webkitfullscreenchange"].forEach((evt) => {
+    document.addEventListener(evt, () => {
+      if (glassesModeActive && !document.fullscreenElement && !document.webkitFullscreenElement) exitGlassesMode();
+    });
   });
 
   torchBtn.addEventListener("click", toggleTorch);
