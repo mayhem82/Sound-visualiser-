@@ -247,10 +247,14 @@
       vec3 filled = mix(original, corrected, uBlend);
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
-        vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
-        if (uDuoEnabled > 0.5) { toon = mix(toon, cvDuoColour(toon, uDuoLo, uDuoHi), uDuoBlend); }
+        finalColor = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
+      }
+      if (uDuoEnabled > 0.5) {
+        finalColor = mix(finalColor, cvDuoColour(finalColor, uDuoLo, uDuoHi), uDuoBlend);
+      }
+      if (uCartoonEnabled > 0.5) {
         float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
-        finalColor = mix(toon, vec3(0.02), line);
+        finalColor = mix(finalColor, vec3(0.02), line);
       }
       if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv, uOutlineThickness) * uOutlineOpacity;
