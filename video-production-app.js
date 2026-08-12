@@ -27,6 +27,7 @@
     { id: "cartoonEdgeStrength", label: "Cartoon edge strength", kind: "range", min: 0, max: 100, step: 1, default: 60, unit: "%", group: "Cartoon" },
     { id: "cartoonSaturation", label: "Cartoon saturation", kind: "range", min: 100, max: 300, step: 1, default: 135, unit: "%", group: "Cartoon" },
     { id: "duoColourEnabled", label: "Duo Colour", kind: "toggle", default: false, group: "Duo Colour" },
+    { id: "duoColourBlend", label: "Duo Colour blend", kind: "range", min: 0, max: 100, step: 1, default: 100, unit: "%", group: "Duo Colour" },
     { id: "duoColourLo", label: "Duo Colour shadows", kind: "color", default: "#0d0d0d", group: "Duo Colour" },
     { id: "duoColourHi", label: "Duo Colour highlights", kind: "color", default: "#f2f2f2", group: "Duo Colour" },
     { id: "exposure", label: "Exposure", kind: "range", min: -100, max: 100, step: 1, default: 0, group: "Image" },
@@ -114,6 +115,7 @@
       gl.uniform1f(uniforms.uCartoonEdgeStrength, liveState.cartoonEdgeStrength / 100);
       gl.uniform1f(uniforms.uCartoonSaturation, liveState.cartoonSaturation / 100);
       gl.uniform1f(uniforms.uDuoEnabled, liveState.duoColourEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uDuoBlend, liveState.duoColourBlend / 100);
       gl.uniform3f(uniforms.uDuoLo, duoLoRgb[0], duoLoRgb[1], duoLoRgb[2]);
       gl.uniform3f(uniforms.uDuoHi, duoHiRgb[0], duoHiRgb[1], duoHiRgb[2]);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);

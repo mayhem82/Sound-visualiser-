@@ -92,6 +92,7 @@
     uniform float uCartoonEdgeStrength;
     uniform float uCartoonSaturation;
     uniform float uDuoEnabled;
+    uniform float uDuoBlend;
     uniform vec3 uDuoLo;
     uniform vec3 uDuoHi;
     uniform vec2 uTexelSize;
@@ -247,7 +248,7 @@
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
         vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
-        if (uDuoEnabled > 0.5) { toon = cvDuoColour(toon, uDuoLo, uDuoHi); }
+        if (uDuoEnabled > 0.5) { toon = mix(toon, cvDuoColour(toon, uDuoLo, uDuoHi), uDuoBlend); }
         float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
         finalColor = mix(toon, vec3(0.02), line);
       }
@@ -315,7 +316,7 @@
     const uniformNames = [
       "uTex", "uBlend", "uOutlineEnabled", "uOutlineThickness", "uOutlineBlend", "uOutlineOpacity", "uOutlineColor",
       "uCartoonEnabled", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
-      "uDuoEnabled", "uDuoLo", "uDuoHi", "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
+      "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi", "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
       "uCorrection2", "uCvdType", "uCvdStrength", "uExposure", "uContrast", "uBrightness", "uSaturation",
       "uRotate180", "uUvScale", "uUvOffset"
     ];
