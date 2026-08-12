@@ -286,12 +286,16 @@
     PARAMS.forEach((p) => { if (p.kind !== "trigger") setParam(p.id, p.default); });
   }
 
-  // Puts liveState back to exactly how it looked before a recording
-  // session started, so finishing (Restart/Discard/Save) never leaves
-  // the working canvas — and whatever tab you switch to next, Live
-  // included — parked on whatever the recording happened to end on.
+  // Snaps the params that were actually touched during a recording
+  // session back to their pre-recording values, so finishing
+  // (Restart/Discard/Save) doesn't leave those specific sliders parked
+  // on wherever the recording happened to end. Deliberately does NOT
+  // touch anything else: a Template plays back "against whatever's
+  // live right now" (see the file-header note above), so ambient
+  // toggles like Cartoon/Duo Colour that were switched on before
+  // Record was pressed — and never touched again — must survive
+  // Save/Discard, or the template has nothing left to play against.
   function restoreStartingState(startingState) {
-    resetAllParams();
     Object.entries(startingState).forEach(([id, v]) => setParam(id, v));
   }
 
