@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Record visual/camera performances over time as reusable Templates, then trigger them live while filming — built on Colour Vision Extreme's correction pipeline.">
+<title>Video Production</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="video-production.css">
+</head>
+<body>
+<canvas id="vpStage"></canvas>
+<video id="vpCameraFeed" playsinline muted hidden></video>
+<canvas id="vpThumbCanvas" hidden></canvas>
+<div id="vpScreenFlash" aria-hidden="true"></div>
+
+<div id="vpOverlay">
+  <div id="vpPanel">
+    <h1>Video Production</h1>
+    <p>Reuses Colour Vision Extreme's camera correction, calibration, cartoon/duotone and outline pipeline. Perform a visual sequence once in <strong>Studio</strong>, record it as a <strong>Template</strong>, then trigger that exact recorded performance at any moment while filming in <strong>Live</strong>.</p>
+    <p class="vp-hint">This is not a preset system — a Template stores behaviour through time (slider automation + timed events), not a single settings snapshot.</p>
+    <button id="vpStartBtn" class="vp-btn vp-btn-primary">Enable camera &amp; start</button>
+    <p id="vpStatus" class="vp-status" role="status" aria-live="polite"></p>
+    <p class="vp-hint"><a href="colorvision.html">&larr; Colour Vision Extreme</a></p>
+  </div>
+</div>
+
+<div id="vpApp" class="hide">
+  <nav id="vpTabs">
+    <button class="vp-tab active" data-view="Studio">Studio</button>
+    <button class="vp-tab" data-view="Live">Live</button>
+    <button class="vp-tab" data-view="Takes">Takes</button>
+  </nav>
+
+  <section id="vpViewStudio" class="vp-view">
+    <div id="vpTransport">
+      <span id="vpRecIndicator" class="vp-rec-indicator hide">&#9679; REC</span>
+      <button id="vpRecordBtn" class="vp-btn vp-btn-record">Record Template</button>
+      <button id="vpStopBtn" class="vp-btn" disabled>Stop</button>
+      <button id="vpPlayBtn" class="vp-btn" disabled>Play</button>
+      <button id="vpRestartBtn" class="vp-btn" disabled>Restart</button>
+      <span class="vp-transport-gap"></span>
+      <span>Duration: <strong id="vpTemplateDuration">0.00s</strong></span>
+    </div>
+
+    <div id="vpSaveRow">
+      <input id="vpTemplateName" type="text" placeholder="Template name (e.g. GOLD LOCK)" maxlength="40">
+      <label>End behaviour
+        <select id="vpEndBehavior">
+          <option value="return">Return (restore previous state)</option>
+          <option value="hold">Hold end (freeze final state)</option>
+          <option value="base">Base state (return to defaults)</option>
+          <option value="chain">Chain (trigger another template)</option>
+        </select>
+      </label>
+      <label>Chain to
+        <select id="vpChainTemplate"><option value="">— none —</option></select>
+      </label>
+      <button id="vpSaveBtn" class="vp-btn vp-btn-primary" disabled>Save Template</button>
+      <button id="vpDiscardBtn" class="vp-btn vp-btn-secondary" disabled>Discard</button>
+      <img id="vpThumbPreview" class="hide" alt="Template thumbnail preview">
+    </div>
+
+    <div id="vpStudioControls" class="vp-controls-grid"></div>
+
+    <div class="vp-group">
+      <h3>Saved Templates</h3>
+      <div id="vpTemplateManageList" class="vp-manage-list"></div>
+    </div>
+  </section>
+
+  <section id="vpViewLive" class="vp-view hide">
+    <div id="vpLiveSetup">
+      <label>Button layout
+        <select id="vpLiveLayoutSelect">
+          <option value="grid">Grid</option>
+          <option value="strip">Strip</option>
+          <option value="dock">Floating dock</option>
+        </select>
+      </label>
+      <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>
+      <button id="vpStopTakeBtn" class="vp-btn" disabled>Stop Take</button>
+      <span id="vpTakeStatus" class="vp-hint"></span>
+    </div>
+    <details id="vpTemplatePickerWrap">
+      <summary>Choose Templates to show as buttons</summary>
+      <div id="vpTemplatePickerList" class="vp-picker-list"></div>
+    </details>
+    <div id="vpLiveButtons" class="vp-live-buttons vp-layout-grid"></div>
+    <div id="vpLiveTimelinePanel">
+      <h3>Live performance timeline</h3>
+      <div id="vpLiveTimelineLog" class="vp-timeline-log"></div>
+    </div>
+  </section>
+
+  <section id="vpViewTakes" class="vp-view hide">
+    <div id="vpTakesToolbar">
+      <button id="vpExportTemplatesBtn" class="vp-btn vp-btn-secondary">Export Templates</button>
+      <label class="vp-btn vp-btn-secondary vp-file-btn">Import Templates
+        <input id="vpImportTemplatesInput" type="file" accept="application/json" hidden>
+      </label>
+    </div>
+    <div id="vpTakesList" class="vp-takes-list"></div>
+  </section>
+</div>
+
+<script src="video-production.js"></script>
+<script src="video-production-app.js"></script>
+</body>
+</html>
