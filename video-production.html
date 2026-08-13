@@ -47,17 +47,6 @@
 
     <div id="vpSaveRow">
       <input id="vpTemplateName" type="text" placeholder="Template name (e.g. GOLD LOCK)" maxlength="40">
-      <label>End behaviour
-        <select id="vpEndBehavior">
-          <option value="return">Return (restore previous state)</option>
-          <option value="hold">Hold end (freeze final state)</option>
-          <option value="base">Base state (return to defaults)</option>
-          <option value="chain">Chain (trigger another template)</option>
-        </select>
-      </label>
-      <label>Chain to
-        <select id="vpChainTemplate"><option value="">— none —</option></select>
-      </label>
       <button id="vpSaveBtn" class="vp-btn vp-btn-primary" disabled>Save Template</button>
       <button id="vpDiscardBtn" class="vp-btn vp-btn-secondary" disabled>Discard</button>
       <img id="vpThumbPreview" class="hide" alt="Template thumbnail preview">
@@ -95,6 +84,18 @@
         <select id="vpCueTemplateSelect"></select>
         <input id="vpCueTimeInput" type="number" min="0" step="0.1" value="0" aria-label="Cue time in seconds"> s
         <label class="vp-cue-reverse-label"><input id="vpCueReverseCheckbox" type="checkbox"> Reverse</label>
+        <label class="vp-cue-select-label">End behaviour
+          <select id="vpCueEndBehaviorSelect">
+            <option value="">Template default</option>
+            <option value="return">Return (restore previous state)</option>
+            <option value="hold">Hold end (freeze final state)</option>
+            <option value="base">Base state (return to defaults)</option>
+            <option value="chain">Chain (trigger another template)</option>
+          </select>
+        </label>
+        <label class="vp-cue-select-label">Chain to
+          <select id="vpCueChainSelect"><option value="">— none —</option></select>
+        </label>
         <button id="vpCueUseNowBtn" type="button" class="vp-btn vp-btn-small">Use current time</button>
         <button id="vpCueAddBtn" type="button" class="vp-btn vp-btn-small">Add Cue</button>
       </div>

@@ -558,8 +558,6 @@
   const discardBtn = document.getElementById("vpDiscardBtn");
   const nameInput = document.getElementById("vpTemplateName");
   const durationEl = document.getElementById("vpTemplateDuration");
-  const endBehaviorSelect = document.getElementById("vpEndBehavior");
-  const chainSelect = document.getElementById("vpChainTemplate");
   const recIndicator = document.getElementById("vpRecIndicator");
   const thumbCanvas = document.getElementById("vpThumbCanvas");
   const thumbImg = document.getElementById("vpThumbPreview");
@@ -592,7 +590,10 @@
   playBtn.addEventListener("click", () => {
     if (!draft) return;
     studioStop();
-    studioPlay({ ...draft, name: "(preview)", endBehavior: endBehaviorSelect.value, startingState: draft.startingState });
+    // End behaviour is now a per-cue choice made in Live, not a
+    // property of the Template itself — Studio's preview just needs
+    // to land somewhere sane when it finishes, so it always returns.
+    studioPlay({ ...draft, name: "(preview)", endBehavior: "return", startingState: draft.startingState });
   });
   restartBtn.addEventListener("click", () => {
     if (!draft) return;
@@ -618,8 +619,12 @@
       duration: draft.duration,
       startingState: draft.startingState,
       touchedIds: draft.touchedIds,
-      endBehavior: endBehaviorSelect.value,
-      chainTemplateId: chainSelect.value || null,
+      // End behaviour/chain-to are chosen per cue in Live now, not
+      // fixed on the Template at save time — this is just the
+      // fallback for anything that fires it without an override
+      // (a Live button press, or an older cue with none set).
+      endBehavior: "return",
+      chainTemplateId: null,
       thumbnail: thumbImg.src && !thumbImg.classList.contains("hide") ? thumbImg.src : null
     });
     restoreStartingState(draft.startingState);
@@ -643,8 +648,6 @@
     draft = null;
     restoreStartingState(t.startingState);
     nameInput.value = t.name;
-    endBehaviorSelect.value = t.endBehavior || "return";
-    chainSelect.value = t.chainTemplateId || "";
     durationEl.textContent = "0.00s";
     thumbImg.classList.add("hide");
     setStudioButtonsState();
@@ -661,12 +664,6 @@
   }
 
   function refreshTemplateLists() {
-    chainSelect.innerHTML = '<option value="">— none —</option>';
-    templateStore.all.forEach((t) => {
-      const o = document.createElement("option");
-      o.value = t.id; o.textContent = `${t.name} v${t.version}`;
-      chainSelect.appendChild(o);
-    });
     renderTemplatePicker();
     renderTemplateManageList();
     renderCueSheet();
@@ -804,6 +801,8 @@
   const cueTemplateSelect = document.getElementById("vpCueTemplateSelect");
   const cueTimeInput = document.getElementById("vpCueTimeInput");
   const cueReverseCheckbox = document.getElementById("vpCueReverseCheckbox");
+  const cueEndBehaviorSelect = document.getElementById("vpCueEndBehaviorSelect");
+  const cueChainSelect = document.getElementById("vpCueChainSelect");
   const cueUseNowBtn = document.getElementById("vpCueUseNowBtn");
   const cueAddBtn = document.getElementById("vpCueAddBtn");
   const cueNowReadout = document.getElementById("vpCueNowReadout");
@@ -852,6 +851,17 @@
       cueTemplateSelect.appendChild(o);
     });
     if (prev && templateStore.get(prev)) cueTemplateSelect.value = prev;
+  }
+
+  function renderCueChainOptions() {
+    const prev = cueChainSelect.value;
+    cueChainSelect.innerHTML = '<option value="">— none —</option>';
+    templateStore.all.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t.id; o.textContent = `${t.name} v${t.version}`;
+      cueChainSelect.appendChild(o);
+    });
+    if (prev && templateStore.get(prev)) cueChainSelect.value = prev;
   }
 
   function renderCueRuler() {
@@ -908,7 +918,8 @@
       const row = document.createElement("div");
       row.className = "vp-cue-row";
       const label = document.createElement("span");
-      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}`;
+      const behaviorNote = cue.endBehavior ? ` · ${cue.endBehavior}${cue.endBehavior === "chain" && cue.chainTemplateId ? ` → ${(templateStore.get(cue.chainTemplateId) || {}).name || "?"}` : ""}` : "";
+      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}${behaviorNote}`;
       const actions = document.createElement("div");
       actions.className = "vp-cue-row-actions";
       if (t) {
@@ -933,12 +944,15 @@
   function addReverseCopy(cue) {
     const t = templateStore.get(cue.templateId);
     if (!t) return;
-    scheduledCues.push({
+    const copy = {
       id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       t: cue.t + t.duration,
       templateId: cue.templateId,
       reversed: !cue.reversed
-    });
+    };
+    if (cue.endBehavior) copy.endBehavior = cue.endBehavior;
+    if (cue.chainTemplateId) copy.chainTemplateId = cue.chainTemplateId;
+    scheduledCues.push(copy);
     saveScheduledCues();
     renderCueRuler();
     renderCueList();
@@ -953,6 +967,7 @@
 
   function renderCueSheet() {
     renderCueTemplateOptions();
+    renderCueChainOptions();
     renderCueRuler();
     renderCueList();
   }
@@ -966,12 +981,18 @@
     const templateId = cueTemplateSelect.value;
     const seconds = parseFloat(cueTimeInput.value);
     if (!templateId || !Number.isFinite(seconds) || seconds < 0) return;
-    scheduledCues.push({
+    const cue = {
       id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       t: Math.round(seconds * 1000),
       templateId,
       reversed: cueReverseCheckbox.checked
-    });
+    };
+    // End behaviour/chain-to live here, per cue, instead of being
+    // fixed on the Template — "Template default" (blank) leaves the
+    // Template's own saved fallback alone.
+    if (cueEndBehaviorSelect.value) cue.endBehavior = cueEndBehaviorSelect.value;
+    if (cueEndBehaviorSelect.value === "chain" && cueChainSelect.value) cue.chainTemplateId = cueChainSelect.value;
+    scheduledCues.push(cue);
     saveScheduledCues();
     renderCueRuler();
     renderCueList();
@@ -996,7 +1017,7 @@
       firedCueIds.add(cue.id);
       const t = templateStore.get(cue.templateId);
       if (t) {
-        triggerTemplate(t, { reversed: !!cue.reversed });
+        triggerTemplate(t, { reversed: !!cue.reversed, endBehavior: cue.endBehavior, chainTemplateId: cue.chainTemplateId });
       } else {
         // Cue points at a template that no longer exists — this used
         // to fire silently into nothing, indistinguishable from the
@@ -1011,12 +1032,24 @@
   let liveTakeStartPerf = 0;
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
 
-  function triggerTemplate(template, { reversed = false } = {}) {
+  function triggerTemplate(template, { reversed = false, endBehavior, chainTemplateId } = {}) {
+    // End behaviour/chain-to are set per cue in Live, not baked into
+    // the Template — override only the fields actually specified,
+    // falling back to whatever the Template itself was saved with
+    // (a Live button press, or a cue with no override, or an older
+    // saved cue from before this existed).
+    const effectiveTemplate = (endBehavior !== undefined || chainTemplateId !== undefined)
+      ? {
+          ...template,
+          endBehavior: endBehavior !== undefined ? endBehavior : template.endBehavior,
+          chainTemplateId: chainTemplateId !== undefined ? chainTemplateId : template.chainTemplateId
+        }
+      : template;
     // A construction failure here used to abort silently before ever
     // reaching the log push below — button press, nothing happens, no
     // timeline entry, no visible error. Surface it instead.
     try {
-      const inst = new PlaybackInstance(template, { reflectDom: false, reversed });
+      const inst = new PlaybackInstance(effectiveTemplate, { reflectDom: false, reversed });
       activeInstances.push(inst);
     } catch (e) {
       console.error(`Couldn't trigger template "${template.name}"`, e);
