@@ -3,7 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- No RECORD_AUDIO: video-production.html's getUserMedia call is
+         video-only (audio: false) and Takes are recorded from the canvas
+         stream, which carries no audio track — declaring an unused
+         sensitive permission is both misleading and a Play Console
+         review risk. -->
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 

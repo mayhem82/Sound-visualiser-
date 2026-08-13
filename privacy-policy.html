@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy — Visual Performance Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<style>
+  :root { color-scheme: dark; --bg: #05050a; --fg: #f2f2f7; --accent: #7dd3fc; --panel: rgba(255,255,255,0.05); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  .updated { color: rgba(242,242,247,0.6); font-size: 0.9rem; margin-bottom: 28px; }
+  h2 { font-size: 1.1rem; margin-top: 32px; color: var(--accent); }
+  section { background: var(--panel); border-radius: 12px; padding: 4px 20px 20px; margin-top: 16px; }
+  a { color: var(--accent); }
+  ul { padding-left: 22px; }
+  .back { display: inline-block; margin-bottom: 24px; color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="video-production.html">&larr; Back to Visual Performance Studio</a>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 13 August 2026</p>
+
+  <p>Visual Performance Studio processes everything on your own device. There is no server, no account, and nothing described below is ever sent anywhere.</p>
+
+  <section>
+    <h2>Camera</h2>
+    <p>The app requests camera access to show and process the live video feed on screen. Video frames are processed in memory (colour correction, effects) and never leave the device. Camera access is audio-free — this app never requests or uses the microphone.</p>
+  </section>
+
+  <section>
+    <h2>What's stored, and where</h2>
+    <p>All saved data lives in your browser's local storage on your device, scoped to this site. Nothing syncs to a server or account:</p>
+    <ul>
+      <li><strong>Templates</strong> — recorded parameter automation you choose to save</li>
+      <li><strong>Cue sheets</strong> — scheduled Template placements you build in Live</li>
+      <li><strong>Calibration points</strong> — colour-correction settings you set up</li>
+      <li><strong>Take metadata</strong> — timestamps and trigger logs for recorded takes (not the video itself — see below)</li>
+    </ul>
+    <p>Clearing your browser's site data for this app (or uninstalling it) permanently deletes all of it. There is no cloud backup and no way to recover it afterward.</p>
+  </section>
+
+  <section>
+    <h2>Recorded video (Takes)</h2>
+    <p>When you record a Take, the resulting video is held in memory for that session only, so you can preview and download it. It is not automatically saved anywhere and does not survive a reload or app restart unless you explicitly download it first.</p>
+  </section>
+
+  <section>
+    <h2>No analytics, no tracking, no third parties</h2>
+    <p>The app makes no network requests of its own beyond loading its own pages, styles, and scripts. There is no analytics SDK, no advertising SDK, no crash reporting, and no third-party embed of any kind.</p>
+  </section>
+
+  <section>
+    <h2>Permissions this app requests</h2>
+    <ul>
+      <li><strong>Camera</strong> — required; the app's entire purpose is processing the live camera feed.</li>
+      <li><strong>Internet</strong> (Android package only) — required to load the app's own pages on first launch and after updates. No data is uploaded.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes, the "Last updated" date above will change too. Continued use of the app after an update means you accept the revised policy.</p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>Questions about this policy: open an issue on the <a href="https://github.com/mayhem82/Sound-visualiser-">GitHub repository</a>.</p>
+  </section>
+</main>
+</body>
+</html>
