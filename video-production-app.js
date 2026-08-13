@@ -22,6 +22,7 @@
     { id: "outlineOpacity", label: "Outline opacity", kind: "range", min: 0, max: 100, step: 1, default: 100, unit: "%", group: "Outline" },
     { id: "outlineColor", label: "Outline colour", kind: "color", default: "#ffffff", group: "Outline" },
     { id: "cartoonEnabled", label: "Cartoon mode", kind: "toggle", default: false, group: "Cartoon" },
+    { id: "cartoonBlend", label: "Cartoon blend", kind: "range", min: 0, max: 100, step: 1, default: 100, unit: "%", group: "Cartoon" },
     { id: "cartoonLevels", label: "Cartoon levels", kind: "range", min: 2, max: 24, step: 1, default: 6, group: "Cartoon" },
     { id: "cartoonEdgeThickness", label: "Cartoon edge thickness", kind: "range", min: 1, max: 10, step: 0.5, default: 2, unit: "px", group: "Cartoon" },
     { id: "cartoonEdgeStrength", label: "Cartoon edge strength", kind: "range", min: 0, max: 100, step: 1, default: 60, unit: "%", group: "Cartoon" },
@@ -110,6 +111,7 @@
       gl.uniform1f(uniforms.uOutlineOpacity, liveState.outlineOpacity / 100);
       gl.uniform3f(uniforms.uOutlineColor, outlineRgb[0], outlineRgb[1], outlineRgb[2]);
       gl.uniform1f(uniforms.uCartoonEnabled, liveState.cartoonEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uCartoonBlend, liveState.cartoonBlend / 100);
       gl.uniform1f(uniforms.uCartoonLevels, liveState.cartoonLevels);
       gl.uniform1f(uniforms.uCartoonEdgeThickness, liveState.cartoonEdgeThickness);
       gl.uniform1f(uniforms.uCartoonEdgeStrength, liveState.cartoonEdgeStrength / 100);

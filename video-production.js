@@ -90,6 +90,7 @@
     uniform float uOutlineOpacity;
     uniform vec3 uOutlineColor;
     uniform float uCartoonEnabled;
+    uniform float uCartoonBlend;
     uniform float uCartoonLevels;
     uniform float uCartoonEdgeThickness;
     uniform float uCartoonEdgeStrength;
@@ -250,14 +251,13 @@
       vec3 filled = mix(original, corrected, uBlend);
       vec3 finalColor = filled;
       if (uCartoonEnabled > 0.5) {
-        finalColor = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
+        vec3 toon = cvCartoonize(filled, uCartoonLevels, uCartoonSaturation);
+        float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
+        toon = mix(toon, vec3(0.02), line);
+        finalColor = mix(filled, toon, uCartoonBlend);
       }
       if (uDuoEnabled > 0.5) {
         finalColor = mix(finalColor, cvDuoColour(finalColor, uDuoLo, uDuoHi), uDuoBlend);
-      }
-      if (uCartoonEnabled > 0.5) {
-        float line = cvCartoonLine(vUv, uCartoonEdgeThickness, uCartoonEdgeStrength);
-        finalColor = mix(finalColor, vec3(0.02), line);
       }
       if (uOutlineEnabled > 0.5) {
         float edge = cvEdgeStrength(vUv, uOutlineThickness) * uOutlineOpacity;
@@ -322,7 +322,7 @@
     glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
     const uniformNames = [
       "uTex", "uBlend", "uOutlineEnabled", "uOutlineThickness", "uOutlineBlend", "uOutlineOpacity", "uOutlineColor",
-      "uCartoonEnabled", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
+      "uCartoonEnabled", "uCartoonBlend", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
       "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi", "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
       "uCorrection2", "uCvdType", "uCvdStrength", "uExposure", "uContrast", "uBrightness", "uSaturation",
       "uRotate180", "uUvScale", "uUvOffset"
