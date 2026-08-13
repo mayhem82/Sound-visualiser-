@@ -584,6 +584,7 @@
   const restartBtn = document.getElementById("vpRestartBtn");
   const saveBtn = document.getElementById("vpSaveBtn");
   const discardBtn = document.getElementById("vpDiscardBtn");
+  const saveStaticBtn = document.getElementById("vpSaveStaticBtn");
   const nameInput = document.getElementById("vpTemplateName");
   const durationEl = document.getElementById("vpTemplateDuration");
   const recIndicator = document.getElementById("vpRecIndicator");
@@ -659,6 +660,34 @@
     draft = null;
     nameInput.value = "";
     durationEl.textContent = "0.00s";
+    thumbImg.classList.add("hide");
+    setStudioButtonsState();
+    refreshTemplateLists();
+  });
+
+  // A Template with no motion at all — just the sliders exactly as
+  // they are right now, no Record/Stop needed. Its own stored duration
+  // is a nominal placeholder; how long it actually holds is set per
+  // placement on the Live cue sheet's timeline (Length field), not
+  // fixed here — a static look means "this is a look," not "this is
+  // a look for X seconds."
+  saveStaticBtn.addEventListener("click", () => {
+    if (recorder.isRecording) return;
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    captureThumbnail();
+    templateStore.save({
+      name,
+      tracks: [],
+      events: [],
+      duration: 1000,
+      startingState: { ...liveState },
+      touchedIds: [],
+      endBehavior: "return",
+      chainTemplateId: null,
+      thumbnail: thumbImg.src && !thumbImg.classList.contains("hide") ? thumbImg.src : null
+    });
+    nameInput.value = "";
     thumbImg.classList.add("hide");
     setStudioButtonsState();
     refreshTemplateLists();
@@ -828,6 +857,7 @@
 
   const cueTemplateSelect = document.getElementById("vpCueTemplateSelect");
   const cueTimeInput = document.getElementById("vpCueTimeInput");
+  const cueLengthInput = document.getElementById("vpCueLengthInput");
   const cueReverseCheckbox = document.getElementById("vpCueReverseCheckbox");
   const cueEndBehaviorSelect = document.getElementById("vpCueEndBehaviorSelect");
   const cueChainSelect = document.getElementById("vpCueChainSelect");
@@ -856,6 +886,16 @@
   // How far out the ruler needs to draw: past the furthest placed cue,
   // and past however long the current Take has already run — rounded
   // to a stable step so the scale doesn't jitter every frame.
+  // A cue's own Length field overrides the template's stored
+  // duration for that one placement — the whole point for a static
+  // (no-motion) Template, whose stored duration is just a nominal
+  // placeholder, but works the same way for an animated one too
+  // (holds/truncates at whatever length is set here instead).
+  function cueEffectiveDurationMs(cue, template) {
+    if (Number.isFinite(cue.durationMs) && cue.durationMs > 0) return cue.durationMs;
+    return template ? template.duration : 0;
+  }
+
   function cueRulerSpanMs() {
     const runningMs = takeRecording ? performance.now() - liveTakeStartPerf : 0;
     // The furthest point that needs to fit is where a cue's own
@@ -864,7 +904,7 @@
     // clipped off the ruler.
     const furthestCueEndMs = scheduledCues.reduce((m, c) => {
       const t = templateStore.get(c.templateId);
-      return Math.max(m, c.t + (t ? t.duration : 0));
+      return Math.max(m, c.t + cueEffectiveDurationMs(c, t));
     }, 0);
     const needed = Math.max(30000, runningMs + 5000, furthestCueEndMs + 5000);
     return Math.ceil(needed / 30000) * 30000;
@@ -910,7 +950,7 @@
     }
     scheduledCues.forEach((cue) => {
       const t = templateStore.get(cue.templateId);
-      const durMs = t ? t.duration : 0;
+      const durMs = cueEffectiveDurationMs(cue, t);
       // Rendered as a span from start to end, not a single point, so
       // the cue's full duration — when it starts AND when it ends — is
       // visible on the ruler, not just the instant it fires.
@@ -947,7 +987,8 @@
       row.className = "vp-cue-row";
       const label = document.createElement("span");
       const behaviorNote = cue.endBehavior ? ` · ${cue.endBehavior}${cue.endBehavior === "chain" && cue.chainTemplateId ? ` → ${(templateStore.get(cue.chainTemplateId) || {}).name || "?"}` : ""}` : "";
-      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}${behaviorNote}`;
+      const lengthNote = Number.isFinite(cue.durationMs) && cue.durationMs > 0 ? ` · ${(cue.durationMs / 1000).toFixed(1)}s length` : "";
+      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}${lengthNote}${behaviorNote}`;
       const actions = document.createElement("div");
       actions.className = "vp-cue-row-actions";
       if (t) {
@@ -974,12 +1015,13 @@
     if (!t) return;
     const copy = {
       id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-      t: cue.t + t.duration,
+      t: cue.t + cueEffectiveDurationMs(cue, t),
       templateId: cue.templateId,
       reversed: !cue.reversed
     };
     if (cue.endBehavior) copy.endBehavior = cue.endBehavior;
     if (cue.chainTemplateId) copy.chainTemplateId = cue.chainTemplateId;
+    if (Number.isFinite(cue.durationMs) && cue.durationMs > 0) copy.durationMs = cue.durationMs;
     scheduledCues.push(copy);
     saveScheduledCues();
     renderCueRuler();
@@ -1020,6 +1062,10 @@
     // Template's own saved fallback alone.
     if (cueEndBehaviorSelect.value) cue.endBehavior = cueEndBehaviorSelect.value;
     if (cueEndBehaviorSelect.value === "chain" && cueChainSelect.value) cue.chainTemplateId = cueChainSelect.value;
+    // Length overrides the Template's own stored duration for this one
+    // placement — left blank, it just uses the Template's duration.
+    const lengthSeconds = parseFloat(cueLengthInput.value);
+    if (Number.isFinite(lengthSeconds) && lengthSeconds > 0) cue.durationMs = Math.round(lengthSeconds * 1000);
     scheduledCues.push(cue);
     saveScheduledCues();
     renderCueRuler();
@@ -1045,7 +1091,7 @@
       firedCueIds.add(cue.id);
       const t = templateStore.get(cue.templateId);
       if (t) {
-        triggerTemplate(t, { reversed: !!cue.reversed, endBehavior: cue.endBehavior, chainTemplateId: cue.chainTemplateId });
+        triggerTemplate(t, { reversed: !!cue.reversed, endBehavior: cue.endBehavior, chainTemplateId: cue.chainTemplateId, durationMs: cue.durationMs });
       } else {
         // Cue points at a template that no longer exists — this used
         // to fire silently into nothing, indistinguishable from the
@@ -1060,17 +1106,19 @@
   let liveTakeStartPerf = 0;
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
 
-  function triggerTemplate(template, { reversed = false, endBehavior, chainTemplateId } = {}) {
-    // End behaviour/chain-to are set per cue in Live, not baked into
-    // the Template — override only the fields actually specified,
-    // falling back to whatever the Template itself was saved with
-    // (a Live button press, or a cue with no override, or an older
-    // saved cue from before this existed).
-    const effectiveTemplate = (endBehavior !== undefined || chainTemplateId !== undefined)
+  function triggerTemplate(template, { reversed = false, endBehavior, chainTemplateId, durationMs } = {}) {
+    // End behaviour/chain-to/length are set per cue in Live, not
+    // baked into the Template — override only the fields actually
+    // specified, falling back to whatever the Template itself was
+    // saved with (a Live button press, or a cue with no override, or
+    // an older saved cue from before this existed).
+    const hasDurationOverride = Number.isFinite(durationMs) && durationMs > 0;
+    const effectiveTemplate = (endBehavior !== undefined || chainTemplateId !== undefined || hasDurationOverride)
       ? {
           ...template,
           endBehavior: endBehavior !== undefined ? endBehavior : template.endBehavior,
-          chainTemplateId: chainTemplateId !== undefined ? chainTemplateId : template.chainTemplateId
+          chainTemplateId: chainTemplateId !== undefined ? chainTemplateId : template.chainTemplateId,
+          duration: hasDurationOverride ? durationMs : template.duration
         }
       : template;
     // A construction failure here used to abort silently before ever
@@ -1085,7 +1133,7 @@
     }
     liveLog.push({
       t: Math.round(performance.now() - liveTakeStartPerf),
-      duration: template.duration,
+      duration: effectiveTemplate.duration,
       templateId: template.id, templateVersion: template.version, templateName: template.name,
       reversed
     });

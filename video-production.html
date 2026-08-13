@@ -49,8 +49,10 @@
       <input id="vpTemplateName" type="text" placeholder="Template name (e.g. GOLD LOCK)" maxlength="40">
       <button id="vpSaveBtn" class="vp-btn vp-btn-primary" disabled>Save Template</button>
       <button id="vpDiscardBtn" class="vp-btn vp-btn-secondary" disabled>Discard</button>
+      <button id="vpSaveStaticBtn" class="vp-btn vp-btn-secondary">Save Static Look</button>
       <img id="vpThumbPreview" class="hide" alt="Template thumbnail preview">
     </div>
+    <div class="vp-hint">Save Static Look saves the sliders as they are right now — no recording, no motion. Set how long it holds when you place it on the Live cue sheet's timeline.</div>
 
     <div id="vpStudioControls" class="vp-controls-grid"></div>
 
@@ -83,6 +85,7 @@
       <div class="vp-cue-controls">
         <select id="vpCueTemplateSelect"></select>
         <input id="vpCueTimeInput" type="number" min="0" step="0.1" value="0" aria-label="Cue time in seconds"> s
+        <input id="vpCueLengthInput" type="number" min="0" step="0.1" placeholder="Template length" aria-label="Cue length in seconds, overrides the template's own duration"> s
         <label class="vp-cue-reverse-label"><input id="vpCueReverseCheckbox" type="checkbox"> Reverse</label>
         <label class="vp-cue-select-label">End behaviour
           <select id="vpCueEndBehaviorSelect">
