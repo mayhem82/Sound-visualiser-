@@ -399,7 +399,13 @@
       // (including ambient toggles that were on throughout recording)
       // before tick() starts layering the recorded tracks/events on top.
       if (template.startingState) {
-        Object.entries(template.startingState).forEach(([id, v]) => setParam(id, v, { reflectDom }));
+        // One bad/legacy entry (an id that no longer exists, a stale
+        // import) must not stop the rest of the snapshot from applying
+        // or abort playback outright — that would silently swallow the
+        // whole trigger before it ever reaches triggerTemplate's log.
+        Object.entries(template.startingState).forEach(([id, v]) => {
+          try { setParam(id, v, { reflectDom }); } catch (e) { console.error(`Template "${template.name}": couldn't set ${id}`, e); }
+        });
       }
     }
     elapsed() { return performance.now() - this.startPerf; }
@@ -734,8 +740,16 @@
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
 
   function triggerTemplate(template) {
-    const inst = new PlaybackInstance(template, { reflectDom: false });
-    activeInstances.push(inst);
+    // A construction failure here used to abort silently before ever
+    // reaching the log push below — button press, nothing happens, no
+    // timeline entry, no visible error. Surface it instead.
+    try {
+      const inst = new PlaybackInstance(template, { reflectDom: false });
+      activeInstances.push(inst);
+    } catch (e) {
+      console.error(`Couldn't trigger template "${template.name}"`, e);
+      takeStatus.textContent = `Couldn't play "${template.name}": ${e.message}`;
+    }
     liveLog.push({
       t: Math.round(performance.now() - liveTakeStartPerf),
       templateId: template.id, templateVersion: template.version, templateName: template.name
