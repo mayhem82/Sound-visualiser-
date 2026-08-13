@@ -725,11 +725,23 @@
   function loadTemplateIntoStudio(t) {
     if (recorder.isRecording) return;
     studioStop();
-    draft = null;
     restoreStartingState(t.startingState);
     nameInput.value = t.name;
-    durationEl.textContent = "0.00s";
-    thumbImg.classList.add("hide");
+    // The whole point of loading a Template back in is to be able to
+    // Play it, not just look at its starting sliders — draft is what
+    // Play/Restart/Save/Discard all gate on, so without this, every
+    // one of those stayed disabled and Record was the only way forward,
+    // even though nothing here needed re-recording from scratch.
+    draft = {
+      tracks: t.tracks,
+      events: t.events,
+      duration: t.duration,
+      startingState: t.startingState,
+      touchedIds: t.touchedIds || []
+    };
+    durationEl.textContent = `${(t.duration / 1000).toFixed(2)}s`;
+    if (t.thumbnail) { thumbImg.src = t.thumbnail; thumbImg.classList.remove("hide"); }
+    else { thumbImg.classList.add("hide"); }
     setStudioButtonsState();
   }
 
