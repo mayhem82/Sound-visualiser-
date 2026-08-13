@@ -1442,6 +1442,33 @@
     });
   });
 
+  // ---- Fullscreen ----
+  // Lives in the tab bar itself (a sibling of Studio/Live/Takes, not
+  // inside either view), so switching tabs never hides or resets it —
+  // one toggle that works the same in both modes.
+  const fullscreenBtn = document.getElementById("vpFullscreenBtn");
+  async function toggleFullscreen() {
+    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFullscreen) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) { try { await exit.call(document); } catch (e) { /* ignore */ } }
+    } else {
+      const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (req) { try { await req.call(document.documentElement); } catch (e) { /* denied/unsupported — button just stays off */ } }
+    }
+  }
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
+  // The browser's own exit gestures (Esc, swipe-down, back) bypass the
+  // click handler above, so this is what actually keeps the button's
+  // pressed state honest.
+  ["fullscreenchange", "webkitfullscreenchange"].forEach((evt) => {
+    document.addEventListener(evt, () => {
+      const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      fullscreenBtn.classList.toggle("active", active);
+      fullscreenBtn.setAttribute("aria-pressed", String(active));
+    });
+  });
+
   // ============================================================
   // CAMERA START
   // ============================================================
