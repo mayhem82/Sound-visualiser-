@@ -146,6 +146,13 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
   gap: 14px;
 }
 
+/* Fullscreen: hides every view's own controls (Studio's panel, Live's
+   cue sheet, Takes' list) so the camera feed underneath actually shows
+   more of the screen instead of the same amount behind an unchanged UI.
+   The tab bar — Studio/Live/Takes plus the Fullscreen button itself —
+   stays up, so switching views and toggling back off both still work. */
+body.vp-fullscreen-active .vp-view { display: none !important; }
+
 /* ---- Studio ---- */
 #vpTransport {
   display: flex;

@@ -1474,12 +1474,14 @@
   fullscreenBtn.addEventListener("click", toggleFullscreen);
   // The browser's own exit gestures (Esc, swipe-down, back) bypass the
   // click handler above, so this is what actually keeps the button's
-  // pressed state honest.
+  // pressed state — and whether the app's own controls are hidden —
+  // honest regardless of how fullscreen was entered or left.
   ["fullscreenchange", "webkitfullscreenchange"].forEach((evt) => {
     document.addEventListener(evt, () => {
       const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
       fullscreenBtn.classList.toggle("active", active);
       fullscreenBtn.setAttribute("aria-pressed", String(active));
+      document.body.classList.toggle("vp-fullscreen-active", active);
     });
   });
 
