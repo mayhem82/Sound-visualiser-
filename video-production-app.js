@@ -800,7 +800,8 @@
   function onTakeStopped() {
     takeRecording = false;
     startTakeBtn.disabled = false; stopTakeBtn.disabled = true;
-    const blob = new Blob(takeChunks, { type: takeChunks[0] ? takeChunks[0].type : "video/webm" });
+    const videoMimeType = takeChunks[0] ? takeChunks[0].type : "video/webm";
+    const blob = new Blob(takeChunks, { type: videoMimeType });
     const url = URL.createObjectURL(blob);
     const duration = Math.round(performance.now() - liveTakeStartPerf);
     const meta = {
@@ -809,7 +810,8 @@
       duration,
       liveLog: liveLog.slice(),
       templateInstancesUsed: [...new Set(liveLog.map((e) => `${e.templateName} v${e.templateVersion}`))],
-      calibrationRef: { pointCount: calibrationPoints.length }
+      calibrationRef: { pointCount: calibrationPoints.length },
+      videoMimeType
     };
     takesInMemory.push({ meta, videoUrl: url });
     const persisted = loadTakesMeta();
@@ -830,9 +832,27 @@
     renderTakesList();
   }
 
-  function makeTakeActions(meta) {
+  // Blob URLs backing a take's <video> only live as long as this tab
+  // does — a reload drops them, which is why older takes render with
+  // "video not kept across reloads" and no download option below.
+  function extensionForVideoMime(type) {
+    if (type && type.includes("mp4")) return "mp4";
+    return "webm";
+  }
+
+  function makeTakeActions(meta, videoUrl) {
     const actions = document.createElement("div");
     actions.className = "vp-take-actions";
+    if (videoUrl) {
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button"; downloadBtn.className = "vp-btn vp-btn-small"; downloadBtn.textContent = "Download Video";
+      downloadBtn.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = videoUrl; a.download = `take-${meta.id}.${extensionForVideoMime(meta.videoMimeType)}`;
+        document.body.appendChild(a); a.click(); a.remove();
+      });
+      actions.appendChild(downloadBtn);
+    }
     const exportBtn = document.createElement("button");
     exportBtn.type = "button"; exportBtn.className = "vp-btn vp-btn-small"; exportBtn.textContent = "Export JSON";
     exportBtn.addEventListener("click", () => downloadJson(meta, `take-${meta.id}.json`));
@@ -853,7 +873,7 @@
       const info = document.createElement("div");
       info.className = "vp-take-info";
       info.innerHTML = `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s)<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}`;
-      card.append(v, info, makeTakeActions(meta));
+      card.append(v, info, makeTakeActions(meta, videoUrl));
       takesList.appendChild(card);
     });
     // Restore any takes metadata (video not persisted) from a prior session.
