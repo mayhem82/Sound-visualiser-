@@ -398,7 +398,7 @@
   // (single instance, reflected on-screen sliders) or one Live
   // Template Instance (silent, composited into liveState only).
   class PlaybackInstance {
-    constructor(template, { onEnd, reflectDom = false, chainDepth = 0 } = {}) {
+    constructor(template, { onEnd, reflectDom = false, chainDepth = 0, reversed = false } = {}) {
       this.template = template;
       this.startPerf = performance.now();
       this.firedEvents = new Set();
@@ -406,6 +406,7 @@
       this.onEnd = onEnd;
       this.reflectDom = reflectDom;
       this.chainDepth = chainDepth;
+      this.reversed = reversed;
       this.status = "running";
       // Studio only generates Templates — it isn't a live preview feed
       // into Live mode. Triggering a Template must reproduce exactly
@@ -421,14 +422,29 @@
           try { setParam(id, v, { reflectDom }); } catch (e) { console.error(`Template "${template.name}": couldn't set ${id}`, e); }
         });
       }
+      // Reverse playback starts from wherever the forward recording
+      // ENDED, not where it began — snap every animated (continuous)
+      // param to its own last keyframe so the transition visibly runs
+      // backward from that end look instead of starting forward first.
+      // Discrete toggle/select events aren't reversible the same way
+      // (there's no "previous value" recorded to undo to), so those
+      // still fire on their original forward schedule either way.
+      if (reversed) {
+        template.tracks.forEach((track) => {
+          const kfs = track.keyframes;
+          if (!kfs.length) return;
+          try { setParam(track.param, kfs[kfs.length - 1].v, { reflectDom }); } catch (e) { console.error(`Template "${template.name}": couldn't set ${track.param}`, e); }
+        });
+      }
     }
     elapsed() { return performance.now() - this.startPerf; }
     tick() {
       if (this.finished) return;
       const t = this.elapsed();
       const tpl = this.template;
+      const sampleT = this.reversed ? Math.max(0, tpl.duration - Math.min(t, tpl.duration)) : Math.min(t, tpl.duration);
       for (const track of tpl.tracks) {
-        const v = sampleTrack(track, Math.min(t, tpl.duration));
+        const v = sampleTrack(track, sampleT);
         if (v !== undefined) setParam(track.param, v, { reflectDom: this.reflectDom });
       }
       for (const ev of tpl.events) {
@@ -787,6 +803,7 @@
 
   const cueTemplateSelect = document.getElementById("vpCueTemplateSelect");
   const cueTimeInput = document.getElementById("vpCueTimeInput");
+  const cueReverseCheckbox = document.getElementById("vpCueReverseCheckbox");
   const cueUseNowBtn = document.getElementById("vpCueUseNowBtn");
   const cueAddBtn = document.getElementById("vpCueAddBtn");
   const cueNowReadout = document.getElementById("vpCueNowReadout");
@@ -862,15 +879,15 @@
       const startPct = Math.min(100, (cue.t / spanMs) * 100);
       const endPct = Math.min(100, ((cue.t + durMs) / spanMs) * 100);
       const marker = document.createElement("div");
-      marker.className = "vp-cue-marker";
+      marker.className = "vp-cue-marker" + (cue.reversed ? " vp-cue-marker-reversed" : "");
       marker.style.left = startPct + "%";
       marker.style.width = Math.max(0.4, endPct - startPct) + "%";
-      marker.title = `${(cue.t / 1000).toFixed(1)}s – ${((cue.t + durMs) / 1000).toFixed(1)}s — ${t ? t.name : "missing template"} (click to remove)`;
+      marker.title = `${(cue.t / 1000).toFixed(1)}s – ${((cue.t + durMs) / 1000).toFixed(1)}s — ${t ? t.name : "missing template"}${cue.reversed ? " (reversed)" : ""} (click to remove)`;
       marker.addEventListener("click", (e) => { e.stopPropagation(); removeCue(cue.id); });
       const label = document.createElement("div");
       label.className = "vp-cue-marker-label";
       label.style.left = startPct + "%";
-      label.textContent = t ? t.name : "?";
+      label.textContent = (cue.reversed ? "↺ " : "") + (t ? t.name : "?");
       cueRuler.append(marker, label);
     });
   }
@@ -891,13 +908,40 @@
       const row = document.createElement("div");
       row.className = "vp-cue-row";
       const label = document.createElement("span");
-      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}`;
+      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}`;
+      const actions = document.createElement("div");
+      actions.className = "vp-cue-row-actions";
+      if (t) {
+        // The literal "add the same one but in reverse" ask: one tap
+        // schedules a mirrored copy of this exact cue, flipped in
+        // direction, right after this one's own transition finishes —
+        // a boomerang without re-picking the template and time by hand.
+        const reverseCopyBtn = document.createElement("button");
+        reverseCopyBtn.type = "button"; reverseCopyBtn.className = "vp-btn vp-btn-small"; reverseCopyBtn.textContent = "⇄ Reverse copy";
+        reverseCopyBtn.addEventListener("click", () => addReverseCopy(cue));
+        actions.appendChild(reverseCopyBtn);
+      }
       const del = document.createElement("button");
       del.type = "button"; del.className = "vp-btn vp-btn-small vp-btn-danger"; del.textContent = "Remove";
       del.addEventListener("click", () => removeCue(cue.id));
-      row.append(label, del);
+      actions.appendChild(del);
+      row.append(label, actions);
       cueListEl.appendChild(row);
     });
+  }
+
+  function addReverseCopy(cue) {
+    const t = templateStore.get(cue.templateId);
+    if (!t) return;
+    scheduledCues.push({
+      id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      t: cue.t + t.duration,
+      templateId: cue.templateId,
+      reversed: !cue.reversed
+    });
+    saveScheduledCues();
+    renderCueRuler();
+    renderCueList();
   }
 
   function removeCue(id) {
@@ -925,7 +969,8 @@
     scheduledCues.push({
       id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       t: Math.round(seconds * 1000),
-      templateId
+      templateId,
+      reversed: cueReverseCheckbox.checked
     });
     saveScheduledCues();
     renderCueRuler();
@@ -951,7 +996,7 @@
       firedCueIds.add(cue.id);
       const t = templateStore.get(cue.templateId);
       if (t) {
-        triggerTemplate(t);
+        triggerTemplate(t, { reversed: !!cue.reversed });
       } else {
         // Cue points at a template that no longer exists — this used
         // to fire silently into nothing, indistinguishable from the
@@ -966,12 +1011,12 @@
   let liveTakeStartPerf = 0;
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
 
-  function triggerTemplate(template) {
+  function triggerTemplate(template, { reversed = false } = {}) {
     // A construction failure here used to abort silently before ever
     // reaching the log push below — button press, nothing happens, no
     // timeline entry, no visible error. Surface it instead.
     try {
-      const inst = new PlaybackInstance(template, { reflectDom: false });
+      const inst = new PlaybackInstance(template, { reflectDom: false, reversed });
       activeInstances.push(inst);
     } catch (e) {
       console.error(`Couldn't trigger template "${template.name}"`, e);
@@ -980,7 +1025,8 @@
     liveLog.push({
       t: Math.round(performance.now() - liveTakeStartPerf),
       duration: template.duration,
-      templateId: template.id, templateVersion: template.version, templateName: template.name
+      templateId: template.id, templateVersion: template.version, templateName: template.name,
+      reversed
     });
     renderLiveTimeline();
   }
@@ -992,7 +1038,7 @@
     if (!el) return;
     el.innerHTML = liveLog.slice(-12).reverse().map((e) => {
       const endMs = e.t + (e.duration || 0);
-      return `<div>${fmtCueSeconds(e.t)}s → ${fmtCueSeconds(endMs)}s   ${e.templateName} v${e.templateVersion}${e.chainedFrom ? " (chained)" : ""}</div>`;
+      return `<div>${fmtCueSeconds(e.t)}s → ${fmtCueSeconds(endMs)}s   ${e.templateName} v${e.templateVersion}${e.reversed ? " (reversed)" : ""}${e.chainedFrom ? " (chained)" : ""}</div>`;
     }).join("");
   }
 
