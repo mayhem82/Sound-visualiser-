@@ -460,6 +460,7 @@
   function tickEngines() {
     if (studioPreview) { studioPreview.tick(); if (studioPreview.finished) studioPreview = null; }
     activeInstances = activeInstances.filter((inst) => { inst.tick(); return !inst.finished; });
+    tickScheduledCues();
   }
 
   // ---- Studio Play/Restart ----
@@ -619,6 +620,7 @@
     });
     renderTemplatePicker();
     renderTemplateManageList();
+    renderCueSheet();
   }
 
   // ============================================================
@@ -735,6 +737,171 @@
     renderLiveButtons();
   });
 
+  // ============================================================
+  // CUE SHEET — schedule a Template to auto-fire at a specific time
+  // into a Take, instead of relying on pressing its button at exactly
+  // the right instant. The ruler is a click-to-place ("directly onto
+  // the timeline") alternative to typing a time by hand, and both
+  // feed the same scheduledCues list, checked every frame in
+  // tickScheduledCues() below against how far the current Take has run.
+  // ============================================================
+
+  const cueTemplateSelect = document.getElementById("vpCueTemplateSelect");
+  const cueTimeInput = document.getElementById("vpCueTimeInput");
+  const cueUseNowBtn = document.getElementById("vpCueUseNowBtn");
+  const cueAddBtn = document.getElementById("vpCueAddBtn");
+  const cueNowReadout = document.getElementById("vpCueNowReadout");
+  const cueRuler = document.getElementById("vpCueRuler");
+  const cuePlayhead = document.getElementById("vpCuePlayhead");
+  const cueListEl = document.getElementById("vpCueList");
+
+  let scheduledCues = loadScheduledCues(); // [{id, t (ms), templateId}]
+  let firedCueIds = new Set();
+  let cueRulerRenderedSpanMs = 30000;
+
+  function loadScheduledCues() {
+    try {
+      const raw = localStorage.getItem(C.SCHEDULED_CUES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+  function saveScheduledCues() {
+    try { localStorage.setItem(C.SCHEDULED_CUES_KEY, JSON.stringify(scheduledCues)); } catch (e) {}
+  }
+
+  // How far out the ruler needs to draw: past the furthest placed cue,
+  // and past however long the current Take has already run — rounded
+  // to a stable step so the scale doesn't jitter every frame.
+  function cueRulerSpanMs() {
+    const runningMs = takeRecording ? performance.now() - liveTakeStartPerf : 0;
+    const furthestCueMs = scheduledCues.reduce((m, c) => Math.max(m, c.t), 0);
+    const needed = Math.max(30000, runningMs + 5000, furthestCueMs + 5000);
+    return Math.ceil(needed / 30000) * 30000;
+  }
+
+  function renderCueTemplateOptions() {
+    const prev = cueTemplateSelect.value;
+    cueTemplateSelect.innerHTML = "";
+    templateStore.all.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t.id; o.textContent = `${t.name} v${t.version}`;
+      cueTemplateSelect.appendChild(o);
+    });
+    if (prev && templateStore.get(prev)) cueTemplateSelect.value = prev;
+  }
+
+  function renderCueRuler() {
+    cueRulerRenderedSpanMs = cueRulerSpanMs();
+    const spanMs = cueRulerRenderedSpanMs;
+    cueRuler.querySelectorAll(".vp-cue-tick, .vp-cue-tick-label, .vp-cue-marker, .vp-cue-marker-label").forEach((el) => el.remove());
+    const stepS = spanMs > 90000 ? 20 : spanMs > 45000 ? 10 : 5;
+    for (let s = 0; s * 1000 <= spanMs; s += stepS) {
+      const pct = (s * 1000 / spanMs) * 100;
+      const tick = document.createElement("div");
+      tick.className = "vp-cue-tick";
+      tick.style.left = pct + "%";
+      const label = document.createElement("div");
+      label.className = "vp-cue-tick-label";
+      label.style.left = pct + "%";
+      label.textContent = s + "s";
+      cueRuler.append(tick, label);
+    }
+    scheduledCues.forEach((cue) => {
+      const t = templateStore.get(cue.templateId);
+      const pct = Math.min(100, (cue.t / spanMs) * 100);
+      const marker = document.createElement("div");
+      marker.className = "vp-cue-marker";
+      marker.style.left = pct + "%";
+      marker.title = `${(cue.t / 1000).toFixed(1)}s — ${t ? t.name : "missing template"} (click to remove)`;
+      marker.addEventListener("click", (e) => { e.stopPropagation(); removeCue(cue.id); });
+      const label = document.createElement("div");
+      label.className = "vp-cue-marker-label";
+      label.style.left = pct + "%";
+      label.textContent = t ? t.name : "?";
+      cueRuler.append(marker, label);
+    });
+  }
+
+  // Click-to-place: tapping the ruler sets the time field to that
+  // point on the scale, so placing a cue is "point at where on the
+  // timeline" rather than guessing a number blind.
+  cueRuler.addEventListener("click", (e) => {
+    const rect = cueRuler.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    cueTimeInput.value = (frac * cueRulerRenderedSpanMs / 1000).toFixed(1);
+  });
+
+  function renderCueList() {
+    cueListEl.innerHTML = "";
+    scheduledCues.slice().sort((a, b) => a.t - b.t).forEach((cue) => {
+      const t = templateStore.get(cue.templateId);
+      const row = document.createElement("div");
+      row.className = "vp-cue-row";
+      const label = document.createElement("span");
+      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}`;
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "vp-btn vp-btn-small vp-btn-danger"; del.textContent = "Remove";
+      del.addEventListener("click", () => removeCue(cue.id));
+      row.append(label, del);
+      cueListEl.appendChild(row);
+    });
+  }
+
+  function removeCue(id) {
+    scheduledCues = scheduledCues.filter((c) => c.id !== id);
+    saveScheduledCues();
+    renderCueRuler();
+    renderCueList();
+  }
+
+  function renderCueSheet() {
+    renderCueTemplateOptions();
+    renderCueRuler();
+    renderCueList();
+  }
+
+  cueUseNowBtn.addEventListener("click", () => {
+    const seconds = takeRecording ? (performance.now() - liveTakeStartPerf) / 1000 : 0;
+    cueTimeInput.value = seconds.toFixed(1);
+  });
+
+  cueAddBtn.addEventListener("click", () => {
+    const templateId = cueTemplateSelect.value;
+    const seconds = parseFloat(cueTimeInput.value);
+    if (!templateId || !Number.isFinite(seconds) || seconds < 0) return;
+    scheduledCues.push({
+      id: "cue_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      t: Math.round(seconds * 1000),
+      templateId
+    });
+    saveScheduledCues();
+    renderCueRuler();
+    renderCueList();
+  });
+
+  // Checked every frame from tickEngines(): advances the playhead,
+  // grows the ruler if a long Take outruns its current scale, and
+  // fires each cue exactly once per Take when its time arrives.
+  function tickScheduledCues() {
+    if (!takeRecording) {
+      cueNowReadout.textContent = "Not recording — cues fire once you press Start Take.";
+      cuePlayhead.classList.add("hide");
+      return;
+    }
+    const elapsedMs = performance.now() - liveTakeStartPerf;
+    cueNowReadout.textContent = `Recording — currently at ${(elapsedMs / 1000).toFixed(1)}s`;
+    if (elapsedMs + 5000 > cueRulerRenderedSpanMs) renderCueRuler();
+    cuePlayhead.classList.remove("hide");
+    cuePlayhead.style.left = Math.min(100, (elapsedMs / cueRulerRenderedSpanMs) * 100) + "%";
+    scheduledCues.forEach((cue) => {
+      if (firedCueIds.has(cue.id) || elapsedMs < cue.t) return;
+      firedCueIds.add(cue.id);
+      const t = templateStore.get(cue.templateId);
+      if (t) triggerTemplate(t);
+    });
+  }
+
   // ---- Live performance timeline (Layer 2) + Template Instances ----
   let liveTakeStartPerf = 0;
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
@@ -795,6 +962,8 @@
     if (!stage.captureStream) { takeStatus.textContent = "This browser can't capture the canvas as a video stream."; return; }
     liveLog = [];
     liveTakeStartPerf = performance.now();
+    firedCueIds = new Set();
+    renderCueRuler();
     takeStartedAt = new Date().toISOString();
     const canvasStream = stage.captureStream(30);
     takeChunks = [];
@@ -964,7 +1133,7 @@
       document.querySelectorAll(".vp-view").forEach((v) => v.classList.add("hide"));
       tab.classList.add("active");
       document.getElementById("vpView" + tab.dataset.view).classList.remove("hide");
-      if (tab.dataset.view === "Live") { renderTemplatePicker(); renderLiveButtons(); }
+      if (tab.dataset.view === "Live") { renderTemplatePicker(); renderLiveButtons(); renderCueSheet(); }
       if (tab.dataset.view === "Takes") renderTakesList();
     });
   });

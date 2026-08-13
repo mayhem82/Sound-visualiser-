@@ -280,6 +280,70 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
 #vpLiveTimelinePanel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(242,242,247,.55); }
 .vp-timeline-log { font-family: ui-monospace, Menlo, monospace; font-size: 13px; display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow-y: auto; }
 
+#vpCueSheetPanel {
+  background: rgba(10, 10, 16, 0.7);
+  border-radius: 14px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+#vpCueSheetPanel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(242,242,247,.55); }
+.vp-cue-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.vp-cue-controls select,
+.vp-cue-controls input[type="number"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.vp-cue-controls input[type="number"] { width: 64px; }
+#vpCueNowReadout { margin-bottom: 8px; }
+.vp-cue-ruler {
+  position: relative;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.vp-cue-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.15); }
+.vp-cue-tick-label { position: absolute; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, 0.45); transform: translateX(-50%); }
+.vp-cue-marker {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.vp-cue-marker-label {
+  position: absolute;
+  top: -2px;
+  font-size: 10px;
+  color: #06202b;
+  background: var(--accent);
+  padding: 1px 4px;
+  border-radius: 4px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.vp-cue-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5a5f; pointer-events: none; z-index: 2; }
+.vp-cue-list { display: flex; flex-direction: column; gap: 6px; }
+.vp-cue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.vp-cue-row button { flex-shrink: 0; }
+
 /* ---- Takes ---- */
 #vpTakesToolbar { display: flex; gap: 10px; flex-wrap: wrap; }
 .vp-takes-list { display: flex; flex-direction: column; gap: 12px; }

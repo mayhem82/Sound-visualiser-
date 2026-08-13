@@ -26,6 +26,7 @@
   const TEMPLATES_KEY = "vpTemplates_v1";
   const TAKES_META_KEY = "vpTakesMeta_v1";
   const LIVE_LAYOUT_KEY = "vpLiveLayout_v1";
+  const SCHEDULED_CUES_KEY = "vpScheduledCues_v1";
 
   // ---- Colour math (JS side, mirrors the shader) ----
 
@@ -394,6 +395,6 @@
     hexToRgb01, rgb01ToHex, rgb2lab, clamp01, CVD_TYPE_CODES,
     VERT_SRC, FRAG_SRC, compileShaderFor, initGLContext, computeCoverUv,
     applyDigitalZoom, loadCalibrationPoints, uploadPointUniforms,
-    CALIBRATION_STORAGE_KEY, MAX_POINTS, TEMPLATES_KEY, TAKES_META_KEY, LIVE_LAYOUT_KEY
+    CALIBRATION_STORAGE_KEY, MAX_POINTS, TEMPLATES_KEY, TAKES_META_KEY, LIVE_LAYOUT_KEY, SCHEDULED_CUES_KEY
   };
 })();
