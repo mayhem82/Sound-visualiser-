@@ -295,7 +295,13 @@
 
   function onUserAction(id, value) {
     setParam(id, value, { reflectDom: false });
-    if (recorder.isRecording) recorder.log(id, value);
+    if (recorder.isRecording) {
+      recorder.log(id, value);
+      // Overdub: a running preview would otherwise keep driving this
+      // same param from the old recording every frame, fighting
+      // whatever the user is live-dragging it to right now.
+      if (studioPreview) studioPreview.excludeParam(id);
+    }
   }
 
   // Snaps every param back to its full pre-recording snapshot, so
@@ -425,6 +431,11 @@
       this.status = "running";
       this.forcedGateIds = [];
       this.preForceGateValues = {};
+      // Punched in during Studio overdub: a param the user grabs live
+      // while this instance is playing back stops being driven by it,
+      // ceding control to whatever's touching the slider right now
+      // instead of the two fighting over it every frame.
+      this.excludeParams = new Set();
 
       // A Template with no tracks or events IS its startingState —
       // "Save Static Look" has nothing else to give it a visible
@@ -483,16 +494,19 @@
     // twice as long. Reverse and duration overrides both keep working
     // unchanged since they only ever see this already-scaled value.
     elapsed() { return (performance.now() - this.startPerf) * this.speed; }
+    excludeParam(id) { this.excludeParams.add(id); }
     tick() {
       if (this.finished) return;
       const t = this.elapsed();
       const tpl = this.template;
       const sampleT = this.reversed ? Math.max(0, tpl.duration - Math.min(t, tpl.duration)) : Math.min(t, tpl.duration);
       for (const track of tpl.tracks) {
+        if (this.excludeParams.has(track.param)) continue;
         const v = sampleTrack(track, sampleT);
         if (v !== undefined) setParam(track.param, v, { reflectDom: this.reflectDom });
       }
       for (const ev of tpl.events) {
+        if (this.excludeParams.has(ev.param)) continue;
         const key = ev.t + ":" + ev.param + ":" + ev.kind;
         if (t >= ev.t && !this.firedEvents.has(key)) {
           this.firedEvents.add(key);
@@ -602,6 +616,7 @@
   // ============================================================
 
   const recordBtn = document.getElementById("vpRecordBtn");
+  const overdubBtn = document.getElementById("vpOverdubBtn");
   const stopBtn = document.getElementById("vpStopBtn");
   const playBtn = document.getElementById("vpPlayBtn");
   const restartBtn = document.getElementById("vpRestartBtn");
@@ -615,30 +630,89 @@
   const thumbImg = document.getElementById("vpThumbPreview");
 
   let draft = null; // result of recorder.stop(), pending save/discard
+  let isOverdubbing = false;
+  let overdubBaseDraft = null;
 
   function setStudioButtonsState() {
     const hasDraft = !!draft;
-    recordBtn.disabled = recorder.isRecording;
-    stopBtn.disabled = !recorder.isRecording;
-    playBtn.disabled = !hasDraft || recorder.isRecording;
-    restartBtn.disabled = !hasDraft;
-    saveBtn.disabled = !hasDraft;
-    discardBtn.disabled = !hasDraft;
-    recIndicator.classList.toggle("hide", !recorder.isRecording);
+    const recording = recorder.isRecording;
+    recordBtn.disabled = recording;
+    overdubBtn.disabled = recording;
+    stopBtn.disabled = !recording;
+    // Overdub keeps the pre-existing draft around (as the base being
+    // played back) while it records, so hasDraft alone doesn't mean
+    // it's safe to Play/Restart/Save/Discard mid-session — all four
+    // need Stop pressed first, same as plain recording already required.
+    playBtn.disabled = !hasDraft || recording;
+    restartBtn.disabled = !hasDraft || recording;
+    saveBtn.disabled = !hasDraft || recording;
+    discardBtn.disabled = !hasDraft || recording;
+    recIndicator.classList.toggle("hide", !recording);
   }
 
   recordBtn.addEventListener("click", () => {
     draft = null;
+    isOverdubbing = false;
+    overdubBaseDraft = null;
     studioStop();
     recorder.start();
     setStudioButtonsState();
   });
+  // Plays the currently loaded draft back (or starts from a blank base
+  // if there isn't one) while recording at the same time — grabbing a
+  // slider mid-playback punches that param into recording from that
+  // instant on, the same feel as overdubbing a track in a DAW. Params
+  // never touched this pass keep the base's own automation untouched.
+  overdubBtn.addEventListener("click", () => {
+    overdubBaseDraft = draft || { tracks: [], events: [], duration: 1, startingState: { ...liveState }, touchedIds: [] };
+    isOverdubbing = true;
+    restoreStartingState(overdubBaseDraft.startingState);
+    recorder.start();
+    studioPlay(overdubBaseDraft);
+    setStudioButtonsState();
+  });
   stopBtn.addEventListener("click", () => {
-    draft = recorder.stop();
+    const recorded = recorder.stop();
+    draft = isOverdubbing ? mergeOverdubDraft(overdubBaseDraft, recorded) : recorded;
+    isOverdubbing = false;
+    overdubBaseDraft = null;
+    studioStop();
     durationEl.textContent = `${(draft.duration / 1000).toFixed(2)}s`;
     captureThumbnail();
     setStudioButtonsState();
   });
+
+  // Splices a punch-in recording onto its base: for each param the new
+  // pass actually touched, keep the base's keyframes/events up to the
+  // moment it was first touched, then switch to whatever was just
+  // played from there. Anything untouched this pass carries over from
+  // the base exactly as it was — that's the whole point of overdubbing
+  // instead of just re-recording everything from scratch.
+  function mergeOverdubDraft(base, overdub) {
+    const mergedTracksByParam = {};
+    (base.tracks || []).forEach((t) => { mergedTracksByParam[t.param] = t.keyframes.slice(); });
+    (overdub.tracks || []).forEach((t) => {
+      const firstT = t.keyframes.length ? t.keyframes[0].t : 0;
+      const oldKfs = (mergedTracksByParam[t.param] || []).filter((kf) => kf.t < firstT);
+      mergedTracksByParam[t.param] = oldKfs.concat(t.keyframes);
+    });
+    const tracks = Object.entries(mergedTracksByParam).map(([param, keyframes]) => ({ param, keyframes }));
+
+    const firstNewEventTByParam = {};
+    (overdub.events || []).forEach((e) => {
+      if (!(e.param in firstNewEventTByParam) || e.t < firstNewEventTByParam[e.param]) firstNewEventTByParam[e.param] = e.t;
+    });
+    const oldEventsKept = (base.events || []).filter((e) => !(e.param in firstNewEventTByParam) || e.t < firstNewEventTByParam[e.param]);
+    const events = oldEventsKept.concat(overdub.events || []).sort((a, b) => a.t - b.t);
+
+    return {
+      tracks,
+      events,
+      duration: Math.max(base.duration || 1, overdub.duration || 1),
+      startingState: base.startingState,
+      touchedIds: [...new Set([...(base.touchedIds || []), ...(overdub.touchedIds || [])])]
+    };
+  }
   playBtn.addEventListener("click", () => {
     if (!draft) return;
     studioStop();

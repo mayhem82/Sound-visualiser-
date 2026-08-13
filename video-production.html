@@ -39,12 +39,14 @@
     <div id="vpTransport">
       <span id="vpRecIndicator" class="vp-rec-indicator hide">&#9679; REC</span>
       <button id="vpRecordBtn" class="vp-btn vp-btn-record">Record Template</button>
+      <button id="vpOverdubBtn" class="vp-btn vp-btn-record">Record Over</button>
       <button id="vpStopBtn" class="vp-btn" disabled>Stop</button>
       <button id="vpPlayBtn" class="vp-btn" disabled>Play</button>
       <button id="vpRestartBtn" class="vp-btn" disabled>Restart</button>
       <span class="vp-transport-gap"></span>
       <span>Duration: <strong id="vpTemplateDuration">0.00s</strong></span>
     </div>
+    <div class="vp-hint">Record Over plays back the currently loaded draft (Reconfigure a saved Template first, or record one) while recording — grab any slider while it plays and your live moves take over from that instant onward, keeping everything you didn't touch exactly as it was, like punching in on a track.</div>
 
     <div id="vpSaveRow">
       <input id="vpTemplateName" type="text" placeholder="Template name (e.g. GOLD LOCK)" maxlength="40">
