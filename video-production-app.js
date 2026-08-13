@@ -776,7 +776,15 @@
     takeStartedAt = new Date().toISOString();
     const canvasStream = stage.captureStream(30);
     takeChunks = [];
-    const mimeCandidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    // mp4 first: real MP4 output where the browser's MediaRecorder can
+    // mux it (Safari always can; Chrome only on some platforms/versions).
+    // Where it can't, isTypeSupported rejects these and we fall through
+    // to webm — there's no client-side re-encode here, so the actual
+    // container you get still depends on what the device can record to.
+    const mimeCandidates = [
+      "video/mp4;codecs=avc1", "video/mp4;codecs=h264", "video/mp4",
+      "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"
+    ];
     const mimeType = mimeCandidates.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || "";
     try {
       takeRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
