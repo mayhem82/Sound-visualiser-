@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>My Journey Into Sight and Sound</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="colorvision.css">
 </head>
@@ -29,6 +35,7 @@
     <p class="hint"><a href="restore.html">Property Colour Reference &rarr;</a></p>
     <p class="hint"><a href="viewer.html">Tablet Viewer &rarr;</a></p>
     <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
   </div>
 </div>
 
@@ -442,5 +449,10 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* PWA installability is a nice-to-have, not load-blocking */ });
+  }
+</script>
 </body>
 </html>

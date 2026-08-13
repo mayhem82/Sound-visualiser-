@@ -3,19 +3,22 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- No RECORD_AUDIO: video-production.html's getUserMedia call is
-         video-only (audio: false) and Takes are recorded from the canvas
-         stream, which carries no audio track — declaring an unused
-         sensitive permission is both misleading and a Play Console
-         review risk. -->
+    <!-- RECORD_AUDIO: Sound Nebula (index.html/script.js) uses the mic
+         for its audio-reactive visuals. Android permissions aren't
+         page-scoped, so this covers the whole app even though Video
+         Production's own getUserMedia call is video-only (audio: false)
+         and never touches it — see the privacy policy for which page
+         actually uses what. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.VpStudio.Launcher">
+        android:theme="@style/Theme.SoundVisualiser.Launcher">
 
         <!--
           TWA wrapper: Chrome (as a Trusted Web Activity) does the actual
@@ -29,7 +32,7 @@
         <activity
             android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
             android:label="@string/app_name"
-            android:theme="@style/Theme.VpStudio.Launcher"
+            android:theme="@style/Theme.SoundVisualiser.Launcher"
             android:exported="true">
 
             <meta-data
@@ -55,15 +58,22 @@
 
             <!-- autoVerify requires the target origin to host
                  /.well-known/assetlinks.json listing this app's package
-                 name + signing certificate SHA-256 fingerprint. -->
+                 name + signing certificate SHA-256 fingerprint (that file
+                 covers the whole origin — the exclusion of Colour Vision
+                 Extreme/Colour Assist/Viewer/Tutorials happens here
+                 instead, via explicit per-page <data> entries rather than
+                 a blanket pathPrefix over the whole site). Following a
+                 link to one of those pages from inside the app still
+                 works — Chrome just falls back to showing its normal
+                 address bar for that page, since it isn't in this list. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="@string/host_name"
-                    android:pathPrefix="@string/path_prefix" />
+                <data android:scheme="https" android:host="@string/host_name" android:path="@string/path_root" />
+                <data android:scheme="https" android:host="@string/host_name" android:path="@string/path_index" />
+                <data android:scheme="https" android:host="@string/host_name" android:path="@string/path_restore" />
+                <data android:scheme="https" android:host="@string/host_name" android:path="@string/path_video_production" />
             </intent-filter>
         </activity>
 

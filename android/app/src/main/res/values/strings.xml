@@ -1,18 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Visual Performance Studio</string>
+    <!--
+      "Sound Visualiser" is the whole-suite bundle: Sound Nebula
+      (index.html), Property Colour Reference (restore.html), and Video
+      Production. Colour Vision Extreme / Colour Assist / Viewer /
+      Tutorials are a separate product (AR-glasses focused) and are
+      deliberately NOT part of this app's verified scope below — links
+      to those pages still work, they just open with Chrome's normal
+      address bar showing instead of full-screen, since they're outside
+      what this app is Digital-Asset-Link-verified for.
+    -->
+    <string name="app_name">Sound Visualiser</string>
 
     <!--
-      Placeholders — update all three together if a custom domain is set
-      up later. As-is, this points at the current GitHub Pages URL, which
-      is a fully valid TWA target (Digital Asset Links verification just
+      Placeholders — update together if a custom domain is set up later.
+      As-is, these point at the current GitHub Pages URL, which is a
+      fully valid TWA target (Digital Asset Links verification just
       needs control over /.well-known/assetlinks.json at this origin,
       which a repo owner has on their own github.io path) but is less
       polished-looking for a paid listing than a real domain would be.
     -->
-    <string name="launch_url">https://mayhem82.github.io/Sound-visualiser-/video-production.html</string>
+    <string name="launch_url">https://mayhem82.github.io/Sound-visualiser-/index.html</string>
     <string name="host_name">mayhem82.github.io</string>
-    <string name="path_prefix">/Sound-visualiser-/video-production.html</string>
+    <string name="path_root">/Sound-visualiser-/</string>
+    <string name="path_index">/Sound-visualiser-/index.html</string>
+    <string name="path_restore">/Sound-visualiser-/restore.html</string>
+    <string name="path_video_production">/Sound-visualiser-/video-production.html</string>
 
     <!--
       Mirrors the target site's /.well-known/assetlinks.json (see
@@ -26,7 +39,7 @@
           \"relation\": [\"delegate_permission/common.handle_all_urls\"],
           \"target\": {
             \"namespace\": \"android_app\",
-            \"package_name\": \"com.mayhem82.vpstudio\",
+            \"package_name\": \"com.mayhem82.soundvisualiser\",
             \"sha256_cert_fingerprints\": [\"AB:7B:23:DD:DA:8A:26:91:CB:72:B7:B1:62:B3:AF:AD:9B:96:4C:E8:87:DE:92:38:AC:D6:06:AB:71:06:89:A4\"]
           }
         }]

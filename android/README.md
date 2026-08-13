@@ -1,21 +1,31 @@
-# Visual Performance Studio — Android package
+# Sound Visualiser — Android package
 
-A Trusted Web Activity (TWA) wrapper around `video-production.html`. Chrome does
-the actual rendering (WebGL, camera, everything already built) — this is a
-thin native shell that launches it full-screen with no browser UI, verified
-via [Digital Asset Links](https://developer.android.com/training/app-links/verify-android-applinks)
+A Trusted Web Activity (TWA) wrapper around the Sound Visualiser suite: Sound
+Nebula (`index.html`), Property Colour Reference (`restore.html`), and Video
+Production. Chrome does the actual rendering (WebGL, camera, mic, everything
+already built) — this is a thin native shell that launches it full-screen with
+no browser UI, verified via [Digital Asset Links](https://developer.android.com/training/app-links/verify-android-applinks)
 so Chrome trusts it enough to hide the address bar entirely.
+
+**Colour Vision Extreme / Colour Assist / Viewer / Tutorials are deliberately
+NOT part of this app's verified scope** — that's a separate product (AR-glasses
+focused), packaged and marketed on its own. Links to those pages from within
+the app still work; they just open with Chrome's normal address bar showing
+instead of full-screen, since `AndroidManifest.xml`'s `autoVerify` intent-filter
+only lists the three included pages (see the `<data>` entries there) rather
+than a blanket path prefix over the whole site.
 
 ## Before your first real Play Store upload
 
-1. **Package name** (`applicationId` in `app/build.gradle`) is `com.mayhem82.vpstudio`
-   right now — a placeholder. It's permanent once published, so change it now
-   if you want something else (e.g. once you have a real domain/company name).
-2. **Launch URL** (`app/src/main/res/values/strings.xml`) points at the current
-   GitHub Pages URL. Fully valid to keep as-is — Digital Asset Links only needs
-   you to control `/.well-known/assetlinks.json` at that origin, which you do —
-   but update `launch_url`/`host_name`/`path_prefix` together if you move to a
-   custom domain later.
+1. **Package name** (`applicationId` in `app/build.gradle`) is
+   `com.mayhem82.soundvisualiser` right now — a placeholder. It's permanent
+   once published, so change it now if you want something else.
+2. **Launch URL / included pages** (`app/src/main/res/values/strings.xml`)
+   point at the current GitHub Pages URL. Fully valid to keep as-is — Digital
+   Asset Links only needs you to control `/.well-known/assetlinks.json` at
+   that origin, which you do — but update `launch_url`/`host_name`/the
+   `path_*` strings *and* the matching `<data>` entries in
+   `AndroidManifest.xml` together if you move to a custom domain later.
 3. **The signing fingerprint in `/.well-known/assetlinks.json` will need to change
    after your first Play Store upload.** The fingerprint in there right now is
    from the local keystore generated alongside this project (see below) — good
@@ -26,6 +36,17 @@ so Chrome trusts it enough to hide the address bar entirely.
    app → Setup → App signing**, copy the SHA-256 there, and update
    `.well-known/assetlinks.json` (safe to list both fingerprints in the array
    during the transition).
+
+## Permissions
+
+- **Camera** — required; every page in this bundle uses it.
+- **Microphone** — required for Sound Nebula's audio-reactive visuals
+  (`index.html`/`script.js`). Video Production explicitly requests
+  `audio: false` and never uses it — the permission is declared once at the
+  app level because Android permissions aren't page-scoped, but the privacy
+  policy is specific about which page actually uses it.
+- **Internet** — required to load the app's own pages on first launch and
+  after updates. No data is uploaded anywhere.
 
 ## The signing keystore
 

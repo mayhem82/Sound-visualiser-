@@ -1,10 +1,20 @@
-// App-shell cache for Visual Performance Studio (video-production.html).
-// getUserMedia/MediaRecorder need a real camera and only work with the page
-// actually running, so this isn't about using the app with no camera —
-// it's what makes the shell installable as a PWA and lets it still load
-// (to whatever extent the shell alone can) on a flaky connection.
-const CACHE_NAME = "vp-studio-shell-v1";
+// App-shell cache for the Sound Visualiser suite — Sound Nebula
+// (index.html), Property Colour Reference (restore.html), and Video
+// Production. Colour Vision Extreme/Colour Assist/Viewer/Tutorials are
+// deliberately left out: that family is a separate product, packaged
+// and marketed on its own (AR-glasses focused), not part of this bundle.
+// getUserMedia/MediaRecorder/mic input need real hardware and only work
+// with the page actually running — this is what makes the shell
+// installable as a PWA and lets it still load (to whatever extent the
+// shell alone can) on a flaky connection, not offline camera/mic use.
+const CACHE_NAME = "sound-visualiser-shell-v2";
 const SHELL_FILES = [
+  "index.html",
+  "script.js",
+  "colorvision.css",
+  "restore.html",
+  "restore.js",
+  "restore.css",
   "video-production.html",
   "video-production.css",
   "video-production.js",

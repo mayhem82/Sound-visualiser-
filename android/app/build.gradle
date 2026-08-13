@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.mayhem82.vpstudio'
+    namespace 'com.mayhem82.soundvisualiser'
     compileSdk 34
 
     defaultConfig {
@@ -11,7 +11,7 @@ android {
         // Play, so finalize this (and ideally move off a personal
         // reverse-domain placeholder to a real one) before the first
         // real release.
-        applicationId "com.mayhem82.vpstudio"
+        applicationId "com.mayhem82.soundvisualiser"
         minSdk 21
         targetSdk 34
         versionCode 1

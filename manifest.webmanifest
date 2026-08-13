@@ -1,8 +1,8 @@
 {
-  "name": "Visual Performance Studio",
-  "short_name": "VP Studio",
-  "description": "Record camera performances as reusable Templates — cue them on a timeline, punch in live overdubs, and trigger them while filming.",
-  "start_url": "./video-production.html",
+  "name": "Sound Visualiser",
+  "short_name": "Sound Visualiser",
+  "description": "Audio-reactive visuals, property colour matching, and record/cue/trigger camera performances — Sound Nebula, Property Colour Reference, and Video Production in one app.",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

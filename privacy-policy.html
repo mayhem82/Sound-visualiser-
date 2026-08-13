@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Privacy Policy — Visual Performance Studio</title>
+<title>Privacy Policy — Sound Visualiser</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
 <style>
   :root { color-scheme: dark; --bg: #05050a; --fg: #f2f2f7; --accent: #7dd3fc; --panel: rgba(255,255,255,0.05); }
@@ -25,32 +25,36 @@
 </head>
 <body>
 <main>
-  <a class="back" href="video-production.html">&larr; Back to Visual Performance Studio</a>
+  <a class="back" href="index.html">&larr; Back to Sound Visualiser</a>
   <h1>Privacy Policy</h1>
   <p class="updated">Last updated: 13 August 2026</p>
 
-  <p>Visual Performance Studio processes everything on your own device. There is no server, no account, and nothing described below is ever sent anywhere.</p>
+  <p>This policy covers the Sound Visualiser app bundle: Sound Nebula, Property Colour Reference, and Video Production. (Colour Vision Extreme, Colour Assist, and their Viewer/Tutorials pages are a separate product with their own listing and privacy policy.) Everything below processes on your own device. There is no server, no account, and nothing described here is ever sent anywhere.</p>
 
   <section>
     <h2>Camera</h2>
-    <p>The app requests camera access to show and process the live video feed on screen. Video frames are processed in memory (colour correction, effects) and never leave the device. Camera access is audio-free — this app never requests or uses the microphone.</p>
+    <p>Every page in this bundle requests camera access to show and process the live video feed on screen. Video frames are processed in memory (colour correction, effects, particle visuals) and never leave the device.</p>
+  </section>
+
+  <section>
+    <h2>Microphone</h2>
+    <p><strong>Sound Nebula</strong> uses the microphone to drive its audio-reactive particle visuals — audio is analysed in memory for volume/frequency and never recorded or stored. <strong>Video Production explicitly does not use the microphone</strong> (its camera request is video-only); <strong>Property Colour Reference</strong> doesn't use it either. Android permissions apply to the whole app rather than one page at a time, which is why the app requests microphone access even though two of its three tools never use it.</p>
   </section>
 
   <section>
     <h2>What's stored, and where</h2>
     <p>All saved data lives in your browser's local storage on your device, scoped to this site. Nothing syncs to a server or account:</p>
     <ul>
-      <li><strong>Templates</strong> — recorded parameter automation you choose to save</li>
-      <li><strong>Cue sheets</strong> — scheduled Template placements you build in Live</li>
-      <li><strong>Calibration points</strong> — colour-correction settings you set up</li>
-      <li><strong>Take metadata</strong> — timestamps and trigger logs for recorded takes (not the video itself — see below)</li>
+      <li><strong>Sound Nebula</strong> — your particle style and colour preferences</li>
+      <li><strong>Property Colour Reference</strong> — saved calibration profiles and reference points</li>
+      <li><strong>Video Production</strong> — Templates (recorded parameter automation), Cue Sheets, calibration points, and Take metadata (timestamps/trigger logs — not the video itself, see below)</li>
     </ul>
     <p>Clearing your browser's site data for this app (or uninstalling it) permanently deletes all of it. There is no cloud backup and no way to recover it afterward.</p>
   </section>
 
   <section>
     <h2>Recorded video (Takes)</h2>
-    <p>When you record a Take, the resulting video is held in memory for that session only, so you can preview and download it. It is not automatically saved anywhere and does not survive a reload or app restart unless you explicitly download it first.</p>
+    <p>When Video Production records a Take, the resulting video is held in memory for that session only, so you can preview and download it. It is not automatically saved anywhere and does not survive a reload or app restart unless you explicitly download it first.</p>
   </section>
 
   <section>
@@ -61,7 +65,8 @@
   <section>
     <h2>Permissions this app requests</h2>
     <ul>
-      <li><strong>Camera</strong> — required; the app's entire purpose is processing the live camera feed.</li>
+      <li><strong>Camera</strong> — required; every included page processes the live camera feed.</li>
+      <li><strong>Microphone</strong> — required for Sound Nebula's audio-reactive visuals only; unused elsewhere in the bundle.</li>
       <li><strong>Internet</strong> (Android package only) — required to load the app's own pages on first launch and after updates. No data is uploaded.</li>
     </ul>
   </section>
