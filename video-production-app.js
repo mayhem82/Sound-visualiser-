@@ -38,7 +38,8 @@
     { id: "zoom", label: "Zoom", kind: "range", min: 100, max: 500, step: 1, default: 100, unit: "%", group: "Camera" },
     { id: "rotate180", label: "Rotate 180°", kind: "toggle", default: false, group: "Camera" },
     { id: "torch", label: "Flashlight", kind: "toggle", default: false, group: "Camera", capability: "torch" },
-    { id: "goldFlash", label: "Gold flash", kind: "trigger", group: "FX" }
+    { id: "goldFlash", label: "Gold flash", kind: "trigger", group: "FX" },
+    { id: "fadeToBlack", label: "Fade to black", kind: "trigger", group: "FX" }
   ];
   const PARAM_BY_ID = {};
   PARAMS.forEach((p) => { PARAM_BY_ID[p.id] = p; });
@@ -58,6 +59,7 @@
   const stage = document.getElementById("vpStage");
   const video = document.getElementById("vpCameraFeed");
   const screenFlashEl = document.getElementById("vpScreenFlash");
+  const fadeOverlayEl = document.getElementById("vpFadeOverlay");
   const startBtn = document.getElementById("vpStartBtn");
   const statusEl = document.getElementById("vpStatus");
   const overlay = document.getElementById("vpOverlay");
@@ -162,6 +164,17 @@
     screenFlashEl.style.opacity = "0";
   }
 
+  // A two-phase fade (in, hold at full black, out) needs its timing to
+  // survive being fired again mid-animation — a CSS animation restarted
+  // by re-adding its class handles that more reliably than a chained
+  // setTimeout would, and keeps this on the same declarative-timing
+  // approach as the recorder (see file-header note in video-production.js).
+  function fireFadeToBlack() {
+    fadeOverlayEl.classList.remove("vp-fade-playing");
+    void fadeOverlayEl.offsetHeight;
+    fadeOverlayEl.classList.add("vp-fade-playing");
+  }
+
   // Writes a value into liveState + performs any side effect + (optionally)
   // reflects it in the DOM control. This is the single place every source
   // of a param change funnels through — user input, template playback,
@@ -171,6 +184,7 @@
     if (!def) return;
     if (def.kind === "trigger") {
       if (id === "goldFlash") fireGoldFlash();
+      if (id === "fadeToBlack") fireFadeToBlack();
       return;
     }
     liveState[id] = value;

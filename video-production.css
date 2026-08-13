@@ -17,6 +17,25 @@
   mix-blend-mode: screen;
 }
 
+/* mix-blend-mode: screen (used above for Gold flash) can only ever
+   brighten — screening black onto anything is a no-op — so Fade to
+   black needs its own plain, normal-blend opaque layer instead. */
+#vpFadeOverlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-color: #000;
+  z-index: 6;
+}
+#vpFadeOverlay.vp-fade-playing { animation: vpFadeToBlackAnim 1100ms ease-in-out; }
+@keyframes vpFadeToBlackAnim {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 #vpOverlay {
   position: fixed;
   inset: 0;
