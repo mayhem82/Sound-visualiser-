@@ -1451,10 +1451,24 @@
     const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     if (isFullscreen) {
       const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit) { try { await exit.call(document); } catch (e) { /* ignore */ } }
+      if (exit) { try { await exit.call(document); } catch (e) { console.error("Exit fullscreen failed", e); } }
     } else {
       const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-      if (req) { try { await req.call(document.documentElement); } catch (e) { /* denied/unsupported — button just stays off */ } }
+      if (!req) {
+        alert("This browser doesn't support the Fullscreen API at all.");
+        return;
+      }
+      // A rejection here (permission denied, blocked by browser policy,
+      // an iframe without the fullscreen permission delegated, etc.)
+      // used to fail completely silently — press the button, nothing
+      // happens, no clue why. alert() isn't pretty, but it's the only
+      // way to see the actual reason on a phone with no devtools open.
+      try {
+        await req.call(document.documentElement);
+      } catch (e) {
+        console.error("Fullscreen request failed", e);
+        alert("Fullscreen didn't start: " + (e.name || "") + (e.message ? " — " + e.message : ""));
+      }
     }
   }
   fullscreenBtn.addEventListener("click", toggleFullscreen);
