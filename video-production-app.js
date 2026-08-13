@@ -425,25 +425,41 @@
       this.forcedGateIds = [];
       this.preForceGateValues = {};
 
-      // Restore only the minimum this Template's own touched params
-      // need to actually be visible — the enabling toggle for whichever
-      // gated group(s) it animates — leaving every other param exactly
-      // as Live's current baseline has it.
-      const touchedIds = new Set(template.touchedIds || Object.keys(template.startingState || {}));
-      const touchedGroups = new Set();
-      PARAMS.forEach((p) => { if (touchedIds.has(p.id)) touchedGroups.add(p.group); });
-      touchedGroups.forEach((group) => {
-        const gateId = GROUP_GATE_PARAM[group];
-        if (!gateId || touchedIds.has(gateId) || !template.startingState || !(gateId in template.startingState)) return;
-        // One bad/legacy entry must not stop the rest from applying or
-        // abort playback outright — that would silently swallow the
-        // whole trigger before it ever reaches triggerTemplate's log.
-        try {
-          this.preForceGateValues[gateId] = liveState[gateId];
-          setParam(gateId, template.startingState[gateId], { reflectDom });
-          this.forcedGateIds.push(gateId);
-        } catch (e) { console.error(`Template "${template.name}": couldn't set ${gateId}`, e); }
-      });
+      // A Template with no tracks or events IS its startingState —
+      // "Save Static Look" has nothing else to give it a visible
+      // effect at all, so it gets the full snapshot, on purpose: that
+      // snapshot is the whole point of triggering it, not incidental
+      // baggage to avoid fighting the current baseline with. Anything
+      // that actually animates params instead restores only the
+      // minimum needed for those touched params to be visible — the
+      // enabling toggle for whichever gated group(s) it touches —
+      // leaving everything else exactly as Live's current baseline has it.
+      const isStaticLook = template.tracks.length === 0 && template.events.length === 0;
+      if (isStaticLook) {
+        Object.keys(template.startingState || {}).forEach((id) => {
+          try {
+            this.preForceGateValues[id] = liveState[id];
+            setParam(id, template.startingState[id], { reflectDom });
+            this.forcedGateIds.push(id);
+          } catch (e) { console.error(`Template "${template.name}": couldn't set ${id}`, e); }
+        });
+      } else {
+        const touchedIds = new Set(template.touchedIds || Object.keys(template.startingState || {}));
+        const touchedGroups = new Set();
+        PARAMS.forEach((p) => { if (touchedIds.has(p.id)) touchedGroups.add(p.group); });
+        touchedGroups.forEach((group) => {
+          const gateId = GROUP_GATE_PARAM[group];
+          if (!gateId || touchedIds.has(gateId) || !template.startingState || !(gateId in template.startingState)) return;
+          // One bad/legacy entry must not stop the rest from applying
+          // or abort playback outright — that would silently swallow
+          // the whole trigger before it ever reaches triggerTemplate's log.
+          try {
+            this.preForceGateValues[gateId] = liveState[gateId];
+            setParam(gateId, template.startingState[gateId], { reflectDom });
+            this.forcedGateIds.push(gateId);
+          } catch (e) { console.error(`Template "${template.name}": couldn't set ${gateId}`, e); }
+        });
+      }
       // Reverse playback starts from wherever the forward recording
       // ENDED, not where it began — snap every animated (continuous)
       // param to its own last keyframe so the transition visibly runs
