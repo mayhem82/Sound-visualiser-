@@ -397,6 +397,20 @@
   // A running playback of one template — either the Studio preview
   // (single instance, reflected on-screen sliders) or one Live
   // Template Instance (silent, composited into liveState only).
+  // A group's own toggle — e.g. Duo Colour's blend slider does nothing
+  // while Duo Colour itself is off — is the only ambient state a
+  // Template is allowed to force open on trigger. Restoring the
+  // Template's FULL old snapshot (everything, not just this) used to
+  // fight whatever Live's current baseline had deliberately set for
+  // completely unrelated params, so a Template built on one baseline
+  // would visibly snap unrelated sliders back to how they looked at
+  // record time the moment it fired. This map is intentionally an
+  // explicit allowlist, not derived from PARAMS' `group` field
+  // generically — Camera's group mixes an unrelated toggle (torch)
+  // with a range slider (zoom) that isn't gated by it at all, so
+  // "any toggle in the same group" doesn't hold everywhere.
+  const GROUP_GATE_PARAM = { Cartoon: "cartoonEnabled", "Duo Colour": "duoColourEnabled", Outline: "outlinesEnabled" };
+
   class PlaybackInstance {
     constructor(template, { onEnd, reflectDom = false, chainDepth = 0, reversed = false } = {}) {
       this.template = template;
@@ -408,20 +422,28 @@
       this.chainDepth = chainDepth;
       this.reversed = reversed;
       this.status = "running";
-      // Studio only generates Templates — it isn't a live preview feed
-      // into Live mode. Triggering a Template must reproduce exactly
-      // what was recorded, so snap straight to its full authored base
-      // (including ambient toggles that were on throughout recording)
-      // before tick() starts layering the recorded tracks/events on top.
-      if (template.startingState) {
-        // One bad/legacy entry (an id that no longer exists, a stale
-        // import) must not stop the rest of the snapshot from applying
-        // or abort playback outright — that would silently swallow the
+      this.forcedGateIds = [];
+      this.preForceGateValues = {};
+
+      // Restore only the minimum this Template's own touched params
+      // need to actually be visible — the enabling toggle for whichever
+      // gated group(s) it animates — leaving every other param exactly
+      // as Live's current baseline has it.
+      const touchedIds = new Set(template.touchedIds || Object.keys(template.startingState || {}));
+      const touchedGroups = new Set();
+      PARAMS.forEach((p) => { if (touchedIds.has(p.id)) touchedGroups.add(p.group); });
+      touchedGroups.forEach((group) => {
+        const gateId = GROUP_GATE_PARAM[group];
+        if (!gateId || touchedIds.has(gateId) || !template.startingState || !(gateId in template.startingState)) return;
+        // One bad/legacy entry must not stop the rest from applying or
+        // abort playback outright — that would silently swallow the
         // whole trigger before it ever reaches triggerTemplate's log.
-        Object.entries(template.startingState).forEach(([id, v]) => {
-          try { setParam(id, v, { reflectDom }); } catch (e) { console.error(`Template "${template.name}": couldn't set ${id}`, e); }
-        });
-      }
+        try {
+          this.preForceGateValues[gateId] = liveState[gateId];
+          setParam(gateId, template.startingState[gateId], { reflectDom });
+          this.forcedGateIds.push(gateId);
+        } catch (e) { console.error(`Template "${template.name}": couldn't set ${gateId}`, e); }
+      });
       // Reverse playback starts from wherever the forward recording
       // ENDED, not where it began — snap every animated (continuous)
       // param to its own last keyframe so the transition visibly runs
@@ -464,9 +486,15 @@
       switch (this.template.endBehavior) {
         case "return":
           touched.forEach((id) => setParam(id, this.template.startingState[id], { reflectDom: this.reflectDom }));
+          // Forced-open gates return to whatever Live's baseline had
+          // BEFORE this instance forced them on — not this Template's
+          // own old snapshot value, which is what just forced them
+          // open in the first place and would leave them stuck on.
+          this.forcedGateIds.forEach((id) => setParam(id, this.preForceGateValues[id], { reflectDom: this.reflectDom }));
           break;
         case "base":
           touched.forEach((id) => setParam(id, PARAM_BY_ID[id].default, { reflectDom: this.reflectDom }));
+          this.forcedGateIds.forEach((id) => setParam(id, PARAM_BY_ID[id].default, { reflectDom: this.reflectDom }));
           break;
         case "chain":
           if (this.template.chainTemplateId && this.chainDepth < 8) {
