@@ -1,0 +1,17 @@
+{
+  "name": "Visual Performance Studio",
+  "short_name": "VP Studio",
+  "description": "Record camera performances as reusable Templates — cue them on a timeline, punch in live overdubs, and trigger them while filming.",
+  "start_url": "./video-production.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06202b",
+  "theme_color": "#06202b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

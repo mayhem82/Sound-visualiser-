@@ -1617,4 +1617,8 @@
   setStudioButtonsState();
   refreshTemplateLists();
   liveLayoutSelect.value = liveLayout.style;
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* PWA installability is a nice-to-have, not load-blocking */ });
+  }
 })();
