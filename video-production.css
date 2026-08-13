@@ -332,27 +332,34 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
 }
 .vp-cue-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.15); }
 .vp-cue-tick-label { position: absolute; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, 0.45); transform: translateX(-50%); }
-.vp-cue-marker {
+.vp-cue-marker-wrap {
   position: absolute;
   top: 6px;
   bottom: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+.vp-cue-marker-wrap.vp-cue-marker-dragging { cursor: grabbing; z-index: 3; }
+.vp-cue-marker {
+  position: absolute;
+  inset: 0;
   min-width: 3px;
   background: var(--accent);
   opacity: 0.55;
   border-radius: 2px;
-  cursor: pointer;
 }
 .vp-cue-marker-reversed { background: #ff9f43; }
 .vp-cue-marker-label {
   position: absolute;
-  top: -2px;
+  left: 0;
+  top: -10px;
   font-size: 10px;
   color: #06202b;
   background: var(--accent);
   padding: 1px 4px;
   border-radius: 4px;
-  transform: translateX(-50%);
   white-space: nowrap;
+  pointer-events: none;
 }
 .vp-cue-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5a5f; pointer-events: none; z-index: 2; }
 .vp-cue-list { display: flex; flex-direction: column; gap: 6px; }

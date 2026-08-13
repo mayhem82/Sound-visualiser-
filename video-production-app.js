@@ -412,7 +412,7 @@
   const GROUP_GATE_PARAM = { Cartoon: "cartoonEnabled", "Duo Colour": "duoColourEnabled", Outline: "outlinesEnabled" };
 
   class PlaybackInstance {
-    constructor(template, { onEnd, reflectDom = false, chainDepth = 0, reversed = false } = {}) {
+    constructor(template, { onEnd, reflectDom = false, chainDepth = 0, reversed = false, speed = 1 } = {}) {
       this.template = template;
       this.startPerf = performance.now();
       this.firedEvents = new Set();
@@ -421,6 +421,7 @@
       this.reflectDom = reflectDom;
       this.chainDepth = chainDepth;
       this.reversed = reversed;
+      this.speed = Number.isFinite(speed) && speed > 0 ? speed : 1;
       this.status = "running";
       this.forcedGateIds = [];
       this.preForceGateValues = {};
@@ -475,7 +476,13 @@
         });
       }
     }
-    elapsed() { return performance.now() - this.startPerf; }
+    // Scaling elapsed real time by speed, rather than touching tick()'s
+    // sampling/comparison logic at all, is what makes speed act like
+    // video playback rate: 2x runs through the Template's own timeline
+    // (and reaches its duration/end) in half the real time; 0.5x takes
+    // twice as long. Reverse and duration overrides both keep working
+    // unchanged since they only ever see this already-scaled value.
+    elapsed() { return (performance.now() - this.startPerf) * this.speed; }
     tick() {
       if (this.finished) return;
       const t = this.elapsed();
@@ -874,6 +881,7 @@
   const cueTemplateSelect = document.getElementById("vpCueTemplateSelect");
   const cueTimeInput = document.getElementById("vpCueTimeInput");
   const cueLengthInput = document.getElementById("vpCueLengthInput");
+  const cueSpeedInput = document.getElementById("vpCueSpeedInput");
   const cueReverseCheckbox = document.getElementById("vpCueReverseCheckbox");
   const cueEndBehaviorSelect = document.getElementById("vpCueEndBehaviorSelect");
   const cueChainSelect = document.getElementById("vpCueChainSelect");
@@ -908,8 +916,13 @@
   // placeholder, but works the same way for an animated one too
   // (holds/truncates at whatever length is set here instead).
   function cueEffectiveDurationMs(cue, template) {
-    if (Number.isFinite(cue.durationMs) && cue.durationMs > 0) return cue.durationMs;
-    return template ? template.duration : 0;
+    const base = Number.isFinite(cue.durationMs) && cue.durationMs > 0 ? cue.durationMs : (template ? template.duration : 0);
+    // Length is in the Template's own timeline units; speed scales how
+    // fast real time moves through that timeline (2x finishes in half
+    // the real time), so the actual wall-clock span this cue occupies
+    // on the ruler is the length divided by speed, not the raw length.
+    const speed = Number.isFinite(cue.speed) && cue.speed > 0 ? cue.speed : 1;
+    return base / speed;
   }
 
   function cueRulerSpanMs() {
@@ -948,10 +961,12 @@
     if (prev && templateStore.get(prev)) cueChainSelect.value = prev;
   }
 
+  const CUE_LONG_PRESS_MS = 400;
+
   function renderCueRuler() {
     cueRulerRenderedSpanMs = cueRulerSpanMs();
     const spanMs = cueRulerRenderedSpanMs;
-    cueRuler.querySelectorAll(".vp-cue-tick, .vp-cue-tick-label, .vp-cue-marker, .vp-cue-marker-label").forEach((el) => el.remove());
+    cueRuler.querySelectorAll(".vp-cue-tick, .vp-cue-tick-label, .vp-cue-marker-wrap").forEach((el) => el.remove());
     const stepS = spanMs > 90000 ? 20 : spanMs > 45000 ? 10 : 5;
     for (let s = 0; s * 1000 <= spanMs; s += stepS) {
       const pct = (s * 1000 / spanMs) * 100;
@@ -972,17 +987,67 @@
       // visible on the ruler, not just the instant it fires.
       const startPct = Math.min(100, (cue.t / spanMs) * 100);
       const endPct = Math.min(100, ((cue.t + durMs) / spanMs) * 100);
+      const wrap = document.createElement("div");
+      wrap.className = "vp-cue-marker-wrap";
+      wrap.style.left = startPct + "%";
+      wrap.style.width = Math.max(0.4, endPct - startPct) + "%";
       const marker = document.createElement("div");
       marker.className = "vp-cue-marker" + (cue.reversed ? " vp-cue-marker-reversed" : "");
-      marker.style.left = startPct + "%";
-      marker.style.width = Math.max(0.4, endPct - startPct) + "%";
-      marker.title = `${(cue.t / 1000).toFixed(1)}s – ${((cue.t + durMs) / 1000).toFixed(1)}s — ${t ? t.name : "missing template"}${cue.reversed ? " (reversed)" : ""} (click to remove)`;
-      marker.addEventListener("click", (e) => { e.stopPropagation(); removeCue(cue.id); });
+      marker.title = `${(cue.t / 1000).toFixed(1)}s – ${((cue.t + durMs) / 1000).toFixed(1)}s — ${t ? t.name : "missing template"}${cue.reversed ? " (reversed)" : ""} (tap to remove, hold and drag to move)`;
       const label = document.createElement("div");
       label.className = "vp-cue-marker-label";
-      label.style.left = startPct + "%";
       label.textContent = (cue.reversed ? "↺ " : "") + (t ? t.name : "?");
-      cueRuler.append(marker, label);
+      wrap.append(marker, label);
+      // Swallow the click the browser fires after any tap/drag so it
+      // never bubbles to the ruler's own click-to-place handler below.
+      wrap.addEventListener("click", (e) => e.stopPropagation());
+      attachCueDragHandlers(wrap, cue);
+      cueRuler.appendChild(wrap);
+    });
+  }
+
+  // Tap (no meaningful hold, no drag) still removes a cue, same as
+  // before. Holding past CUE_LONG_PRESS_MS switches to dragging it
+  // along the ruler instead — repositioning it live as the pointer
+  // moves, committed to scheduledCues only once the drag ends.
+  function attachCueDragHandlers(wrap, cue) {
+    wrap.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      const pointerId = e.pointerId;
+      let dragging = false;
+      const longPressTimer = setTimeout(() => {
+        dragging = true;
+        wrap.classList.add("vp-cue-marker-dragging");
+        try { wrap.setPointerCapture(pointerId); } catch (err) { /* not critical */ }
+      }, CUE_LONG_PRESS_MS);
+
+      const onMove = (ev) => {
+        if (!dragging) return;
+        const rect = cueRuler.getBoundingClientRect();
+        const frac = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+        cue.t = Math.round(frac * cueRulerRenderedSpanMs);
+        const t = templateStore.get(cue.templateId);
+        const durMs = cueEffectiveDurationMs(cue, t);
+        const startPct = Math.min(100, (cue.t / cueRulerRenderedSpanMs) * 100);
+        const endPct = Math.min(100, ((cue.t + durMs) / cueRulerRenderedSpanMs) * 100);
+        wrap.style.left = startPct + "%";
+        wrap.style.width = Math.max(0.4, endPct - startPct) + "%";
+      };
+      const onUp = () => {
+        clearTimeout(longPressTimer);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        wrap.classList.remove("vp-cue-marker-dragging");
+        if (dragging) {
+          saveScheduledCues();
+          renderCueRuler();
+          renderCueList();
+        } else {
+          removeCue(cue.id);
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, { once: true });
     });
   }
 
@@ -1004,7 +1069,8 @@
       const label = document.createElement("span");
       const behaviorNote = cue.endBehavior ? ` · ${cue.endBehavior}${cue.endBehavior === "chain" && cue.chainTemplateId ? ` → ${(templateStore.get(cue.chainTemplateId) || {}).name || "?"}` : ""}` : "";
       const lengthNote = Number.isFinite(cue.durationMs) && cue.durationMs > 0 ? ` · ${(cue.durationMs / 1000).toFixed(1)}s length` : "";
-      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}${lengthNote}${behaviorNote}`;
+      const speedNote = Number.isFinite(cue.speed) && cue.speed > 0 && cue.speed !== 1 ? ` · ${cue.speed}x speed` : "";
+      label.textContent = `${(cue.t / 1000).toFixed(1)}s → ${t ? `${t.name} v${t.version}` : "missing template"}${cue.reversed ? " (reversed)" : ""}${lengthNote}${speedNote}${behaviorNote}`;
       const actions = document.createElement("div");
       actions.className = "vp-cue-row-actions";
       if (t) {
@@ -1038,6 +1104,7 @@
     if (cue.endBehavior) copy.endBehavior = cue.endBehavior;
     if (cue.chainTemplateId) copy.chainTemplateId = cue.chainTemplateId;
     if (Number.isFinite(cue.durationMs) && cue.durationMs > 0) copy.durationMs = cue.durationMs;
+    if (Number.isFinite(cue.speed) && cue.speed > 0 && cue.speed !== 1) copy.speed = cue.speed;
     scheduledCues.push(copy);
     saveScheduledCues();
     renderCueRuler();
@@ -1082,6 +1149,8 @@
     // placement — left blank, it just uses the Template's duration.
     const lengthSeconds = parseFloat(cueLengthInput.value);
     if (Number.isFinite(lengthSeconds) && lengthSeconds > 0) cue.durationMs = Math.round(lengthSeconds * 1000);
+    const speedValue = parseFloat(cueSpeedInput.value);
+    if (Number.isFinite(speedValue) && speedValue > 0 && speedValue !== 1) cue.speed = speedValue;
     scheduledCues.push(cue);
     saveScheduledCues();
     renderCueRuler();
@@ -1107,7 +1176,7 @@
       firedCueIds.add(cue.id);
       const t = templateStore.get(cue.templateId);
       if (t) {
-        triggerTemplate(t, { reversed: !!cue.reversed, endBehavior: cue.endBehavior, chainTemplateId: cue.chainTemplateId, durationMs: cue.durationMs });
+        triggerTemplate(t, { reversed: !!cue.reversed, endBehavior: cue.endBehavior, chainTemplateId: cue.chainTemplateId, durationMs: cue.durationMs, speed: cue.speed });
       } else {
         // Cue points at a template that no longer exists — this used
         // to fire silently into nothing, indistinguishable from the
@@ -1122,7 +1191,7 @@
   let liveTakeStartPerf = 0;
   let liveLog = []; // [{t, templateId, templateVersion, templateName}]
 
-  function triggerTemplate(template, { reversed = false, endBehavior, chainTemplateId, durationMs } = {}) {
+  function triggerTemplate(template, { reversed = false, endBehavior, chainTemplateId, durationMs, speed = 1 } = {}) {
     // End behaviour/chain-to/length are set per cue in Live, not
     // baked into the Template — override only the fields actually
     // specified, falling back to whatever the Template itself was
@@ -1141,7 +1210,7 @@
     // reaching the log push below — button press, nothing happens, no
     // timeline entry, no visible error. Surface it instead.
     try {
-      const inst = new PlaybackInstance(effectiveTemplate, { reflectDom: false, reversed });
+      const inst = new PlaybackInstance(effectiveTemplate, { reflectDom: false, reversed, speed });
       activeInstances.push(inst);
     } catch (e) {
       console.error(`Couldn't trigger template "${template.name}"`, e);
@@ -1149,7 +1218,7 @@
     }
     liveLog.push({
       t: Math.round(performance.now() - liveTakeStartPerf),
-      duration: effectiveTemplate.duration,
+      duration: effectiveTemplate.duration / speed,
       templateId: template.id, templateVersion: template.version, templateName: template.name,
       reversed
     });
