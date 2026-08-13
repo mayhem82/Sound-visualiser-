@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Visual Performance Studio</string>
+
+    <!--
+      Placeholders — update all three together if a custom domain is set
+      up later. As-is, this points at the current GitHub Pages URL, which
+      is a fully valid TWA target (Digital Asset Links verification just
+      needs control over /.well-known/assetlinks.json at this origin,
+      which a repo owner has on their own github.io path) but is less
+      polished-looking for a paid listing than a real domain would be.
+    -->
+    <string name="launch_url">https://mayhem82.github.io/Sound-visualiser-/video-production.html</string>
+    <string name="host_name">mayhem82.github.io</string>
+    <string name="path_prefix">/Sound-visualiser-/video-production.html</string>
+
+    <!--
+      Mirrors the target site's /.well-known/assetlinks.json (see
+      android/README.md). The real SHA-256 fingerprint goes in after the
+      signing keystore is generated — this placeholder will fail
+      verification (harmlessly; the TWA just falls back to showing
+      Chrome's normal address bar) until it's replaced.
+    -->
+    <string name="asset_statements">
+        [{
+          \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+          \"target\": {
+            \"namespace\": \"android_app\",
+            \"package_name\": \"com.mayhem82.vpstudio\",
+            \"sha256_cert_fingerprints\": [\"AB:7B:23:DD:DA:8A:26:91:CB:72:B7:B1:62:B3:AF:AD:9B:96:4C:E8:87:DE:92:38:AC:D6:06:AB:71:06:89:A4\"]
+          }
+        }]
+    </string>
+</resources>

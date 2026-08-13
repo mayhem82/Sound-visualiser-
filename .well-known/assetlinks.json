@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.mayhem82.vpstudio",
+    "sha256_cert_fingerprints": [
+      "AB:7B:23:DD:DA:8A:26:91:CB:72:B7:B1:62:B3:AF:AD:9B:96:4C:E8:87:DE:92:38:AC:D6:06:AB:71:06:89:A4"
+    ]
+  }
+}]

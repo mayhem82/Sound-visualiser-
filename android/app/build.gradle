@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.mayhem82.vpstudio'
+    compileSdk 34
+
+    defaultConfig {
+        // Placeholder — an applicationId is permanent once published to
+        // Play, so finalize this (and ideally move off a personal
+        // reverse-domain placeholder to a real one) before the first
+        // real release.
+        applicationId "com.mayhem82.vpstudio"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            // CI supplies these via env vars (see .github/workflows/build-android.yml);
+            // locally, an unset keystore path just falls through to an
+            // unsigned build — assembleDebug works either way.
+            def storeFilePath = System.getenv("VP_KEYSTORE_PATH")
+            if (storeFilePath) {
+                storeFile file(storeFilePath)
+                storePassword System.getenv("VP_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("VP_KEY_ALIAS")
+                keyPassword System.getenv("VP_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv("VP_KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+}
+
+dependencies {
+    // Google's official Trusted Web Activity helper — LauncherActivity
+    // below comes from this, no custom Activity code needed for a
+    // basic TWA wrapping an existing PWA.
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
