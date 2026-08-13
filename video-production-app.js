@@ -687,6 +687,14 @@
     liveLayout.templateIds.forEach((id, idx) => {
       const t = templateStore.get(id);
       if (!t) return;
+      // A <button> can't validly contain another <button> — nesting the
+      // reorder controls inside the trigger button (as this used to)
+      // made the browser's parser silently restructure the DOM, which
+      // desynced the actual clickable region from what was on screen
+      // and needed an extra click to register. Reorder controls are a
+      // sibling of the trigger button instead, inside a positioned wrap.
+      const wrap = document.createElement("div");
+      wrap.className = "vp-template-btn-wrap";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "vp-template-btn";
@@ -703,8 +711,8 @@
       right.type = "button"; right.className = "vp-reorder-btn"; right.textContent = "›";
       right.addEventListener("click", (e) => { e.stopPropagation(); moveLiveButton(idx, 1); });
       controls.append(left, right);
-      btn.appendChild(controls);
-      liveButtonBar.appendChild(btn);
+      wrap.append(btn, controls);
+      liveButtonBar.appendChild(wrap);
     });
   }
   function moveLiveButton(idx, dir) {
