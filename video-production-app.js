@@ -912,7 +912,15 @@
       if (firedCueIds.has(cue.id) || elapsedMs < cue.t) return;
       firedCueIds.add(cue.id);
       const t = templateStore.get(cue.templateId);
-      if (t) triggerTemplate(t);
+      if (t) {
+        triggerTemplate(t);
+      } else {
+        // Cue points at a template that no longer exists — this used
+        // to fire silently into nothing, indistinguishable from the
+        // cue simply never being checked at all.
+        console.error("Cue at", cue.t, "ms references a missing template:", cue.templateId);
+        takeStatus.textContent = `A scheduled cue at ${(cue.t / 1000).toFixed(1)}s points at a template that no longer exists.`;
+      }
     });
   }
 
