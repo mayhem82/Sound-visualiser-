@@ -615,6 +615,25 @@
     refreshTemplateLists();
   });
 
+  // Puts a saved Template's base look back into Studio so it can be
+  // re-recorded from that exact starting point — the same underlying
+  // move Restart already does mid-session, just entered from the
+  // Saved Templates list instead of from a just-stopped recording.
+  // Saving under the unchanged, pre-filled name creates a new version
+  // (templateStore.save's existing versioning), the old one untouched.
+  function loadTemplateIntoStudio(t) {
+    if (recorder.isRecording) return;
+    studioStop();
+    draft = null;
+    restoreStartingState(t.startingState);
+    nameInput.value = t.name;
+    endBehaviorSelect.value = t.endBehavior || "return";
+    chainSelect.value = t.chainTemplateId || "";
+    durationEl.textContent = "0.00s";
+    thumbImg.classList.add("hide");
+    setStudioButtonsState();
+  }
+
   function captureThumbnail() {
     try {
       thumbCanvas.width = 160; thumbCanvas.height = 90;
@@ -690,6 +709,11 @@
       row.className = "vp-manage-row";
       const info = document.createElement("span");
       info.textContent = `${t.name} v${t.version} — ${(t.duration / 1000).toFixed(2)}s — ${t.endBehavior}`;
+      const actions = document.createElement("div");
+      actions.className = "vp-manage-row-actions";
+      const reconfigure = document.createElement("button");
+      reconfigure.type = "button"; reconfigure.className = "vp-btn vp-btn-small"; reconfigure.textContent = "Reconfigure";
+      reconfigure.addEventListener("click", () => loadTemplateIntoStudio(t));
       const del = document.createElement("button");
       del.type = "button"; del.className = "vp-btn vp-btn-small"; del.textContent = "Delete";
       del.addEventListener("click", () => {
@@ -698,7 +722,8 @@
         saveLiveLayout();
         refreshTemplateLists();
       });
-      row.append(info, del);
+      actions.append(reconfigure, del);
+      row.append(info, actions);
       templateManageList.appendChild(row);
     });
   }

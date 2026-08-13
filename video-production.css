@@ -213,6 +213,7 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
   padding: 8px 12px;
   font-size: 14px;
 }
+.vp-manage-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 /* ---- Live ---- */
 #vpLiveSetup {
