@@ -458,7 +458,7 @@
             if (next) {
               const inst = new PlaybackInstance(next, { onEnd: this.onEnd, reflectDom: this.reflectDom, chainDepth: this.chainDepth + 1 });
               activeInstances.push(inst);
-              liveLog.push({ t: Math.round(performance.now() - liveTakeStartPerf), templateId: next.id, templateVersion: next.version, templateName: next.name, chainedFrom: this.template.id });
+              liveLog.push({ t: Math.round(performance.now() - liveTakeStartPerf), duration: next.duration, templateId: next.id, templateVersion: next.version, templateName: next.name, chainedFrom: this.template.id });
             }
           }
           break;
@@ -814,8 +814,15 @@
   // to a stable step so the scale doesn't jitter every frame.
   function cueRulerSpanMs() {
     const runningMs = takeRecording ? performance.now() - liveTakeStartPerf : 0;
-    const furthestCueMs = scheduledCues.reduce((m, c) => Math.max(m, c.t), 0);
-    const needed = Math.max(30000, runningMs + 5000, furthestCueMs + 5000);
+    // The furthest point that needs to fit is where a cue's own
+    // transition ENDS, not just where it starts — otherwise a long
+    // template placed near the current scale's edge gets its tail
+    // clipped off the ruler.
+    const furthestCueEndMs = scheduledCues.reduce((m, c) => {
+      const t = templateStore.get(c.templateId);
+      return Math.max(m, c.t + (t ? t.duration : 0));
+    }, 0);
+    const needed = Math.max(30000, runningMs + 5000, furthestCueEndMs + 5000);
     return Math.ceil(needed / 30000) * 30000;
   }
 
@@ -848,15 +855,21 @@
     }
     scheduledCues.forEach((cue) => {
       const t = templateStore.get(cue.templateId);
-      const pct = Math.min(100, (cue.t / spanMs) * 100);
+      const durMs = t ? t.duration : 0;
+      // Rendered as a span from start to end, not a single point, so
+      // the cue's full duration — when it starts AND when it ends — is
+      // visible on the ruler, not just the instant it fires.
+      const startPct = Math.min(100, (cue.t / spanMs) * 100);
+      const endPct = Math.min(100, ((cue.t + durMs) / spanMs) * 100);
       const marker = document.createElement("div");
       marker.className = "vp-cue-marker";
-      marker.style.left = pct + "%";
-      marker.title = `${(cue.t / 1000).toFixed(1)}s — ${t ? t.name : "missing template"} (click to remove)`;
+      marker.style.left = startPct + "%";
+      marker.style.width = Math.max(0.4, endPct - startPct) + "%";
+      marker.title = `${(cue.t / 1000).toFixed(1)}s – ${((cue.t + durMs) / 1000).toFixed(1)}s — ${t ? t.name : "missing template"} (click to remove)`;
       marker.addEventListener("click", (e) => { e.stopPropagation(); removeCue(cue.id); });
       const label = document.createElement("div");
       label.className = "vp-cue-marker-label";
-      label.style.left = pct + "%";
+      label.style.left = startPct + "%";
       label.textContent = t ? t.name : "?";
       cueRuler.append(marker, label);
     });
@@ -966,17 +979,21 @@
     }
     liveLog.push({
       t: Math.round(performance.now() - liveTakeStartPerf),
+      duration: template.duration,
       templateId: template.id, templateVersion: template.version, templateName: template.name
     });
     renderLiveTimeline();
   }
 
+  function fmtCueSeconds(ms) { return (ms / 1000).toFixed(3).padStart(7, "0"); }
+
   function renderLiveTimeline() {
     const el = document.getElementById("vpLiveTimelineLog");
     if (!el) return;
-    el.innerHTML = liveLog.slice(-12).reverse().map((e) =>
-      `<div>${(e.t / 1000).toFixed(3).padStart(7, "0")}s → ${e.templateName} v${e.templateVersion}${e.chainedFrom ? " (chained)" : ""}</div>`
-    ).join("");
+    el.innerHTML = liveLog.slice(-12).reverse().map((e) => {
+      const endMs = e.t + (e.duration || 0);
+      return `<div>${fmtCueSeconds(e.t)}s → ${fmtCueSeconds(endMs)}s   ${e.templateName} v${e.templateVersion}${e.chainedFrom ? " (chained)" : ""}</div>`;
+    }).join("");
   }
 
   // ============================================================

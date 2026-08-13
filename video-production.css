@@ -334,8 +334,9 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
   position: absolute;
   top: 6px;
   bottom: 6px;
-  width: 3px;
+  min-width: 3px;
   background: var(--accent);
+  opacity: 0.55;
   border-radius: 2px;
   cursor: pointer;
 }
