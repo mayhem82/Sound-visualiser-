@@ -41,6 +41,26 @@
     <button id="vpFullscreenBtn" class="vp-btn vp-btn-small vp-fullscreen-btn" type="button" aria-pressed="false" aria-label="Fullscreen" title="Fullscreen">&#9974;</button>
   </nav>
 
+  <!-- Sibling of the .vp-view sections (like #vpTabs), not inside any of
+       them, so fullscreen's "hide every view's own controls" rule never
+       touches it — zoom and Start/Stop Take stay reachable through a
+       whole take, fullscreen or not. Only shown while the Live tab is
+       active. -->
+  <div id="vpLiveTransport" class="hide">
+    <div id="vpLiveZoom">
+      <span class="vp-live-zoom-label">Zoom</span>
+      <button id="vpZoomOutBtn" class="vp-btn vp-btn-small" type="button" aria-label="Zoom out">&minus;</button>
+      <input id="vpZoomSlider" type="range" min="100" max="500" step="1" value="100" aria-label="Zoom level">
+      <span id="vpZoomValue" class="vp-zoom-value">100%</span>
+      <button id="vpZoomInBtn" class="vp-btn vp-btn-small" type="button" aria-label="Zoom in">+</button>
+      <button id="vpZoomResetBtn" class="vp-btn vp-btn-small vp-btn-secondary" type="button">Reset</button>
+    </div>
+    <span class="vp-transport-gap"></span>
+    <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>
+    <button id="vpStopTakeBtn" class="vp-btn" disabled>Stop Take</button>
+    <span id="vpTakeStatus" class="vp-hint"></span>
+  </div>
+
   <section id="vpViewStudio" class="vp-view">
     <div id="vpTransport">
       <span id="vpRecIndicator" class="vp-rec-indicator hide">&#9679; REC</span>
@@ -80,9 +100,6 @@
           <option value="dock">Floating dock</option>
         </select>
       </label>
-      <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>
-      <button id="vpStopTakeBtn" class="vp-btn" disabled>Stop Take</button>
-      <span id="vpTakeStatus" class="vp-hint"></span>
     </div>
     <details id="vpTemplatePickerWrap">
       <summary>Choose Templates to show as buttons</summary>

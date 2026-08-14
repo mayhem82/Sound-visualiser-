@@ -65,6 +65,15 @@
   const overlay = document.getElementById("vpOverlay");
   const app = document.getElementById("vpApp");
 
+  // Live view's persistent zoom widget — lives outside any .vp-view (see
+  // #vpLiveTransport in the HTML) so it survives fullscreen. Grabbed here,
+  // alongside the other top-level DOM refs, so setParam (defined below,
+  // but reachable from anywhere a param change can originate) can safely
+  // reflect zoom changes into it without a temporal-dead-zone risk.
+  const liveTransportEl = document.getElementById("vpLiveTransport");
+  const liveZoomSlider = document.getElementById("vpZoomSlider");
+  const liveZoomValue = document.getElementById("vpZoomValue");
+
   let gl, program, uniforms, videoTexture;
   let currentStream = null;
   let videoTrack = null;
@@ -190,6 +199,15 @@
     liveState[id] = value;
     if (id === "zoom" && zoomCaps) applyZoomHardware(value);
     if (id === "torch") applyTorch(!!value);
+    // Always kept in sync, independent of reflectDom/domRefs: the Live
+    // zoom widget is a second surface for the same param (Studio's own
+    // slider is the other), so it needs to reflect zoom changes from
+    // every source — Studio's slider, a triggered Live template, or its
+    // own buttons — not just the ones that ask for a domRefs echo.
+    if (id === "zoom") {
+      liveZoomSlider.value = value;
+      liveZoomValue.textContent = formatParamValue(def, value);
+    }
     if (reflectDom) {
       const ref = domRefs[id];
       if (ref) {
@@ -1332,6 +1350,26 @@
   const startTakeBtn = document.getElementById("vpStartTakeBtn");
   const stopTakeBtn = document.getElementById("vpStopTakeBtn");
   const takeStatus = document.getElementById("vpTakeStatus");
+
+  // ---- Live zoom widget (#vpLiveTransport) ----
+  // Routed through the same onUserAction/setParam pipeline as every other
+  // param, so it drives the actual camera zoom (hardware if the device
+  // supports it, digital crop otherwise) exactly like Studio's own Zoom
+  // slider does — this is just a second control surface for the same
+  // "zoom" param, reachable from the Live tab and through fullscreen.
+  const zoomOutBtn = document.getElementById("vpZoomOutBtn");
+  const zoomInBtn = document.getElementById("vpZoomInBtn");
+  const zoomResetBtn = document.getElementById("vpZoomResetBtn");
+  const ZOOM_STEP = 20;
+  function nudgeZoom(delta) {
+    const def = PARAM_BY_ID.zoom;
+    const v = Math.min(def.max, Math.max(def.min, liveState.zoom + delta));
+    onUserAction("zoom", v);
+  }
+  liveZoomSlider.addEventListener("input", () => onUserAction("zoom", parseFloat(liveZoomSlider.value)));
+  zoomOutBtn.addEventListener("click", () => nudgeZoom(-ZOOM_STEP));
+  zoomInBtn.addEventListener("click", () => nudgeZoom(ZOOM_STEP));
+  zoomResetBtn.addEventListener("click", () => onUserAction("zoom", PARAM_BY_ID.zoom.default));
   let takeRecorder = null;
   let takeChunks = [];
   let takeRecording = false;
@@ -1523,7 +1561,12 @@
       document.querySelectorAll(".vp-view").forEach((v) => v.classList.add("hide"));
       tab.classList.add("active");
       document.getElementById("vpView" + tab.dataset.view).classList.remove("hide");
-      if (tab.dataset.view === "Live") { renderTemplatePicker(); renderLiveButtons(); renderCueSheet(); }
+      liveTransportEl.classList.toggle("hide", tab.dataset.view !== "Live");
+      if (tab.dataset.view === "Live") {
+        renderTemplatePicker(); renderLiveButtons(); renderCueSheet();
+        liveZoomSlider.value = liveState.zoom;
+        liveZoomValue.textContent = formatParamValue(PARAM_BY_ID.zoom, liveState.zoom);
+      }
       if (tab.dataset.view === "Takes") renderTakesList();
     });
   });
