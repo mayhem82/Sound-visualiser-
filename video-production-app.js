@@ -1477,13 +1477,28 @@
     if (takeRecorder && takeRecording) takeRecorder.stop();
   });
 
-  function onTakeStopped() {
+  async function onTakeStopped() {
     takeRecording = false;
     startTakeBtn.disabled = false; stopTakeBtn.disabled = true;
     const videoMimeType = takeChunks[0] ? takeChunks[0].type : "video/webm";
-    const blob = new Blob(takeChunks, { type: videoMimeType });
-    const url = URL.createObjectURL(blob);
+    let blob = new Blob(takeChunks, { type: videoMimeType });
     const duration = Math.round(performance.now() - liveTakeStartPerf);
+    // MediaRecorder's WebM output never has a Duration in its container
+    // metadata — video.duration on it reads as Infinity — which is why a
+    // saved Take could only be trimmed/edited across a tiny sliver
+    // instead of its real length in an external editor. Patches it in
+    // using our own accurately-timed `duration`, never anything read back
+    // out of the file. Skips (leaves the blob untouched) for anything
+    // that isn't WebM, or if the patch can't be proven safe — see
+    // fixWebmDuration's own bail-out conditions.
+    if (videoMimeType.indexOf("webm") !== -1) {
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const fixed = C.fixWebmDuration(bytes, duration);
+        if (fixed) blob = new Blob([fixed], { type: videoMimeType });
+      } catch (e) { /* keep the original, unpatched blob */ }
+    }
+    const url = URL.createObjectURL(blob);
     const meta = {
       id: "take_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       startedAt: takeStartedAt,
