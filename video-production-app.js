@@ -74,12 +74,20 @@
   // changes into it without a temporal-dead-zone risk.
   const liveZoomSlider = document.getElementById("vpZoomSlider");
   const liveZoomValue = document.getElementById("vpZoomValue");
+  const switchCameraBtn = document.getElementById("vpSwitchCameraBtn");
 
   let gl, program, uniforms, videoTexture;
   let currentStream = null;
   let videoTrack = null;
   let torchSupported = false;
   let zoomCaps = null; // {min,max,step} if hardware zoom supported
+  // Phones commonly expose more than the simple front/back pair (extra
+  // wide, telephoto, multiple back lenses), so devices are enumerated and
+  // cycled by deviceId rather than just flipping a front/back facingMode —
+  // same approach as Colour Vision Extreme's camera switching.
+  let videoDevices = [];
+  let currentDeviceIndex = -1;
+  let switchingCamera = false;
   let calibrationPoints = C.loadCalibrationPoints();
   let running = false;
 
@@ -1615,8 +1623,92 @@
   });
 
   // ============================================================
-  // CAMERA START
+  // CAMERA START + SWITCHING
   // ============================================================
+
+  // Shared by startCamera() and switchCamera(): wires a new stream up as
+  // the active one and re-probes torch/zoom capabilities, since a
+  // different lens (e.g. front vs. back, or ultra-wide vs. main) can
+  // support different things than the one it's replacing.
+  async function attachCameraStream(stream) {
+    currentStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    videoTrack = stream.getVideoTracks()[0];
+    const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+    torchSupported = !!(caps && caps.torch);
+    domRefs.torch.wrap.classList.toggle("vp-unavailable", !torchSupported);
+    domRefs.torch.input.disabled = !torchSupported;
+    // zoomCaps stays null (digital-zoom fallback, always available) unless
+    // the device genuinely reports a hardware zoom range; the zoom slider
+    // itself always stays a fixed 100-500% control either way — only
+    // which mechanism setParam("zoom", ...) uses underneath changes.
+    zoomCaps = (caps && caps.zoom) ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 1 } : null;
+  }
+
+  function stopCurrentStream() {
+    if (!currentStream) return;
+    currentStream.getTracks().forEach((t) => t.stop());
+    currentStream = null;
+  }
+
+  async function refreshVideoDevices() {
+    if (!("mediaDevices" in navigator) || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      switchCameraBtn.classList.toggle("hide", videoDevices.length <= 1);
+      const activeId = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().deviceId : null;
+      currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
+      if (currentDeviceIndex === -1) currentDeviceIndex = 0;
+    } catch (err) {
+      switchCameraBtn.classList.add("hide");
+    }
+  }
+
+  async function switchCamera() {
+    if (videoDevices.length <= 1 || switchingCamera) return;
+    switchingCamera = true;
+    switchCameraBtn.disabled = true;
+    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    const nextDevice = videoDevices[nextIndex];
+    // Release the current camera before requesting the next one. Many
+    // phones — especially Android — refuse or silently fail a second
+    // concurrent camera open, so grabbing the new stream while the old
+    // one is still held could fail on real hardware even though it works
+    // fine against a single mocked device.
+    stopCurrentStream();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: nextDevice.deviceId } },
+        audio: false
+      });
+      await attachCameraStream(stream);
+      currentDeviceIndex = nextIndex;
+      await refreshVideoDevices();
+    } catch (err) {
+      console.error("Couldn't switch camera", err);
+      // The old camera is already released at this point — try to recover
+      // some feed rather than leave the screen dark.
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        await attachCameraStream(fallback);
+        await refreshVideoDevices();
+      } catch (err2) {
+        alert("Camera lost — reload the page to reconnect.");
+      }
+    } finally {
+      switchingCamera = false;
+      switchCameraBtn.disabled = false;
+    }
+  }
+  switchCameraBtn.addEventListener("click", switchCamera);
+  if ("mediaDevices" in navigator && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", refreshVideoDevices);
+  }
 
   async function startCamera() {
     statusEl.textContent = "Requesting camera…";
@@ -1625,19 +1717,8 @@
         video: { facingMode: { ideal: "environment" } },
         audio: false
       });
-      currentStream = stream;
-      video.srcObject = stream;
-      await video.play();
-      videoTrack = stream.getVideoTracks()[0];
-      const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-      torchSupported = !!(caps && caps.torch);
-      domRefs.torch.wrap.classList.toggle("vp-unavailable", !torchSupported);
-      domRefs.torch.input.disabled = !torchSupported;
-      // zoomCaps stays null (digital-zoom fallback, always available) unless
-      // the device genuinely reports a hardware zoom range; the zoom slider
-      // itself always stays a fixed 100-500% control either way — only
-      // which mechanism setParam("zoom", ...) uses underneath changes.
-      zoomCaps = (caps && caps.zoom) ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 1 } : null;
+      await attachCameraStream(stream);
+      await refreshVideoDevices();
       resizeStage();
       initGL();
       calibrationPoints = C.loadCalibrationPoints();
