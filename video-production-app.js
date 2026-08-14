@@ -76,6 +76,20 @@
   const liveZoomValue = document.getElementById("vpZoomValue");
   const switchCameraBtn = document.getElementById("vpSwitchCameraBtn");
 
+  // ---- Dual camera (picture-in-picture) ----
+  // A second, fully independent camera feed, open concurrently with the
+  // primary one — not all devices support two concurrent capture
+  // sessions, so this is offered but never assumed; opening it is
+  // attempted on demand and fails gracefully (see enableDualCamera).
+  const video2 = document.getElementById("vpCameraFeed2");
+  const dualCameraBtn = document.getElementById("vpDualCameraBtn");
+  const swapCamerasBtn = document.getElementById("vpSwapCamerasBtn");
+  let videoTexture2 = null;
+  let secondaryStream = null;
+  let secondaryVideoTrack = null;
+  let dualCameraActive = false;
+  let dualCameraBusy = false; // guards against overlapping enable/disable/swap calls
+
   let gl, program, uniforms, videoTexture;
   let currentStream = null;
   let videoTrack = null;
@@ -152,6 +166,36 @@
       gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
       gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // Dual camera inset — reuses every correction/effect uniform already
+      // set above for this frame (same look applied to both feeds), only
+      // rebinding the texture, restating its own aspect-fit UVs/texel size
+      // (a different camera, so different native resolution), and forcing
+      // rotate180 off (that toggle is about correcting how the *primary*
+      // camera is physically mounted, not the inset). No digital zoom here
+      // — keeps the inset a stable, un-zoomed framing of the second feed.
+      // Restricting gl.viewport() to a corner rect is what actually places
+      // and scales it; drawn last so it always sits on top. Every uniform
+      // touched here gets fully overwritten at the top of next frame's
+      // main pass, so nothing needs restoring except the viewport itself.
+      if (dualCameraActive && secondaryVideoTrack && video2.readyState >= video2.HAVE_CURRENT_DATA) {
+        const marginPx = Math.round(stage.width * 0.02);
+        const insetW = Math.round(stage.width * 0.32);
+        const insetH = Math.round(insetW * ((video2.videoHeight / video2.videoWidth) || 9 / 16));
+        const insetX = stage.width - insetW - marginPx;
+        const insetY = marginPx; // gl.viewport's Y origin is the bottom of the canvas
+        const cover2 = C.computeCoverUv(video2.videoWidth, video2.videoHeight, insetW, insetH);
+        gl.viewport(insetX, insetY, insetW, insetH);
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture2);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video2);
+        gl.uniform1i(uniforms.uTex, 0);
+        gl.uniform1f(uniforms.uRotate180, 0);
+        gl.uniform2f(uniforms.uTexelSize, 1 / video2.videoWidth, 1 / video2.videoHeight);
+        gl.uniform2f(uniforms.uUvScale, cover2.sx, cover2.sy);
+        gl.uniform2f(uniforms.uUvOffset, cover2.ox, cover2.oy);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.viewport(0, 0, stage.width, stage.height);
+      }
     }
     tickEngines();
     requestAnimationFrame(renderFrame);
@@ -1626,24 +1670,38 @@
   // CAMERA START + SWITCHING
   // ============================================================
 
+  // zoomCaps stays null (digital-zoom fallback, always available) unless
+  // the device genuinely reports a hardware zoom range; the zoom slider
+  // itself always stays a fixed 100-500% control either way — only which
+  // mechanism setParam("zoom", ...) uses underneath changes. Shared by
+  // attachCameraStream() and swapCameras(), since either can bring a
+  // different lens (e.g. front vs. back, or ultra-wide vs. main) in as
+  // the primary feed, and each supports different things than the one
+  // it's replacing.
+  function probeTrackCapabilities(track) {
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    return {
+      torch: !!(caps && caps.torch),
+      zoom: (caps && caps.zoom) ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 1 } : null
+    };
+  }
+
+  function applyPrimaryCapabilities(track) {
+    const caps = probeTrackCapabilities(track);
+    torchSupported = caps.torch;
+    domRefs.torch.wrap.classList.toggle("vp-unavailable", !torchSupported);
+    domRefs.torch.input.disabled = !torchSupported;
+    zoomCaps = caps.zoom;
+  }
+
   // Shared by startCamera() and switchCamera(): wires a new stream up as
-  // the active one and re-probes torch/zoom capabilities, since a
-  // different lens (e.g. front vs. back, or ultra-wide vs. main) can
-  // support different things than the one it's replacing.
+  // the active one and re-probes torch/zoom capabilities.
   async function attachCameraStream(stream) {
     currentStream = stream;
     video.srcObject = stream;
     await video.play();
     videoTrack = stream.getVideoTracks()[0];
-    const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-    torchSupported = !!(caps && caps.torch);
-    domRefs.torch.wrap.classList.toggle("vp-unavailable", !torchSupported);
-    domRefs.torch.input.disabled = !torchSupported;
-    // zoomCaps stays null (digital-zoom fallback, always available) unless
-    // the device genuinely reports a hardware zoom range; the zoom slider
-    // itself always stays a fixed 100-500% control either way — only
-    // which mechanism setParam("zoom", ...) uses underneath changes.
-    zoomCaps = (caps && caps.zoom) ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 1 } : null;
+    applyPrimaryCapabilities(videoTrack);
   }
 
   function stopCurrentStream() {
@@ -1657,12 +1715,15 @@
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoDevices = devices.filter((d) => d.kind === "videoinput");
-      switchCameraBtn.classList.toggle("hide", videoDevices.length <= 1);
+      const hasMultiple = videoDevices.length > 1;
+      switchCameraBtn.classList.toggle("hide", !hasMultiple || dualCameraActive);
+      dualCameraBtn.classList.toggle("hide", !hasMultiple);
       const activeId = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().deviceId : null;
       currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
       if (currentDeviceIndex === -1) currentDeviceIndex = 0;
     } catch (err) {
       switchCameraBtn.classList.add("hide");
+      dualCameraBtn.classList.add("hide");
     }
   }
 
@@ -1709,6 +1770,111 @@
   if ("mediaDevices" in navigator && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener("devicechange", refreshVideoDevices);
   }
+
+  // ---- Dual camera (picture-in-picture) ----
+
+  // Prefers a device whose label suggests the opposite facing from the
+  // primary camera's (front vs. back) — the actually-useful pairing on a
+  // phone — falling back to just "any other device" for external/USB
+  // cameras or unlabelled devices where facing can't be guessed at all.
+  function pickSecondaryDevice() {
+    if (videoDevices.length < 2) return null;
+    const others = videoDevices.filter((_, i) => i !== currentDeviceIndex);
+    const primaryLabel = (videoDevices[currentDeviceIndex] && videoDevices[currentDeviceIndex].label) || "";
+    const wantsFront = /back|environment|rear/i.test(primaryLabel);
+    const wantsBack = /front|user|selfie/i.test(primaryLabel);
+    if (wantsFront) {
+      const front = others.find((d) => /front|user|selfie/i.test(d.label));
+      if (front) return front;
+    }
+    if (wantsBack) {
+      const back = others.find((d) => /back|environment|rear/i.test(d.label));
+      if (back) return back;
+    }
+    return others[0] || null;
+  }
+
+  async function enableDualCamera() {
+    if (dualCameraActive || dualCameraBusy) return;
+    const device = pickSecondaryDevice();
+    if (!device) {
+      alert("Only one camera available — nothing to add as a second feed.");
+      return;
+    }
+    dualCameraBusy = true;
+    dualCameraBtn.disabled = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: device.deviceId } },
+        audio: false
+      });
+      secondaryStream = stream;
+      video2.srcObject = stream;
+      await video2.play();
+      secondaryVideoTrack = stream.getVideoTracks()[0];
+      if (!videoTexture2) videoTexture2 = C.createVideoTexture(gl);
+      dualCameraActive = true;
+      dualCameraBtn.classList.add("active");
+      dualCameraBtn.textContent = "Dual camera: On";
+      swapCamerasBtn.classList.remove("hide");
+      await refreshVideoDevices(); // also hides Switch camera while dual mode holds a second device
+    } catch (err) {
+      // Not every device/browser can actually open two concurrent capture
+      // sessions (this is the whole reason the feature is opt-in rather
+      // than assumed) — fail with a clear reason rather than a silent
+      // black inset.
+      alert("Couldn't open a second camera: " + (err.message || err.name || "unknown error") +
+        ". This device or browser may not support two camera streams at once.");
+    } finally {
+      dualCameraBusy = false;
+      dualCameraBtn.disabled = false;
+    }
+  }
+
+  function disableDualCamera() {
+    if (secondaryStream) {
+      secondaryStream.getTracks().forEach((t) => t.stop());
+      secondaryStream = null;
+    }
+    secondaryVideoTrack = null;
+    video2.srcObject = null;
+    dualCameraActive = false;
+    dualCameraBtn.classList.remove("active");
+    dualCameraBtn.textContent = "Dual camera";
+    swapCamerasBtn.classList.add("hide");
+    refreshVideoDevices(); // brings Switch camera back now only one device is held
+  }
+
+  dualCameraBtn.addEventListener("click", () => {
+    if (dualCameraActive) disableDualCamera(); else enableDualCamera();
+  });
+
+  // Swaps which feed is full-screen vs. inset without reopening either
+  // camera — just hands each <video> element the other's already-live
+  // stream, then re-probes torch/zoom for whichever stream is now primary
+  // (a different lens can support different things).
+  async function swapCameras() {
+    if (!dualCameraActive || dualCameraBusy) return;
+    dualCameraBusy = true;
+    swapCamerasBtn.disabled = true;
+    try {
+      const nextPrimaryStream = secondaryStream;
+      const nextSecondaryStream = currentStream;
+      video.srcObject = nextPrimaryStream;
+      video2.srcObject = nextSecondaryStream;
+      await Promise.all([video.play(), video2.play()]);
+      currentStream = nextPrimaryStream;
+      secondaryStream = nextSecondaryStream;
+      videoTrack = currentStream.getVideoTracks()[0];
+      secondaryVideoTrack = secondaryStream.getVideoTracks()[0];
+      applyPrimaryCapabilities(videoTrack);
+      await refreshVideoDevices();
+    } finally {
+      dualCameraBusy = false;
+      swapCamerasBtn.disabled = false;
+    }
+  }
+  swapCamerasBtn.addEventListener("click", swapCameras);
 
   async function startCamera() {
     statusEl.textContent = "Requesting camera…";

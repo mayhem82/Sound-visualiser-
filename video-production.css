@@ -80,6 +80,7 @@
 .vp-btn-small { min-height: 36px; padding: 6px 12px; font-size: 13px; }
 .vp-btn-danger { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #fca5a5; }
 .vp-btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+.vp-btn.active { background: var(--accent); color: #06202b; border-color: var(--accent); }
 .vp-file-btn { display: inline-flex; align-items: center; justify-content: center; }
 
 input[type="text"], select {

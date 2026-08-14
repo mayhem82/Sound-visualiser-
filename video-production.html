@@ -18,6 +18,7 @@
 <body>
 <canvas id="vpStage"></canvas>
 <video id="vpCameraFeed" playsinline muted hidden></video>
+<video id="vpCameraFeed2" playsinline muted hidden></video>
 <canvas id="vpThumbCanvas" hidden></canvas>
 <div id="vpScreenFlash" aria-hidden="true"></div>
 <div id="vpFadeOverlay" aria-hidden="true"></div>
@@ -59,6 +60,8 @@
       <button id="vpZoomResetBtn" class="vp-btn vp-btn-small vp-btn-secondary" type="button">Reset</button>
     </div>
     <button id="vpSwitchCameraBtn" class="vp-btn vp-btn-small hide" type="button" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+    <button id="vpDualCameraBtn" class="vp-btn vp-btn-small hide" type="button" title="Open a second camera at the same time as a picture-in-picture inset — needs a device that supports two concurrent camera streams.">Dual camera</button>
+    <button id="vpSwapCamerasBtn" class="vp-btn vp-btn-small hide" type="button" title="Swap which camera is full-screen and which is the inset.">Swap</button>
     <span class="vp-transport-gap"></span>
     <div id="vpTakeControls" class="hide">
       <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>

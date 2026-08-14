@@ -294,6 +294,21 @@
     return sh;
   }
 
+  // Factored out of initGLContext so a second camera feed (dual/PiP mode)
+  // can get its own texture using the exact same setup, without needing a
+  // second shader program — both textures are sampled by the same uTex
+  // uniform, one draw call at a time, just rebound between them.
+  function createVideoTexture(glCtx) {
+    const tex = glCtx.createTexture();
+    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+    return tex;
+  }
+
   function initGLContext(canvas) {
     const glCtx = canvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
       canvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
@@ -314,13 +329,7 @@
     const aPos = glCtx.getAttribLocation(prog, "aPos");
     glCtx.enableVertexAttribArray(aPos);
     glCtx.vertexAttribPointer(aPos, 2, glCtx.FLOAT, false, 0, 0);
-    const tex = glCtx.createTexture();
-    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
-    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+    const tex = createVideoTexture(glCtx);
     const uniformNames = [
       "uTex", "uBlend", "uOutlineEnabled", "uOutlineThickness", "uOutlineBlend", "uOutlineOpacity", "uOutlineColor",
       "uCartoonEnabled", "uCartoonBlend", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
@@ -394,7 +403,7 @@
   window.VP_CORE = {
     hexToRgb01, rgb01ToHex, rgb2lab, clamp01, CVD_TYPE_CODES,
     VERT_SRC, FRAG_SRC, compileShaderFor, initGLContext, computeCoverUv,
-    applyDigitalZoom, loadCalibrationPoints, uploadPointUniforms,
+    applyDigitalZoom, createVideoTexture, loadCalibrationPoints, uploadPointUniforms,
     CALIBRATION_STORAGE_KEY, MAX_POINTS, TEMPLATES_KEY, TAKES_META_KEY, LIVE_LAYOUT_KEY, SCHEDULED_CUES_KEY
   };
 })();
