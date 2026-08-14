@@ -23,6 +23,8 @@ share a dark visual style and a lot of underlying plumbing:
   reference colour (a paint chip or swatch) rather than a generic filter.
 - **`viewer.html`** — a read-only viewer for any of the above pages' "Connect
   tablet" broadcasts.
+- **`call.html`** — two-way peer-to-peer video calling, using the same
+  room-code pairing as "Connect tablet" above.
 - **`tutorials.html`** — a placeholder grid for short how-to video clips.
 
 No build step, no dependencies — open any `.html` file directly in a
@@ -350,6 +352,27 @@ three pages above — open it on a second device and enter the room code (or
 open the direct link shown on the broadcasting device). Shows a single view
 normally, or the raw/original feed alongside the corrected one side by side
 when the broadcaster is sending both.
+
+## Video Call (`call.html`)
+
+Peer-to-peer video calling between two devices — direct WebRTC, no account,
+no call server. Reuses the same room-code pairing as "Connect tablet" above
+(a short code, handshake signaled over public MQTT relays), but two-way:
+both sides send camera and microphone, instead of one broadcasting to a
+read-only viewer.
+
+**Start a call** generates a room code and waits; **join with a room code**
+(or open the shared link, which prefills and auto-joins) connects to it.
+Once connected: **Mute** and **Camera off** toggle your own tracks without
+dropping the call, **Hang up** ends it.
+
+Like the rest of this suite's pairing, there's no TURN relay configured —
+only a public STUN server, used to discover a direct path between the two
+devices. That's enough for most home and mobile networks, but very
+restrictive ones (some corporate firewalls, certain mobile carrier setups)
+can still block the connection outright, since there's nothing here to
+relay the actual call media if a direct path can't be found. Deliberately
+the cheap option to try first, not a guarantee.
 
 ## Video Tutorials (`tutorials.html`)
 
