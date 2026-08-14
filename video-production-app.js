@@ -65,12 +65,13 @@
   const overlay = document.getElementById("vpOverlay");
   const app = document.getElementById("vpApp");
 
-  // Live view's persistent zoom widget — lives outside any .vp-view (see
-  // #vpLiveTransport in the HTML) so it survives fullscreen. Grabbed here,
-  // alongside the other top-level DOM refs, so setParam (defined below,
-  // but reachable from anywhere a param change can originate) can safely
-  // reflect zoom changes into it without a temporal-dead-zone risk.
-  const liveTransportEl = document.getElementById("vpLiveTransport");
+  // Persistent zoom widget — lives outside any .vp-view (see
+  // #vpLiveTransport in the HTML) so it survives fullscreen, and stays
+  // visible on every tab since zoom is a camera control, not something
+  // specific to Studio or Live. Grabbed here, alongside the other
+  // top-level DOM refs, so setParam (defined below, but reachable from
+  // anywhere a param change can originate) can safely reflect zoom
+  // changes into it without a temporal-dead-zone risk.
   const liveZoomSlider = document.getElementById("vpZoomSlider");
   const liveZoomValue = document.getElementById("vpZoomValue");
 
@@ -1351,12 +1352,12 @@
   const stopTakeBtn = document.getElementById("vpStopTakeBtn");
   const takeStatus = document.getElementById("vpTakeStatus");
 
-  // ---- Live zoom widget (#vpLiveTransport) ----
+  // ---- Persistent zoom widget (#vpLiveTransport) ----
   // Routed through the same onUserAction/setParam pipeline as every other
   // param, so it drives the actual camera zoom (hardware if the device
   // supports it, digital crop otherwise) exactly like Studio's own Zoom
   // slider does — this is just a second control surface for the same
-  // "zoom" param, reachable from the Live tab and through fullscreen.
+  // "zoom" param, reachable from every tab and through fullscreen.
   const zoomOutBtn = document.getElementById("vpZoomOutBtn");
   const zoomInBtn = document.getElementById("vpZoomInBtn");
   const zoomResetBtn = document.getElementById("vpZoomResetBtn");
@@ -1561,12 +1562,11 @@
       document.querySelectorAll(".vp-view").forEach((v) => v.classList.add("hide"));
       tab.classList.add("active");
       document.getElementById("vpView" + tab.dataset.view).classList.remove("hide");
-      liveTransportEl.classList.toggle("hide", tab.dataset.view !== "Live");
-      if (tab.dataset.view === "Live") {
-        renderTemplatePicker(); renderLiveButtons(); renderCueSheet();
-        liveZoomSlider.value = liveState.zoom;
-        liveZoomValue.textContent = formatParamValue(PARAM_BY_ID.zoom, liveState.zoom);
-      }
+      // Zoom (#vpLiveTransport) stays up regardless of tab; only
+      // Start/Stop Take — Live's own concept, meaningless on Studio/Takes
+      // — toggles with the active tab.
+      document.getElementById("vpTakeControls").classList.toggle("hide", tab.dataset.view !== "Live");
+      if (tab.dataset.view === "Live") { renderTemplatePicker(); renderLiveButtons(); renderCueSheet(); }
       if (tab.dataset.view === "Takes") renderTakesList();
     });
   });

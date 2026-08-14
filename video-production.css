@@ -168,6 +168,7 @@ body.vp-fullscreen-active .vp-view { display: none !important; }
   padding: 10px 12px;
 }
 #vpLiveZoom { display: flex; align-items: center; gap: 8px; }
+#vpTakeControls { display: flex; align-items: center; gap: 8px; }
 .vp-live-zoom-label { font-size: 13px; font-weight: 700; color: rgba(242, 242, 247, 0.7); }
 #vpZoomSlider { width: 140px; }
 .vp-zoom-value { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
