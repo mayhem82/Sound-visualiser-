@@ -16,19 +16,25 @@
 }
 
 /* Self-view: a small corner inset over the remote feed, same bottom-right
-   picture-in-picture convention as Video Production's dual camera mode. */
-#localVideo {
+   picture-in-picture convention as Video Production's dual camera mode.
+   A <canvas>, not a <video> — it's the styled (Normal/Cartoon) output,
+   the same thing that gets sent to the other side, not the raw camera. */
+#localCanvas {
   position: fixed;
   right: 14px;
   bottom: 14px;
   width: 30vw;
   max-width: 220px;
   aspect-ratio: 3 / 4;
-  object-fit: cover;
   border-radius: 14px;
   border: 2px solid rgba(242, 242, 247, 0.25);
   background: #111;
   z-index: 2;
+  transition: opacity 0.15s;
+}
+
+#localCanvas.camera-off {
+  opacity: 0.35;
 }
 
 .call-status {
@@ -79,6 +85,24 @@
 }
 
 .field-label input[type="text"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field-label select {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 12px 10px;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.field-label select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

@@ -11,7 +11,12 @@
 <body>
 <div id="stage">
   <video id="remoteVideo" playsinline autoplay></video>
-  <video id="localVideo" playsinline autoplay muted></video>
+  <!-- Raw camera feed — never shown or sent directly. It's the source
+       texture for localCanvas below, which applies the chosen video style
+       and is what's actually displayed as the self-view and sent to the
+       other side. -->
+  <video id="cameraFeed" playsinline muted hidden></video>
+  <canvas id="localCanvas"></canvas>
   <p id="callStatus" class="call-status" aria-live="polite"></p>
 </div>
 
@@ -20,6 +25,14 @@
     <h1>Video Call</h1>
     <p>Peer-to-peer video calling, direct between two devices — no account, no call server. Same room-code pairing as this suite's tablet-sharing feature, just two-way this time: both sides send camera and microphone.</p>
     <p class="hint">Very restrictive networks (some corporate firewalls, certain mobile carrier setups) can still block a direct connection — there's a relay only for exchanging the initial handshake, not for the call itself.</p>
+
+    <label class="field-label">
+      Video style
+      <select id="styleSelect">
+        <option value="normal">Normal</option>
+        <option value="cartoon">Cartoon</option>
+      </select>
+    </label>
 
     <button id="startCallBtn">Start a call</button>
 
@@ -46,6 +59,10 @@
   <button id="hangupBtn" class="hud-btn hud-btn-danger" title="End the call">&#9742; Hang up</button>
 </div>
 
+<!-- video-production.js is loaded for its window.VP_CORE export (the WebGL
+     correction/style pipeline — Cartoon mode included), not for anything
+     else on that page. -->
+<script src="video-production.js"></script>
 <script src="call.js"></script>
 </body>
 </html>

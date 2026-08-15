@@ -1,6 +1,11 @@
 (() => {
   "use strict";
 
+  // video-production.js's WebGL correction/style pipeline (the exact same
+  // engine that backs its Cartoon mode), loaded on this page purely for
+  // this export — see the <script> comment in call.html.
+  const C = window.VP_CORE;
+
   // Same public STUN server used everywhere else in this suite's WebRTC
   // pairing (restore.js / colorvision.js / viewer.js) — needed for NAT
   // traversal even on the same wifi network in many router configurations.
@@ -70,7 +75,9 @@
   }
 
   const remoteVideo = document.getElementById("remoteVideo");
-  const localVideo = document.getElementById("localVideo");
+  const cameraFeed = document.getElementById("cameraFeed"); // raw camera, hidden — see call.html
+  const localCanvas = document.getElementById("localCanvas"); // styled output — self-view + what's actually sent
+  const styleSelect = document.getElementById("styleSelect");
   const callStatus = document.getElementById("callStatus");
   const overlay = document.getElementById("overlay");
   const startCallBtn = document.getElementById("startCallBtn");
@@ -89,6 +96,7 @@
   function setCallStatus(msg) { callStatus.textContent = msg || ""; }
 
   let localStream = null;
+  let canvasStream = null; // captured from localCanvas — this is what's actually sent as the outgoing video track
   let pc = null;
   let clients = [];
   let deviceId = null;
@@ -97,10 +105,87 @@
   let remotePeerId = null;
   let torn = true; // true whenever no call is active/in-progress
 
+  // ---- Video style pipeline ----
+  // Runs continuously once a call starts, independent of connection state:
+  // it's what the self-view shows and what canvasStream captures, so the
+  // chosen style is visible before the other side even joins.
+  let gl, program, uniforms, videoTexture;
+  let renderRafId = null;
+
+  function resizeLocalCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = localCanvas.getBoundingClientRect();
+    localCanvas.width = Math.max(1, Math.round(rect.width * dpr));
+    localCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+    if (gl) gl.viewport(0, 0, localCanvas.width, localCanvas.height);
+  }
+
+  function initLocalRenderPipeline() {
+    if (gl) return; // already set up — startCall/joinCall can both call this once localStream exists
+    const ctxState = C.initGLContext(localCanvas);
+    gl = ctxState.gl; program = ctxState.program; uniforms = ctxState.uniforms; videoTexture = ctxState.videoTexture;
+    C.uploadPointUniforms(gl, program, uniforms, []); // no calibrated colour points on this page — Normal/Cartoon only
+    resizeLocalCanvas();
+    window.addEventListener("resize", resizeLocalCanvas);
+    renderLocalFrame();
+    canvasStream = localCanvas.captureStream(30);
+  }
+
+  function renderLocalFrame() {
+    if (gl && cameraFeed.readyState >= cameraFeed.HAVE_CURRENT_DATA) {
+      const cover = C.computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, localCanvas.width, localCanvas.height);
+      const cartoonOn = styleSelect.value === "cartoon";
+      gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cameraFeed);
+      gl.uniform1i(uniforms.uTex, 0);
+      gl.uniform1f(uniforms.uBlend, 1);
+      gl.uniform1f(uniforms.uOutlineEnabled, 0);
+      gl.uniform1f(uniforms.uOutlineThickness, 2);
+      gl.uniform1f(uniforms.uOutlineBlend, 1);
+      gl.uniform1f(uniforms.uOutlineOpacity, 1);
+      gl.uniform3f(uniforms.uOutlineColor, 1, 1, 1);
+      // Same Cartoon mode defaults as Video Production's own — posterize +
+      // edge lines + a saturation boost. Not exposed as sliders here: this
+      // page is "pick a style before you call," not a full studio.
+      gl.uniform1f(uniforms.uCartoonEnabled, cartoonOn ? 1 : 0);
+      gl.uniform1f(uniforms.uCartoonBlend, 1);
+      gl.uniform1f(uniforms.uCartoonLevels, 6);
+      gl.uniform1f(uniforms.uCartoonEdgeThickness, 2);
+      gl.uniform1f(uniforms.uCartoonEdgeStrength, 0.6);
+      gl.uniform1f(uniforms.uCartoonSaturation, 1.35);
+      gl.uniform1f(uniforms.uDuoEnabled, 0);
+      gl.uniform1f(uniforms.uDuoBlend, 0);
+      gl.uniform3f(uniforms.uDuoLo, 0, 0, 0);
+      gl.uniform3f(uniforms.uDuoHi, 1, 1, 1);
+      gl.uniform2f(uniforms.uTexelSize, 1 / cameraFeed.videoWidth, 1 / cameraFeed.videoHeight);
+      gl.uniform1f(uniforms.uSpread, 4);
+      gl.uniform1i(uniforms.uCvdType, 0);
+      gl.uniform1f(uniforms.uCvdStrength, 0);
+      gl.uniform1f(uniforms.uExposure, 0);
+      gl.uniform1f(uniforms.uContrast, 0);
+      gl.uniform1f(uniforms.uBrightness, 0);
+      gl.uniform1f(uniforms.uSaturation, 0);
+      gl.uniform1f(uniforms.uRotate180, 0);
+      gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
+      gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    renderRafId = requestAnimationFrame(renderLocalFrame);
+  }
+
+  function stopLocalRenderPipeline() {
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = null; }
+    window.removeEventListener("resize", resizeLocalCanvas);
+    gl = program = uniforms = videoTexture = undefined;
+    canvasStream = null;
+  }
+
   async function ensureLocalStream() {
     if (localStream) return localStream;
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localVideo.srcObject = localStream;
+    cameraFeed.srcObject = localStream;
+    await cameraFeed.play();
+    initLocalRenderPipeline();
     return localStream;
   }
 
@@ -136,7 +221,16 @@
 
   function makePeerConnection() {
     const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    localStream.getTracks().forEach((t) => conn.addTrack(t, localStream));
+    // The styled canvas output (Normal or Cartoon), not the raw camera —
+    // localCanvas is what canvasStream captures, so whichever style is
+    // showing in the self-view is exactly what goes out. Audio still comes
+    // straight from the microphone; only video is routed through the
+    // style pipeline.
+    const outgoingStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...localStream.getAudioTracks()
+    ]);
+    outgoingStream.getTracks().forEach((t) => conn.addTrack(t, outgoingStream));
     conn.addEventListener("track", (e) => {
       remoteVideo.srcObject = e.streams[0];
       // Unmuted autoplay (there's real audio to hear here) is more likely
@@ -299,8 +393,9 @@
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     clients.forEach((c) => { try { c.end(true); } catch (e) {} });
     clients = [];
+    stopLocalRenderPipeline();
     if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
-    localVideo.srcObject = null;
+    cameraFeed.srcObject = null;
     remoteVideo.srcObject = null;
     room = null;
     remotePeerId = null;
@@ -312,6 +407,7 @@
     joinCallBtn.disabled = false;
     muteBtn.classList.remove("active"); muteBtn.setAttribute("aria-pressed", "false"); muteBtn.textContent = "\u{1F3A4} Mute";
     cameraBtn.classList.remove("active"); cameraBtn.setAttribute("aria-pressed", "false"); cameraBtn.textContent = "\u{1F4F8} Camera off";
+    localCanvas.classList.remove("camera-off");
     setStatus(message || "Call ended.");
   }
 
@@ -327,11 +423,16 @@
   });
 
   cameraBtn.addEventListener("click", () => {
-    if (!localStream) return;
-    const track = localStream.getVideoTracks()[0];
+    if (!canvasStream) return;
+    // Toggles the *outgoing* (canvas-captured) track, not the raw camera
+    // track — the camera itself keeps running so the local self-view
+    // preview stays live (dimmed via .camera-off, see call.css) even
+    // while the other side sees nothing.
+    const track = canvasStream.getVideoTracks()[0];
     if (!track) return;
     track.enabled = !track.enabled;
     const off = !track.enabled;
+    localCanvas.classList.toggle("camera-off", off);
     cameraBtn.classList.toggle("active", off);
     cameraBtn.setAttribute("aria-pressed", String(off));
     cameraBtn.textContent = off ? "\u{1F4F7} Camera on" : "\u{1F4F8} Camera off";
