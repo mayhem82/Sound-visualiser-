@@ -45,6 +45,7 @@
   const hud = document.getElementById("hud");
   const outlineModeBtn = document.getElementById("outlineModeBtn");
   const detectToggleBtn = document.getElementById("detectToggleBtn");
+  const autoCountBtn = document.getElementById("autoCountBtn");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const sensitivityLabel = document.getElementById("sensitivityLabel");
   const minSizeSlider = document.getElementById("minSizeSlider");
@@ -68,6 +69,7 @@
   let paused = false;
   let outlineModeEnabled = true;
   let detectEnabled = true;
+  let autoCountEnabled = false;
   let detectTimerId = null;
 
   // Frame-to-frame blob tracking — a blob only gets circled/counted once
@@ -394,7 +396,11 @@
       if (Math.hypot(t.relVx, t.relVy) >= minMovement) moving.push(t);
     });
     moving.forEach((t) => {
-      if (!t.everQualified) { t.everQualified = true; autoTrackedApprox++; }
+      if (!t.everQualified) {
+        t.everQualified = true;
+        autoTrackedApprox++;
+        if (autoCountEnabled) setTally(tally + 1, true);
+      }
     });
     return moving;
   }
@@ -482,7 +488,17 @@
       // ticks stop updating them — start clean on re-enable rather than
       // matching fresh blobs against frozen old positions.
       trackedBlobs = [];
+      // Auto count has nothing to add to without tracking running.
+      if (autoCountEnabled) autoCountBtn.click();
     }
+  });
+
+  autoCountBtn.addEventListener("click", () => {
+    if (!autoCountEnabled && !detectEnabled) return; // needs blob highlight/tracking on to have anything to add
+    autoCountEnabled = !autoCountEnabled;
+    autoCountBtn.setAttribute("aria-pressed", String(autoCountEnabled));
+    autoCountBtn.textContent = "Auto count: " + (autoCountEnabled ? "On" : "Off");
+    autoCountBtn.classList.toggle("active", autoCountEnabled);
   });
 
   pauseBtn.addEventListener("click", () => {
@@ -493,9 +509,16 @@
     if (paused) cameraFeed.pause(); else cameraFeed.play().catch(() => {});
   });
 
-  function setTally(n) {
+  function setTally(n, pulse) {
     tally = Math.max(0, n);
     tallyCount.textContent = String(tally);
+    if (pulse) {
+      // Distinguishes an auto-added count from a manual tap at a glance —
+      // useful when the point is to be watching the sky, not the screen.
+      tallyCount.classList.remove("pulse");
+      void tallyCount.offsetWidth; // restart the animation if it's already mid-pulse
+      tallyCount.classList.add("pulse");
+    }
   }
   tallyPlusBtn.addEventListener("click", () => setTally(tally + 1));
   tallyMinusBtn.addEventListener("click", () => setTally(tally - 1));
@@ -512,6 +535,7 @@
       sessionStartedAt = Date.now();
       setTally(0);
       autoTrackedApprox = 0;
+      if (autoCountEnabled) autoCountBtn.click(); // each session starts manual-tally by default; re-enable once the camera's settled
       tallyLabel.textContent = sessionType === "sunrise" ? "Sunrise return" : "Sunset emergence";
       overlay.classList.add("hide");
       tallyBlock.classList.remove("hide");

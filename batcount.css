@@ -109,6 +109,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Marks an Auto count addition as distinct from a manual tap — useful
+   when the point of Auto count is to be watching the sky, not the
+   screen, so a glance still confirms something just got added. */
+#tallyCount.pulse {
+  animation: tallyPulse 0.4s ease;
+}
+@keyframes tallyPulse {
+  0% { transform: scale(1.3); color: #86efac; }
+  100% { transform: scale(1); color: var(--accent); }
+}
+
 #tallyButtons {
   display: flex;
   align-items: center;

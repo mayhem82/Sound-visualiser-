@@ -19,7 +19,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Flying Fox Count</h1>
-    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detection tracks each edge-blob frame to frame and only circles the ones actually moving in a direction, the way bats crossing the sky do, not static clutter like a tree or a wire junction. Work in progress: this does <strong>not</strong> reliably count for you — the tally you tap yourself is the count that matters.</p>
+    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detection tracks each edge-blob frame to frame and only circles the ones actually moving in a direction, the way bats crossing the sky do, not static clutter like a tree or a wire junction. Tap the tally yourself by default; once the camera's fixed in place, <strong>Auto count</strong> can add each tracked crossing for you. Work in progress either way: this does <strong>not</strong> reliably count for you — check it and correct it by hand.</p>
 
     <label class="field-label">
       Session
@@ -61,6 +61,7 @@
 <div id="hud" class="hide">
   <button id="outlineModeBtn" class="hud-btn active" aria-pressed="true" title="Redraw the whole feed as bright edge-lines on black, so moving bats stand out against the dark sky. Turn off to see the plain camera feed underneath.">Outline mode: On</button>
   <button id="detectToggleBtn" class="hud-btn active" aria-pressed="true" title="Circle and count likely bat-shaped blobs each frame. Turn off if it's distracting or your device is struggling.">Blob highlight: On</button>
+  <button id="autoCountBtn" class="hud-btn" aria-pressed="false" title="Once the camera is fixed in place (mounted or set down, not handheld) and you're happy with the sliders below, each tracked bat crossing adds to the tally on its own instead of waiting for a tap. Still expect the odd miss or false add — keep an eye on the count and correct it by hand with +1/&minus; as needed.">Auto count: Off</button>
   <label id="sensitivityWrap" class="hud-slider" title="How strong an edge has to be before it counts. Lower it in very dim light; raise it if wires, leaves, or insects are triggering false blobs.">
     Edge sensitivity: <span id="sensitivityLabel">50%</span>
     <input id="sensitivitySlider" type="range" min="0" max="100" value="50">

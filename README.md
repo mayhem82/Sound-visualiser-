@@ -386,24 +386,43 @@ the cheap option to try first, not a guarantee.
 A counting aid for flying fox (bat) colony counts at sunset (emergence) or
 sunrise (return). Self-contained — it doesn't share the WebGL correction
 engine the colour pages use, just a small 2D-canvas pipeline: grayscale,
-Sobel edge detection, and connected-component labelling on a downscaled
-copy of the camera frame, run a few times a second.
+Sobel edge detection, connected-component labelling, and frame-to-frame
+blob tracking on a downscaled copy of the camera frame, run a few times a
+second.
+
+**Outline mode** redraws the whole feed as bright edge-lines on black —
+the same effect used elsewhere in this suite — so bats stand out against
+the dark sky. **Blob highlight** goes further: it matches each tick's
+edge-blobs against the previous tick's tracked positions to get a
+velocity, subtracts the median velocity across everything (treated as the
+camera's own shake/pan, since most detected edges in any frame are static
+background), and only circles blobs still moving after that — a
+static edge (tree texture, a wire junction) never qualifies, only
+something moving independently of the camera does. **Min movement** sets
+how much of that relative motion counts as flight. **Edge sensitivity**,
+**Min blob size**, and **Max blob size** adjust the detector for the
+lighting and framing on hand; the max-size filter (and a bounding-box
+aspect-ratio check in code) exists mainly to reject long straight wire
+segments and whole-tree foliage clusters, which otherwise register as one
+giant or one very elongated blob.
 
 **The tally is the count that matters.** Tap **+1** for each bat you see;
-**&minus;** corrects a misclick. **Blob highlight** draws a circle around
-each detected edge-blob and shows a live "Detected this frame" number, as
-a spotting aid against a dark sky — it is not the official count and isn't
-validated against real footage. Expect false positives (insects, birds,
-wind-shaken leaves) and false negatives (distant, overlapping, or fast
-bats). **Edge sensitivity**, **Min blob size**, and **Max blob size**
-adjust the detector for the lighting and framing on hand; the max-size
-filter (and a bounding-box aspect-ratio check in code) exists mainly to
-reject long straight wire segments and whole-tree foliage clusters, which
-otherwise register as one giant or one very elongated blob.
+**&minus;** corrects a misclick. By default nothing is added automatically
+— **Detected this frame** and **Auto-tracked (approx)** (a running count
+of distinct tracked blobs, once each) are spotting aids only, not
+validated against real footage. Once the camera is fixed in place (not
+handheld) and the sliders look right, **Auto count** can be switched on to
+add each newly tracked crossing to the tally itself — the number still
+pulses on every automatic add so it stays easy to eyeball against what's
+actually flying past, and manual +1/&minus; keeps working alongside it to
+correct misses or false adds. Auto count turns itself off if Blob
+highlight is turned off (nothing left for it to track), and starts off
+again at the beginning of every new session.
 
 **End session & save** logs the date, session type (sunset/sunrise), tally,
-and duration to a local session history (shown on the start panel, with
-**Export CSV** and **Clear log**) — nothing leaves the device.
+duration, and the auto-tracked figure to a local session history (shown on
+the start panel, with **Export CSV** and **Clear log**) — nothing leaves
+the device.
 
 ## Video Tutorials (`tutorials.html`)
 
