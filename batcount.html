@@ -73,7 +73,7 @@
     Max blob size: <span id="maxSizeLabel">220px</span>
     <input id="maxSizeSlider" type="range" min="40" max="600" value="220">
   </label>
-  <label id="minMovementWrap" class="hud-slider" title="How far a blob has to move between detection ticks to count as flight, not static clutter. Bats are only circled once they're seen moving in a direction across at least two ticks — raise this if a static edge (tree texture, a wire junction, a lens speck) is still getting circled.">
+  <label id="minMovementWrap" class="hud-slider" title="How far a blob has to move, relative to everything else in frame, to count as flight rather than static clutter or the camera's own shake. Most detected edges each tick are static background, so their shared movement is treated as camera shake/pan and subtracted out first — raise this if handheld shake is still triggering false circles.">
     Min movement: <span id="minMovementLabel">4px</span>
     <input id="minMovementSlider" type="range" min="0" max="30" value="4">
   </label>

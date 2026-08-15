@@ -328,13 +328,28 @@
     return blobs;
   }
 
+  function median(values) {
+    if (!values.length) return 0;
+    const s = values.slice().sort((a, b) => a - b);
+    const mid = s.length >> 1;
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
   // Matches this tick's raw blob candidates against last tick's tracked
   // positions (nearest-centroid, within a distance tolerant of normal
   // flight speed between ticks) to build a velocity per blob, then keeps
-  // only the ones that have actually moved — filtering out anything
-  // sitting still between ticks, which a real bat crossing the sky never
-  // does. Simple nearest-neighbour matching, not a validated tracker: it
-  // can mismatch when blobs cross paths or cluster tightly.
+  // only the ones moving differently from everything else — filtering out
+  // anything sitting still *relative to the rest of the frame*. Raw
+  // on-screen displacement alone isn't enough: handheld footage shakes,
+  // so on its own every static edge (wires, foliage, rooflines) appears
+  // to "move" together each tick, right along with any real bat. Most
+  // detected edges in any given frame are that static background, so
+  // their shared apparent motion (the median velocity across all of
+  // them) is treated as the camera's own shake/pan and subtracted out —
+  // what's left is motion relative to the ground, which is what a bat
+  // actually flying across the sky produces and camera shake doesn't.
+  // Simple nearest-neighbour matching, not a validated tracker: it can
+  // mismatch when blobs cross paths or cluster tightly.
   function updateTracks(candidates, minMovement) {
     const maxMatchDist = Math.max(analysisW, analysisH) * 0.18;
     const used = new Array(candidates.length).fill(false);
@@ -361,14 +376,23 @@
     });
     candidates.forEach((c, idx) => {
       if (used[idx]) return;
-      trackedBlobs.push({ id: nextTrackId++, cx: c.cx, cy: c.cy, r: c.r, vx: 0, vy: 0, missedTicks: 0, matchedThisTick: true, everQualified: false });
+      trackedBlobs.push({ id: nextTrackId++, cx: c.cx, cy: c.cy, r: c.r, vx: 0, vy: 0, relVx: 0, relVy: 0, missedTicks: 0, matchedThisTick: true, everQualified: false });
     });
     // Lost blobs (left frame, occluded, or detection dropped out) get a
     // couple of ticks' grace before their track is dropped, so a brief
     // missed frame doesn't reset the velocity a real bat had built up.
     trackedBlobs = trackedBlobs.filter((t) => t.missedTicks <= 2);
 
-    const moving = trackedBlobs.filter((t) => t.matchedThisTick && Math.hypot(t.vx, t.vy) >= minMovement);
+    const matched = trackedBlobs.filter((t) => t.matchedThisTick);
+    const driftX = median(matched.map((t) => t.vx));
+    const driftY = median(matched.map((t) => t.vy));
+
+    const moving = [];
+    matched.forEach((t) => {
+      t.relVx = t.vx - driftX;
+      t.relVy = t.vy - driftY;
+      if (Math.hypot(t.relVx, t.relVy) >= minMovement) moving.push(t);
+    });
     moving.forEach((t) => {
       if (!t.everQualified) { t.everQualified = true; autoTrackedApprox++; }
     });
@@ -407,10 +431,11 @@
         overlayCtx.beginPath();
         overlayCtx.arc(t.cx, t.cy, t.r, 0, Math.PI * 2);
         overlayCtx.stroke();
-        // A short trailing line showing the direction it's moving in —
-        // the whole point being tracked at all, not just circled.
+        // A short trailing line showing the direction it's moving in,
+        // relative to the camera's own shake/pan — the whole point being
+        // tracked at all, not just circled.
         overlayCtx.beginPath();
-        overlayCtx.moveTo(t.cx - t.vx * 3, t.cy - t.vy * 3);
+        overlayCtx.moveTo(t.cx - t.relVx * 3, t.cy - t.relVy * 3);
         overlayCtx.lineTo(t.cx, t.cy);
         overlayCtx.stroke();
       });
