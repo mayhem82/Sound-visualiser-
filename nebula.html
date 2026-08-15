@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sound Nebula</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="colorvision.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+<video id="cameraFeed" playsinline muted hidden></video>
+<canvas id="sampleCanvas" hidden></canvas>
+<div id="blackout" aria-hidden="true"></div>
+<div id="screenFlash" aria-hidden="true"></div>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Sound Nebula</h1>
+    <p class="hint" id="pageSubtitle">A live microphone visualiser</p>
+    <p>Bass, mids, and treble each drive their own swarm of glowing particles around a pulsing core — instead of the usual bars or waveform.</p>
+    <p class="hint">Once running: tap the screen to hide/show the menu. Double-tap to black out the screen (beat effects keep running underneath).</p>
+    <button id="startBtn">Enable microphone &amp; start</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="colorassist.html">Colour Assist &rarr;</a></p>
+    <p class="hint"><a href="colorvision.html">Colour Vision Extreme &rarr;</a></p>
+    <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
+    <p class="hint"><a href="restore.html">Property Colour Reference &rarr;</a></p>
+    <p class="hint"><a href="viewer.html">Tablet Viewer &rarr;</a></p>
+    <p class="hint"><a href="call.html">Video Call &rarr;</a></p>
+    <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <button id="pauseBtn" class="hud-btn">Pause</button>
+  <button id="restartBtn" class="hud-btn">Restart</button>
+  <button id="micModeBtn" class="hud-btn" aria-pressed="false" title="Voice mode uses the browser's default echo cancellation / noise suppression, which is tuned for speech and mutes music playing from this device's own speaker. Music mode turns that off so the mic also picks up Spotify or other audio playing out loud.">Mic mode: Voice</button>
+  <button id="flashBtn" class="hud-btn">Flash + vibrate on beat: Off</button>
+  <label id="sensitivityWrap" class="hud-slider">
+    Beat sensitivity
+    <input id="sensitivitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="speedWrap" class="hud-slider">
+    Flash speed
+    <input id="speedSlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="dimWrap" class="hud-slider" title="Camera flashes are hardware on/off only — there's no real brightness control on the web. This flickers the torch rapidly to approximate a dimmer look; it's experimental and may look janky on slower hardware.">
+    Dim flicker (experimental)
+    <input id="dimToggle" type="checkbox">
+  </label>
+  <label id="invertWrap" class="hud-slider" title="Keeps the torch on continuously and briefly cuts it off on each beat, instead of the normal off-then-flash-on-beat behaviour.">
+    Invert torch (on, cuts on beat)
+    <input id="invertToggle" type="checkbox">
+  </label>
+  <label id="screenFlashWrap" class="hud-slider" title="Flashes the whole screen on each beat, colour-blended from the current bass/mid/treble mix. Needs no camera permission, so it works on every device including iPhone.">
+    Screen flash on beat
+    <input id="screenFlashToggle" type="checkbox">
+  </label>
+  <button id="testFlashBtn" class="hud-btn" title="Manually fires one screen flash, independent of beat detection — use this to check the flash itself works.">Test flash</button>
+  <label id="syncDelayWrap" class="hud-slider" title="Delays torch/vibrate/screen flash after a beat is detected, to compensate for a slower device's own hardware response lag (e.g. torch that's slow to physically respond) or to match timing with another device.">
+    Sync delay: <span id="syncDelayLabel">0 ms</span>
+    <input id="syncDelaySlider" type="range" min="0" max="500" step="10" value="0">
+  </label>
+  <div id="freqRangeWrap" class="hud-slider freq-range" title="Which frequency range (Hz) the bass beat trigger listens to. Narrow around 20-150Hz for kick/bass-drum only, or widen it up to catch bass guitar and low toms too.">
+    <div class="freq-range-title">Bass beat range: <span id="freqRangeLabel">20-150 Hz</span></div>
+    <div class="freq-range-sliders">
+      <input id="freqLowSlider" type="range" min="20" max="500" step="5" value="20">
+      <input id="freqHighSlider" type="range" min="60" max="2000" step="10" value="150">
+      <button id="freqAllBtn" class="hud-btn freq-all-btn" title="Sets the range to its full extent (20-2000 Hz), so the bass beat trigger reacts to the whole spectrum instead of just bass.">All Hz</button>
+    </div>
+  </div>
+  <label id="bassBeatTriggerWrap" class="hud-slider" title="Bass/kick beats (using the frequency range above) trigger a flash pulse — the original 'beat' detector. On by default.">
+    Bass beat triggers flash
+    <input id="bassBeatTriggerCheckbox" type="checkbox" checked>
+  </label>
+  <label id="midBeatTriggerWrap" class="hud-slider" title="Mid-frequency beats (guitars, vocals, snare body) also trigger a flash pulse, independently of bass — can be on together with any of the other triggers here.">
+    Mid beat triggers flash
+    <input id="midBeatTriggerCheckbox" type="checkbox">
+  </label>
+  <label id="trebleBeatTriggerWrap" class="hud-slider" title="Treble beats (cymbals, hi-hats, presence) also trigger a flash pulse, independently of bass/mid.">
+    Treble beat triggers flash
+    <input id="trebleBeatTriggerCheckbox" type="checkbox">
+  </label>
+  <label id="volumeSpikeTriggerWrap" class="hud-slider" title="A sudden jump in overall volume (any frequency at once) triggers a flash pulse, rather than any one specific band.">
+    Volume spike triggers flash
+    <input id="volumeSpikeTriggerCheckbox" type="checkbox">
+  </label>
+  <label id="colourMatchTriggerWrap" class="hud-slider" title="While any particle band's hue (set in Particle customisation below) is close to the trigger colour, flash pulses fire on a steady interval — a colour-gated pulse rather than a beat.">
+    Colour match triggers flash
+    <input id="colourMatchTriggerCheckbox" type="checkbox">
+  </label>
+  <label id="colourMatchTriggerColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the colour-match flash trigger — compared against each particle band's own hue.">
+    Colour match trigger colour
+    <input id="colourMatchTriggerColorInput" type="color" value="#ffffff" aria-label="Colour match trigger colour">
+  </label>
+  <label id="colourMatchIntervalWrap" class="hud-slider" title="How often flash pulses repeat while the colour match condition holds.">
+    Colour match flash rate: <span id="colourMatchIntervalLabel">400 ms</span>
+    <input id="colourMatchIntervalSlider" type="range" min="100" max="2000" step="50" value="400">
+  </label>
+  <label id="timerTriggerWrap" class="hud-slider" title="Fires a flash pulse on a steady timer, independent of audio entirely — a metronome-style pulse.">
+    Timer triggers flash
+    <input id="timerTriggerCheckbox" type="checkbox">
+  </label>
+  <label id="timerIntervalWrap" class="hud-slider" title="How often the timer trigger fires.">
+    Timer interval: <span id="timerIntervalLabel">1000 ms</span>
+    <input id="timerIntervalSlider" type="range" min="100" max="5000" step="50" value="1000">
+  </label>
+  <button id="cameraBgBtn" class="hud-btn" aria-pressed="false" title="Show the live camera feed behind the particles instead of a plain dark background — party mode.">Camera background: Off</button>
+  <label id="cameraSelectWrap" class="hud-slider hide" title="Pick which camera feeds the background/colour vision view. Only appears once camera permission has been granted and more than one camera is available.">
+    Camera
+    <select id="cameraSelect"></select>
+  </label>
+  <button id="cameraOnlyBtn" class="hud-btn hide" aria-pressed="false" title="For a two-device setup: this device just streams its raw camera feed, with no controls of its own — do all the calibration and control on the other (receiving) device instead. Needs Camera background on.">Camera-only broadcast: Off</button>
+  <button id="nebulaBtn" class="hud-btn" aria-pressed="false" title="Hide the swirling particle nebula so the camera feed behind it shows through clearly — handy while looking closely at the colour vision correction.">Nebula: On</button>
+  <button id="particleResetBtn" class="hud-btn reticle-btn-secondary" title="Resets every particle slider below back to its shipped default (count, size, speed, jitter, hue per band) and turns off all 3 colour-triggered styles.">Reset particles</button>
+  <label id="particleBassHueWrap" class="hud-slider" title="Hue used for bass/kick particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Bass particle hue: <span id="particleBassHueLabel">262&deg;</span>
+    <input id="particleBassHueSlider" type="range" min="0" max="360" value="262">
+  </label>
+  <label id="particleBassCountWrap" class="hud-slider" title="How many bass/kick particles swarm around the core.">
+    Bass particle count: <span id="particleBassCountLabel">90</span>
+    <input id="particleBassCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleBassSizeWrap" class="hud-slider" title="Size of bass/kick particles.">
+    Bass particle size: <span id="particleBassSizeLabel">100%</span>
+    <input id="particleBassSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleBassSpeedWrap" class="hud-slider" title="How fast bass/kick particles orbit.">
+    Bass particle speed: <span id="particleBassSpeedLabel">100%</span>
+    <input id="particleBassSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleBassJitterWrap" class="hud-slider" title="How much bass/kick particles wobble in and out.">
+    Bass particle jitter: <span id="particleBassJitterLabel">100%</span>
+    <input id="particleBassJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidHueWrap" class="hud-slider" title="Hue used for mid particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Mid particle hue: <span id="particleMidHueLabel">189&deg;</span>
+    <input id="particleMidHueSlider" type="range" min="0" max="360" value="189">
+  </label>
+  <label id="particleMidCountWrap" class="hud-slider" title="How many mid particles swarm around the core.">
+    Mid particle count: <span id="particleMidCountLabel">90</span>
+    <input id="particleMidCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleMidSizeWrap" class="hud-slider" title="Size of mid particles.">
+    Mid particle size: <span id="particleMidSizeLabel">100%</span>
+    <input id="particleMidSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidSpeedWrap" class="hud-slider" title="How fast mid particles orbit.">
+    Mid particle speed: <span id="particleMidSpeedLabel">100%</span>
+    <input id="particleMidSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleMidJitterWrap" class="hud-slider" title="How much mid particles wobble in and out.">
+    Mid particle jitter: <span id="particleMidJitterLabel">100%</span>
+    <input id="particleMidJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleHueWrap" class="hud-slider" title="Hue used for treble particles. Set this to match one of the trigger colours below to switch this band's particles to that style.">
+    Treble particle hue: <span id="particleTrebleHueLabel">330&deg;</span>
+    <input id="particleTrebleHueSlider" type="range" min="0" max="360" value="330">
+  </label>
+  <label id="particleTrebleCountWrap" class="hud-slider" title="How many treble particles swarm around the core.">
+    Treble particle count: <span id="particleTrebleCountLabel">90</span>
+    <input id="particleTrebleCountSlider" type="range" min="0" max="300" step="5" value="90">
+  </label>
+  <label id="particleTrebleSizeWrap" class="hud-slider" title="Size of treble particles.">
+    Treble particle size: <span id="particleTrebleSizeLabel">100%</span>
+    <input id="particleTrebleSizeSlider" type="range" min="20" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleSpeedWrap" class="hud-slider" title="How fast treble particles orbit.">
+    Treble particle speed: <span id="particleTrebleSpeedLabel">100%</span>
+    <input id="particleTrebleSpeedSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleTrebleJitterWrap" class="hud-slider" title="How much treble particles wobble in and out.">
+    Treble particle jitter: <span id="particleTrebleJitterLabel">100%</span>
+    <input id="particleTrebleJitterSlider" type="range" min="0" max="300" step="5" value="100">
+  </label>
+  <label id="particleFireworksEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the fireworks trigger colour, that band's particles launch from the core and burst outward instead of orbiting.">
+    Fireworks style on colour match
+    <input id="particleFireworksEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleFireworksColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the fireworks particle style.">
+    Fireworks trigger colour
+    <input id="particleFireworksColorInput" type="color" value="#ffcc00" aria-label="Fireworks trigger colour">
+  </label>
+  <label id="particleFlamesEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the flames trigger colour, that band's particles rise and flicker like flames instead of orbiting.">
+    Flames style on colour match
+    <input id="particleFlamesEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleFlamesColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the flames particle style.">
+    Flames trigger colour
+    <input id="particleFlamesColorInput" type="color" value="#ff5500" aria-label="Flames trigger colour">
+  </label>
+  <label id="particleDrippingEnabledWrap" class="hud-slider" title="When a band's particle hue above lands close to the dripping trigger colour, that band's particles fall from the top instead of orbiting.">
+    Dripping style on colour match
+    <input id="particleDrippingEnabledCheckbox" type="checkbox">
+  </label>
+  <label id="particleDrippingColorWrap" class="hud-btn choose-picker-btn" title="Trigger colour for the dripping particle style.">
+    Dripping trigger colour
+    <input id="particleDrippingColorInput" type="color" value="#3399ff" aria-label="Dripping trigger colour">
+  </label>
+  <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Redraws the particle nebula as hollow/stroked shapes instead of solid glow blobs, and (when Colour vision is on) overlays detected edges on the camera view. The three sliders control both at once.">Outlines mode: Off</button>
+  <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the outline strokes/edge lines are.">
+    Outline thickness: <span id="outlineThicknessLabel">2px</span>
+    <input id="outlineThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="outlineBlendWrap" class="hud-slider hide" title="0% is the normal filled/full-colour look. 100% is fully outlined.">
+    Outline blend: <span id="outlineBlendLabel">100%</span>
+    <input id="outlineBlendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="outlineOpacityWrap" class="hud-slider hide" title="How strong/visible the outline lines themselves are.">
+    Outline opacity: <span id="outlineOpacityLabel">100%</span>
+    <input id="outlineOpacitySlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="outlineColorWrap" class="hud-btn choose-picker-btn hide" title="Colour used for outline edge lines.">
+    Outline colour
+    <input id="outlineColorInput" type="color" value="#ffffff" aria-label="Outline colour">
+  </label>
+  <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the particle nebula and (when Colour vision is on) the camera view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
+  <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
+    Cartoon levels: <span id="cartoonLevelsLabel">6</span>
+    <input id="cartoonLevelsSlider" type="range" min="2" max="12" step="1" value="6">
+  </label>
+  <label id="cartoonEdgeThicknessWrap" class="hud-slider hide" title="How wide the cartoon ink lines are.">
+    Cartoon edge thickness: <span id="cartoonEdgeThicknessLabel">2px</span>
+    <input id="cartoonEdgeThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="cartoonEdgeStrengthWrap" class="hud-slider hide" title="How bold/dark the cartoon ink lines are, and how easily they trigger on softer edges.">
+    Cartoon edge strength: <span id="cartoonEdgeStrengthLabel">60%</span>
+    <input id="cartoonEdgeStrengthSlider" type="range" min="0" max="100" step="5" value="60">
+  </label>
+  <label id="cartoonSaturationWrap" class="hud-slider hide" title="How vivid the flat cartoon colour bands are.">
+    Cartoon saturation: <span id="cartoonSaturationLabel">135%</span>
+    <input id="cartoonSaturationSlider" type="range" min="100" max="300" step="5" value="135">
+  </label>
+  <button id="colourVisionBtn" class="hud-btn" aria-pressed="false" title="Apply Colour Vision Extreme's correction to the camera background — turns the camera background on too if it isn't already.">Colour vision: Off</button>
+  <button id="colourVisionFlashBtn" class="hud-btn" aria-pressed="false" title="On each beat: cycles to the next of your saved calibration points, shown in isolation — a different point each time — and tints the screen flash to match. Never shows the true/uncorrected camera view. Needs at least one saved point. Turns colour vision on too if it isn't already.">Colour vision flash mode: Off</button>
+  <label id="blendWrap" class="hud-slider hide" title="0% shows the true camera image. 100% shows the fully corrected image. Locked at 100% while Colour vision flash mode is on.">
+    True &harr; Corrected: <span id="blendLabel">100%</span>
+    <input id="blendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="cvdTypeWrap" class="hud-slider hide" title="Applies a whole-frame correction tuned to a diagnosed colour vision deficiency type, independent of any colours you calibrate by hand below.">
+    Colour blindness type:
+    <select id="cvdTypeSelect">
+      <option value="none">None (manual only)</option>
+      <option value="protan">Protanopia (red-weak)</option>
+      <option value="deutan">Deuteranopia (green-weak)</option>
+      <option value="tritan">Tritanopia (blue-yellow)</option>
+    </select>
+  </label>
+  <label id="cvdStrengthWrap" class="hud-slider hide" title="How strongly the type-based correction is applied. Lower it if the full correction looks over-saturated or unnatural for your degree of colour vision deficiency.">
+    Type correction: <span id="cvdStrengthLabel">100%</span>
+    <input id="cvdStrengthSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="spreadWrap" class="hud-slider hide" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
+    Correction spread: <span id="spreadLabel">Medium</span>
+    <input id="spreadSlider" type="range" min="1" max="40" value="4">
+  </label>
+  <button id="calibrateBtn" class="hud-btn hide">Calibrate a colour</button>
+  <button id="pointsBtn" class="hud-btn hide">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="rotateBtn" class="hud-btn hide" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="photoBtn" class="hud-btn" title="Take a photo of the visualisation (particles, and the camera background if it's on).">&#128247; Photo</button>
+  <label id="recordFpsWrap" class="hud-slider" title="Frame rate for recorded video. Lower is a smaller file; higher is smoother motion. Locked once recording starts.">
+    Recording FPS:
+    <select id="recordFpsSelect">
+      <option value="15">15 fps</option>
+      <option value="24">24 fps</option>
+      <option value="30" selected>30 fps</option>
+      <option value="60">60 fps</option>
+    </select>
+  </label>
+  <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the visualisation (particles, and the camera background if it's on).">&#9210; Record</button>
+  <button id="connectTabletBtn" class="hud-btn" title="Stream this visualisation to another device (e.g. a tablet or TV) as a read-only viewer.">Connect tablet</button>
+  <a href="index.html" class="hud-btn">&larr; All features</a>
+  <a href="colorassist.html" class="hud-btn">Colour Assist &rarr;</a>
+  <a href="colorvision.html" class="hud-btn">Colour Vision Extreme &rarr;</a>
+  <a href="video-production.html" class="hud-btn">Video Production &rarr;</a>
+  <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
+  <a href="call.html" class="hud-btn">Video Call &rarr;</a>
+</div>
+<p id="flashStatus" class="flash-status hide"></p>
+<p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
+<p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+<p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
+
+<div id="floatingCaptureBar" class="hide" role="group" aria-label="Calibrate, photo, and video capture">
+  <button id="floatingCalibrateBtn" class="hud-btn hide" title="Aim the camera at a colour to calibrate. Long-press and drag to move this bar.">&#127919; Calibrate</button>
+  <button id="floatingPhotoBtn" class="hud-btn" title="Take a photo of the visualisation. Long-press and drag to move this bar.">&#128247; Photo</button>
+  <button id="floatingRecordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the visualisation. Long-press and drag to move this bar.">&#9210; Record</button>
+</div>
+
+<div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
+  <div id="viewerPanelInner">
+    <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
+    <p class="hint">On the other device, open <a href="viewer.html" target="_blank" rel="noopener">viewer.html</a> from this site, then type in the room code below and tap Connect.</p>
+
+    <button id="startShareBtn" class="hud-btn">Start live sharing</button>
+
+    <div id="shareCodeBlock" class="hide">
+      <div class="room-code-label">Room code</div>
+      <div id="shareRoomCode" class="room-code" aria-live="polite"></div>
+      <p class="hint">Or open this link directly on the other device:<br><span id="shareViewUrlText" class="share-url"></span></p>
+    </div>
+
+    <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div id="receiveModeSection">
+      <p class="hint">Or, to control from this device while another device (in Camera-only broadcast mode) provides the camera:</p>
+      <button id="showReceiveBtn" class="hud-btn reticle-btn-secondary">Receive camera from another device</button>
+      <div id="receiveForm" class="hide">
+        <p class="hint">On the camera device: turn on Camera background, tap "Camera-only broadcast", then read out the room code shown there.</p>
+        <input id="receiveRoomInput" type="text" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off">
+        <button id="receiveConnectBtn" class="hud-btn">Connect</button>
+      </div>
+    </div>
+
+    <div class="tune-actions">
+      <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="cameraOnlyBadge" class="hide" role="status" aria-live="polite">
+  <div class="room-code-label">Room code</div>
+  <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
+  <p id="cameraOnlyStatusText" class="hint">Starting…</p>
+  <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Show full controls</button>
+</div>
+
+<div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
+  <div id="choosePanelInner">
+    <h2 id="choosePanelTitle">Choose a colour to calibrate</h2>
+    <p class="hint">Aim at a real colour with the camera, pick one exactly, or start from a colour commonly confused in colour vision deficiency.</p>
+
+    <div class="choose-actions">
+      <button id="chooseAimBtn" class="hud-btn">Aim with camera</button>
+      <label id="colourPickerWrap" class="hud-btn choose-picker-btn">
+        Colour picker
+        <input id="colourPickerInput" type="color" value="#ff0000" aria-label="Pick an exact colour to calibrate">
+      </label>
+    </div>
+
+    <h3 id="presetGridTitle">Common CVD confusion colours</h3>
+    <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
+
+    <button id="closeChooseBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<div id="reticleLayer" class="hide">
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
+  <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
+  <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
+</div>
+
+<div id="tunePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="tunePanelTitle">
+  <div id="tunePanelInner">
+    <h2 id="tunePanelTitle">Tune until it's recognisable</h2>
+
+    <div class="swatch-row">
+      <div class="swatch-block">
+        <div id="swatchOriginal" class="swatch"></div>
+        <span>What the camera sees</span>
+        <p id="swatchOriginalName" class="color-name"></p>
+      </div>
+      <div class="swatch-block">
+        <div id="swatchCorrected" class="swatch"></div>
+        <span>Your correction</span>
+        <p id="swatchCorrectedName" class="color-name"></p>
+      </div>
+    </div>
+
+    <label class="hud-slider">
+      Hue shift: <span id="hueLabel">0&deg;</span>
+      <input id="hueSlider" type="range" min="-180" max="180" value="0">
+    </label>
+    <label class="hud-slider">
+      Saturation: <span id="satLabel">0%</span>
+      <input id="satSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Lightness: <span id="lightLabel">0%</span>
+      <input id="lightSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Contrast: <span id="contrastLabel">0%</span>
+      <input id="contrastSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Exposure: <span id="exposureLabel">0%</span>
+      <input id="exposureSlider" type="range" min="-100" max="100" value="0">
+    </label>
+    <label class="hud-slider">
+      Label (optional)
+      <input id="labelInput" type="text" placeholder="e.g. traffic light red" maxlength="40">
+    </label>
+
+    <div class="tune-actions">
+      <button id="savePointBtn" class="hud-btn">Save this colour</button>
+      <button id="deletePointBtn" class="hud-btn reticle-btn-secondary hide">Delete</button>
+      <button id="closeTuneBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="pointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="pointsPanelTitle">
+  <div id="pointsPanelInner">
+    <h2 id="pointsPanelTitle">Saved colours</h2>
+    <p class="hint" id="pointsHint">Tap a colour to review or re-tune it.</p>
+    <div id="pointsGrid"></div>
+    <p id="importExportStatus" class="hint" role="status" aria-live="polite"></p>
+
+    <div class="points-actions">
+      <button id="selectModeBtn" class="hud-btn reticle-btn-secondary" aria-pressed="false">Select</button>
+      <button id="deleteSelectedBtn" class="hud-btn reticle-btn-secondary hide">Delete selected (<span id="selectedCount">0</span>)</button>
+      <button id="clearAllBtn" class="hud-btn reticle-btn-secondary">Clear all</button>
+    </div>
+    <div class="tune-actions">
+      <button id="exportBtn" class="hud-btn reticle-btn-secondary">Export</button>
+      <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden>
+    </div>
+
+    <div class="profiles-section">
+      <h3 id="profilesTitle">Templates</h3>
+      <p class="hint">Save the current saved colours as a named template, then switch between templates instantly &mdash; handy for different circumstances (e.g. indoor vs outdoor lighting).</p>
+      <div class="profiles-row">
+        <select id="profileSelect" aria-label="Saved templates">
+          <option value="">&mdash; Select a template &mdash;</option>
+        </select>
+        <button id="loadProfileBtn" class="hud-btn reticle-btn-secondary">Load</button>
+        <button id="deleteProfileBtn" class="hud-btn reticle-btn-secondary">Delete</button>
+      </div>
+      <div class="profiles-row">
+        <input id="profileNameInput" type="text" placeholder="Template name" maxlength="40">
+        <button id="saveProfileBtn" class="hud-btn reticle-btn-secondary">Save as template</button>
+      </div>
+      <p id="profileStatus" class="hint" role="status" aria-live="polite"></p>
+    </div>
+
+    <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* PWA installability is a nice-to-have, not load-blocking */ });
+  }
+</script>
+</body>
+</html>

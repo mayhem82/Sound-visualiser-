@@ -1,15 +1,18 @@
-// App-shell cache for the Sound Visualiser suite — Sound Nebula
-// (index.html), Property Colour Reference (restore.html), and Video
-// Production. Colour Vision Extreme/Colour Assist/Viewer/Tutorials are
-// deliberately left out: that family is a separate product, packaged
+// App-shell cache for the Sound Visualiser suite — the home hub
+// (index.html, a plain landing page, no camera/mic of its own), Sound
+// Nebula (nebula.html), Property Colour Reference (restore.html), and
+// Video Production. Colour Vision Extreme/Colour Assist/Viewer/Tutorials
+// are deliberately left out: that family is a separate product, packaged
 // and marketed on its own (AR-glasses focused), not part of this bundle.
 // getUserMedia/MediaRecorder/mic input need real hardware and only work
 // with the page actually running — this is what makes the shell
 // installable as a PWA and lets it still load (to whatever extent the
 // shell alone can) on a flaky connection, not offline camera/mic use.
-const CACHE_NAME = "sound-visualiser-shell-v10";
+const CACHE_NAME = "sound-visualiser-shell-v11";
 const SHELL_FILES = [
   "index.html",
+  "home.css",
+  "nebula.html",
   "script.js",
   "colorvision.css",
   "restore.html",
