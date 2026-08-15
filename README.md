@@ -385,26 +385,37 @@ the cheap option to try first, not a guarantee.
 
 A counting aid for flying fox (bat) colony counts at sunset (emergence) or
 sunrise (return). Self-contained — it doesn't share the WebGL correction
-engine the colour pages use, just a small 2D-canvas pipeline: grayscale,
-Sobel edge detection, connected-component labelling, and frame-to-frame
-blob tracking on a downscaled copy of the camera frame, run a few times a
-second.
+engine the colour pages use, just a small 2D-canvas pipeline on a
+downscaled copy of the camera frame, run a few times a second:
 
-**Outline mode** redraws the whole feed as bright edge-lines on black —
-the same effect used elsewhere in this suite — so bats stand out against
-the dark sky. **Blob highlight** goes further: it matches each tick's
-edge-blobs against the previous tick's tracked positions to get a
-velocity, subtracts the median velocity across everything (treated as the
-camera's own shake/pan, since most detected edges in any frame are static
-background), and only circles blobs still moving after that — a
-static edge (tree texture, a wire junction) never qualifies, only
-something moving independently of the camera does. **Min movement** sets
-how much of that relative motion counts as flight. **Edge sensitivity**,
-**Min blob size**, and **Max blob size** adjust the detector for the
-lighting and framing on hand; the max-size filter (and a bounding-box
-aspect-ratio check in code) exists mainly to reject long straight wire
-segments and whole-tree foliage clusters, which otherwise register as one
-giant or one very elongated blob.
+1. **Subtract** — frame-difference the current tick against the last one,
+   so only pixels that actually changed survive.
+2. **Blur & Thresh** — a 3x3 box blur suppresses single-pixel sensor
+   noise, then it's binarized into a motion mask.
+3. **Sobel Edge** — the gradient of the *current* frame's real detail,
+   computed only where the motion mask says something changed. Static
+   clutter (wires, foliage, rooflines) never becomes an edge at all,
+   rather than being detected and filtered out afterward.
+4. **Edge Thinning** — non-maximum suppression along each gradient's own
+   direction collapses a smeared band of edge-ish pixels down to a single
+   crisp line down its ridge.
+
+**Outline mode** shows the result of that pipeline directly — bright
+crisp lines on black, but now only of whatever's *currently moving*,
+which is a much cleaner "spot the bat" view than outlining the whole
+static scene. **Blob highlight** goes one step further on top of it: it
+connects those thinned edge-pixels into blobs, matches each tick's blobs
+against the previous tick's tracked positions to get a velocity, then
+subtracts the median velocity across everything (treated as the camera's
+own shake/pan, since most surviving motion in any frame is still the
+whole scene shifting together under a handheld shake) — only blobs still
+moving *relative to that* get circled. **Min movement** sets how much of
+that relative motion counts as flight. **Edge sensitivity**, **Min blob
+size**, and **Max blob size** adjust the detector for the lighting and
+framing on hand; the max-size filter (and a bounding-box aspect-ratio
+check in code) exists mainly to reject long straight wire segments and
+whole-tree foliage clusters, on the rare occasion those are moving too
+(wind).
 
 **The tally is the count that matters.** Tap **+1** for each bat you see;
 **&minus;** corrects a misclick. By default nothing is added automatically

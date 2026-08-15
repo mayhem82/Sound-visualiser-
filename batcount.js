@@ -83,15 +83,24 @@
   // Analysis buffers, (re)allocated once native video dimensions are known.
   let analysisW = 0, analysisH = 0;
   let analysisCanvas = null, analysisCtx = null;
-  let grayBuf = null, magBuf = null, maskBuf = null, visitedBuf = null, stackX = null, stackY = null;
+  let grayBuf = null, prevGrayBuf = null, hasPrevFrame = false;
+  let diffBuf = null, blurredDiffBuf = null, motionMaskBuf = null;
+  let gxBuf = null, gyBuf = null, magBuf = null, thinMagBuf = null;
+  let maskBuf = null, visitedBuf = null, stackX = null, stackY = null;
   let outlineImageData = null;
+
+  // A per-pixel grayscale change (0-255 scale) has to clear this before
+  // it counts as "this pixel just moved" rather than sensor noise/
+  // compression artifacts — fixed for now rather than another slider.
+  const DIFF_THRESHOLD = 12;
 
   // Outline mode's own edge cutoff — fixed, independent of the Edge
   // sensitivity slider (which only tunes what counts as a *blob* for
   // counting). Keeps the visual outline view stable while sensitivity is
-  // being tuned for detection accuracy.
-  const OUTLINE_DISPLAY_CUTOFF = 24;
-  const OUTLINE_DISPLAY_GAIN = 1.4;
+  // being tuned for detection accuracy. Thinned edges carry far less raw
+  // brightness than the old always-on gradient render, hence the bigger gain.
+  const OUTLINE_DISPLAY_CUTOFF = 4;
+  const OUTLINE_DISPLAY_GAIN = 4;
 
   function setStatus(msg) { statusEl.textContent = msg || ""; }
   function setCameraStatus(msg) {
@@ -243,51 +252,118 @@
     overlayCanvas.width = analysisW;
     overlayCanvas.height = analysisH;
     grayBuf = new Float32Array(analysisW * analysisH);
+    prevGrayBuf = new Float32Array(analysisW * analysisH);
+    diffBuf = new Float32Array(analysisW * analysisH);
+    blurredDiffBuf = new Float32Array(analysisW * analysisH);
+    motionMaskBuf = new Uint8Array(analysisW * analysisH);
+    gxBuf = new Float32Array(analysisW * analysisH);
+    gyBuf = new Float32Array(analysisW * analysisH);
     magBuf = new Float32Array(analysisW * analysisH);
+    thinMagBuf = new Float32Array(analysisW * analysisH);
     maskBuf = new Uint8Array(analysisW * analysisH);
     visitedBuf = new Uint8Array(analysisW * analysisH);
     stackX = new Int32Array(analysisW * analysisH);
     stackY = new Int32Array(analysisW * analysisH);
     outlineImageData = outlineCtx.createImageData(analysisW, analysisH);
+    hasPrevFrame = false;
     trackedBlobs = []; // old positions are in the previous resolution's coordinate space — invalid now
   }
 
   // ---- Edge detection, outline render, and blob labelling ----
 
-  // Sobel gradient magnitude at every pixel, into magBuf — shared by both
-  // the outline-mode display and the blob-detection threshold below, so
-  // it's computed once per tick regardless of which (or both) are on.
-  function computeEdgeMagnitude() {
+  // Four-step pipeline, run once per tick, shared by both the outline
+  // display and the blob detector below:
+  //  1. Subtract — frame-difference against the previous tick, so what's
+  //     left is only pixels that actually changed.
+  //  2. Blur & Thresh — smooth the diff to suppress single-pixel sensor
+  //     noise, then binarize into a motion mask.
+  //  3. Sobel Edge — gradient of the *current* frame's real detail,
+  //     computed only where the motion mask says something changed —
+  //     static clutter (wires, foliage, rooflines) never becomes an edge
+  //     at all now, rather than being detected and filtered out later.
+  //  4. Edge Thinning — non-maximum suppression along each gradient's own
+  //     direction, collapsing a smeared band of edge-ish pixels down to
+  //     the single-pixel-wide ridge line running through it.
+  function computeEdges() {
     const w = analysisW, h = analysisH;
     const imageData = analysisCtx.getImageData(0, 0, w, h);
     const src = imageData.data;
+    // Ping-pong the two grayscale buffers instead of copying — grayBuf
+    // becomes this tick's frame, prevGrayBuf still holds last tick's.
+    const tmp = prevGrayBuf; prevGrayBuf = grayBuf; grayBuf = tmp;
     for (let i = 0, p = 0; p < grayBuf.length; i += 4, p++) {
       grayBuf[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
     }
-    magBuf.fill(0);
+
+    // 1. Subtract
+    if (hasPrevFrame) {
+      for (let p = 0; p < diffBuf.length; p++) diffBuf[p] = Math.abs(grayBuf[p] - prevGrayBuf[p]);
+    } else {
+      diffBuf.fill(0); // nothing to compare the very first tick against
+    }
+
+    // 2. Blur & Thresh — a direct 3x3 box blur; the analysis buffer is
+    // small enough (a few hundred px per side) that this is cheap.
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
+        let sum = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) sum += diffBuf[i + dy * w + dx];
+        }
+        blurredDiffBuf[i] = sum / 9;
+      }
+    }
+    for (let i = 0; i < motionMaskBuf.length; i++) motionMaskBuf[i] = blurredDiffBuf[i] > DIFF_THRESHOLD ? 1 : 0;
+
+    // 3. Sobel Edge, gated to the motion mask
+    gxBuf.fill(0); gyBuf.fill(0); magBuf.fill(0);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (!motionMaskBuf[i]) continue;
         const gx = -grayBuf[i - w - 1] - 2 * grayBuf[i - 1] - grayBuf[i + w - 1]
                  +  grayBuf[i - w + 1] + 2 * grayBuf[i + 1] + grayBuf[i + w + 1];
         const gy = -grayBuf[i - w - 1] - 2 * grayBuf[i - w] - grayBuf[i - w + 1]
                  +  grayBuf[i + w - 1] + 2 * grayBuf[i + w] + grayBuf[i + w + 1];
+        gxBuf[i] = gx; gyBuf[i] = gy;
         magBuf[i] = Math.sqrt(gx * gx + gy * gy);
       }
     }
+
+    // 4. Edge Thinning — classic Canny-style non-maximum suppression:
+    // keep a pixel only if its magnitude is a local peak along its own
+    // gradient direction, quantized to the nearest of 4 compass angles.
+    thinMagBuf.fill(0);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const m = magBuf[i];
+        if (m <= 0) continue;
+        const deg = ((Math.atan2(gyBuf[i], gxBuf[i]) * 180 / Math.PI) + 180) % 180;
+        let n1, n2;
+        if (deg < 22.5 || deg >= 157.5) { n1 = magBuf[i - 1]; n2 = magBuf[i + 1]; }
+        else if (deg < 67.5) { n1 = magBuf[i - w + 1]; n2 = magBuf[i + w - 1]; }
+        else if (deg < 112.5) { n1 = magBuf[i - w]; n2 = magBuf[i + w]; }
+        else { n1 = magBuf[i - w - 1]; n2 = magBuf[i + w + 1]; }
+        if (m >= n1 && m >= n2) thinMagBuf[i] = m;
+      }
+    }
+
+    hasPrevFrame = true;
   }
 
   function thresholdMask(threshold) {
-    for (let i = 0; i < maskBuf.length; i++) maskBuf[i] = magBuf[i] > threshold ? 1 : 0;
+    for (let i = 0; i < maskBuf.length; i++) maskBuf[i] = thinMagBuf[i] > threshold ? 1 : 0;
   }
 
   // The actual visible "bats standing out against the dark" view — bright
-  // edge-lines on black, same effect as Outlines mode elsewhere in this
-  // suite, built straight from the same magBuf the blob detector reads.
+  // crisp edge-lines of only what's currently moving, on black. Built
+  // from the same thinMagBuf the blob detector reads.
   function renderOutlineCanvas() {
     const data = outlineImageData.data;
-    for (let p = 0, i = 0; p < magBuf.length; p++, i += 4) {
-      let v = magBuf[p] - OUTLINE_DISPLAY_CUTOFF;
+    for (let p = 0, i = 0; p < thinMagBuf.length; p++, i += 4) {
+      let v = thinMagBuf[p] - OUTLINE_DISPLAY_CUTOFF;
       v = v > 0 ? Math.min(255, v * OUTLINE_DISPLAY_GAIN) : 0;
       data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
     }
@@ -416,7 +492,7 @@
     }
 
     analysisCtx.drawImage(cameraFeed, 0, 0, analysisW, analysisH);
-    computeEdgeMagnitude();
+    computeEdges();
 
     if (outlineModeEnabled) renderOutlineCanvas();
 
