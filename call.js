@@ -180,13 +180,26 @@
     canvasStream = null;
   }
 
-  async function ensureLocalStream() {
-    if (localStream) return localStream;
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    cameraFeed.srcObject = localStream;
-    await cameraFeed.play();
-    initLocalRenderPipeline();
-    return localStream;
+  // Tracks the in-flight request itself, not just the eventual localStream
+  // — now that a preview can start on page load (see the bottom of this
+  // file) as well as from Start/Join, a quick click during that initial
+  // request would otherwise race a second concurrent getUserMedia() call
+  // (localStream stays unset until the first one resolves), risking a
+  // second permission prompt and an orphaned, never-stopped camera handle.
+  let localStreamPromise = null;
+  function ensureLocalStream() {
+    if (localStreamPromise) return localStreamPromise;
+    localStreamPromise = (async () => {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      cameraFeed.srcObject = localStream;
+      await cameraFeed.play();
+      initLocalRenderPipeline();
+      return localStream;
+    })().catch((err) => {
+      localStreamPromise = null; // failed — a later call should be allowed to retry, not stay stuck rejected forever
+      throw err;
+    });
+    return localStreamPromise;
   }
 
   function publish(fields, opts) {
@@ -395,6 +408,7 @@
     clients = [];
     stopLocalRenderPipeline();
     if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+    localStreamPromise = null; // otherwise a later ensureLocalStream() would hand back the now-stopped stream
     cameraFeed.srcObject = null;
     remoteVideo.srcObject = null;
     room = null;
@@ -409,6 +423,9 @@
     cameraBtn.classList.remove("active"); cameraBtn.setAttribute("aria-pressed", "false"); cameraBtn.textContent = "\u{1F4F8} Camera off";
     localCanvas.classList.remove("camera-off");
     setStatus(message || "Call ended.");
+    // Back to the lobby view, not a dark box — same reasoning as the
+    // page-load preview at the bottom of this file.
+    ensureLocalStream().catch(() => {});
   }
 
   muteBtn.addEventListener("click", () => {
@@ -451,5 +468,12 @@
   if (prefilledRoom) {
     roomInput.value = prefilledRoom.trim().toUpperCase();
     joinCall();
+  } else {
+    // A live self-view before committing to a call at all — like a video
+    // app's "lobby": lets the chosen style actually be judged against your
+    // own face before Start/Join, not just guessed at from the dropdown
+    // label. Silent on failure here; the same error surfaces properly
+    // (with a status message) the moment Start/Join is actually clicked.
+    ensureLocalStream().catch(() => {});
   }
 })();
