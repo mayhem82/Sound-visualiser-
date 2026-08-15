@@ -11,6 +11,7 @@
 <body>
 <div id="stage">
   <video id="cameraFeed" playsinline muted></video>
+  <canvas id="outlineCanvas"></canvas>
   <canvas id="overlayCanvas"></canvas>
   <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
 </div>
@@ -18,7 +19,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Flying Fox Count</h1>
-    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — an edge-outline pass makes moving bats stand out as bright loops against the dark, and highlights likely blobs frame by frame. Work in progress: this does <strong>not</strong> reliably count for you. Treat detected blobs as a spotting aid; the tally you tap yourself is the count that matters.</p>
+    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detected blobs get circled on top as a spotting aid. Work in progress: this does <strong>not</strong> reliably count for you — the tally you tap yourself is the count that matters.</p>
 
     <label class="field-label">
       Session
@@ -57,7 +58,8 @@
 </div>
 
 <div id="hud" class="hide">
-  <button id="detectToggleBtn" class="hud-btn active" aria-pressed="true" title="Highlight and count likely bat-shaped blobs each frame. Turn off if it's distracting or your device is struggling.">Blob highlight: On</button>
+  <button id="outlineModeBtn" class="hud-btn active" aria-pressed="true" title="Redraw the whole feed as bright edge-lines on black, so moving bats stand out against the dark sky. Turn off to see the plain camera feed underneath.">Outline mode: On</button>
+  <button id="detectToggleBtn" class="hud-btn active" aria-pressed="true" title="Circle and count likely bat-shaped blobs each frame. Turn off if it's distracting or your device is struggling.">Blob highlight: On</button>
   <label id="sensitivityWrap" class="hud-slider" title="How strong an edge has to be before it counts. Lower it in very dim light; raise it if wires, leaves, or insects are triggering false blobs.">
     Edge sensitivity: <span id="sensitivityLabel">50%</span>
     <input id="sensitivitySlider" type="range" min="0" max="100" value="50">

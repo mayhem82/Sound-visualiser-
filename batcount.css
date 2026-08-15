@@ -17,6 +17,21 @@
   background: #000;
 }
 
+/* Outline mode's actual display — a black/white edge render that replaces
+   the plain camera view (see batcount.js renderOutlineCanvas). Sits above
+   #cameraFeed, opaque, so the raw feed is fully covered while it's on;
+   toggled with .hide to reveal the plain camera feed underneath. */
+#outlineCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+#outlineCanvas.hide { display: none; }
+
 #overlayCanvas {
   position: absolute;
   inset: 0;
@@ -24,9 +39,10 @@
   height: 100%;
   /* Its internal pixel buffer is sized to match the analysis resolution
      (batcount.js), same aspect ratio as the native camera stream — with
-     the same object-fit:cover as #cameraFeed below, a blob marker drawn
-     at analysis-space (x,y) lands in the exact same on-screen spot as
-     that pixel in the video, no separate coordinate mapping needed. */
+     the same object-fit:cover as #cameraFeed/#outlineCanvas, a blob
+     marker drawn at analysis-space (x,y) lands in the exact same on-screen
+     spot as that pixel in the video, no separate coordinate mapping
+     needed. */
   object-fit: cover;
   pointer-events: none;
 }

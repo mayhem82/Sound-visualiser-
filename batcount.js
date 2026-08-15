@@ -19,6 +19,8 @@
   const DETECT_INTERVAL_MS = 200; // ~5Hz — plenty for a human-paced tally aid
 
   const cameraFeed = document.getElementById("cameraFeed");
+  const outlineCanvas = document.getElementById("outlineCanvas");
+  const outlineCtx = outlineCanvas.getContext("2d");
   const overlayCanvas = document.getElementById("overlayCanvas");
   const overlayCtx = overlayCanvas.getContext("2d");
   const cameraStatus = document.getElementById("cameraStatus");
@@ -41,6 +43,7 @@
   const detectedReadout = document.getElementById("detectedReadout");
 
   const hud = document.getElementById("hud");
+  const outlineModeBtn = document.getElementById("outlineModeBtn");
   const detectToggleBtn = document.getElementById("detectToggleBtn");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const sensitivityLabel = document.getElementById("sensitivityLabel");
@@ -60,13 +63,22 @@
   let sessionType = "sunset";
   let tally = 0;
   let paused = false;
+  let outlineModeEnabled = true;
   let detectEnabled = true;
   let detectTimerId = null;
 
   // Analysis buffers, (re)allocated once native video dimensions are known.
   let analysisW = 0, analysisH = 0;
   let analysisCanvas = null, analysisCtx = null;
-  let grayBuf = null, maskBuf = null, visitedBuf = null, stackX = null, stackY = null;
+  let grayBuf = null, magBuf = null, maskBuf = null, visitedBuf = null, stackX = null, stackY = null;
+  let outlineImageData = null;
+
+  // Outline mode's own edge cutoff — fixed, independent of the Edge
+  // sensitivity slider (which only tunes what counts as a *blob* for
+  // counting). Keeps the visual outline view stable while sensitivity is
+  // being tuned for detection accuracy.
+  const OUTLINE_DISPLAY_CUTOFF = 24;
+  const OUTLINE_DISPLAY_GAIN = 1.4;
 
   function setStatus(msg) { statusEl.textContent = msg || ""; }
   function setCameraStatus(msg) {
@@ -212,25 +224,37 @@
     // then uses the same object-fit:cover CSS as the video element — so a
     // point drawn at analysis-space (x,y) lands in the exact same on-screen
     // spot as that pixel in the video, with no separate coordinate mapping.
+    outlineCanvas.width = analysisW;
+    outlineCanvas.height = analysisH;
+    // overlayCanvas mirrors analysisW/H as its own internal pixel buffer,
+    // then uses the same object-fit:cover CSS as the video/outline
+    // elements — so a point drawn at analysis-space (x,y) lands in the
+    // exact same on-screen spot as that pixel in the video, with no
+    // separate coordinate mapping.
     overlayCanvas.width = analysisW;
     overlayCanvas.height = analysisH;
     grayBuf = new Float32Array(analysisW * analysisH);
+    magBuf = new Float32Array(analysisW * analysisH);
     maskBuf = new Uint8Array(analysisW * analysisH);
     visitedBuf = new Uint8Array(analysisW * analysisH);
     stackX = new Int32Array(analysisW * analysisH);
     stackY = new Int32Array(analysisW * analysisH);
+    outlineImageData = outlineCtx.createImageData(analysisW, analysisH);
   }
 
-  // ---- Edge detection + blob labelling ----
+  // ---- Edge detection, outline render, and blob labelling ----
 
-  function computeEdgeMask(threshold) {
+  // Sobel gradient magnitude at every pixel, into magBuf — shared by both
+  // the outline-mode display and the blob-detection threshold below, so
+  // it's computed once per tick regardless of which (or both) are on.
+  function computeEdgeMagnitude() {
     const w = analysisW, h = analysisH;
     const imageData = analysisCtx.getImageData(0, 0, w, h);
     const src = imageData.data;
     for (let i = 0, p = 0; p < grayBuf.length; i += 4, p++) {
       grayBuf[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
     }
-    maskBuf.fill(0);
+    magBuf.fill(0);
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
@@ -238,9 +262,26 @@
                  +  grayBuf[i - w + 1] + 2 * grayBuf[i + 1] + grayBuf[i + w + 1];
         const gy = -grayBuf[i - w - 1] - 2 * grayBuf[i - w] - grayBuf[i - w + 1]
                  +  grayBuf[i + w - 1] + 2 * grayBuf[i + w] + grayBuf[i + w + 1];
-        if (Math.sqrt(gx * gx + gy * gy) > threshold) maskBuf[i] = 1;
+        magBuf[i] = Math.sqrt(gx * gx + gy * gy);
       }
     }
+  }
+
+  function thresholdMask(threshold) {
+    for (let i = 0; i < maskBuf.length; i++) maskBuf[i] = magBuf[i] > threshold ? 1 : 0;
+  }
+
+  // The actual visible "bats standing out against the dark" view — bright
+  // edge-lines on black, same effect as Outlines mode elsewhere in this
+  // suite, built straight from the same magBuf the blob detector reads.
+  function renderOutlineCanvas() {
+    const data = outlineImageData.data;
+    for (let p = 0, i = 0; p < magBuf.length; p++, i += 4) {
+      let v = magBuf[p] - OUTLINE_DISPLAY_CUTOFF;
+      v = v > 0 ? Math.min(255, v * OUTLINE_DISPLAY_GAIN) : 0;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    }
+    outlineCtx.putImageData(outlineImageData, 0, 0);
   }
 
   // 4-connected flood fill, iterative (typed-array stack, not recursion).
@@ -280,27 +321,40 @@
   }
 
   function runDetection() {
-    if (!analysisCtx || paused || !detectEnabled || cameraFeed.readyState < 2) {
+    if (!analysisCtx || paused || cameraFeed.readyState < 2) {
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
       return;
     }
+    if (!outlineModeEnabled && !detectEnabled) {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      return;
+    }
+
     analysisCtx.drawImage(cameraFeed, 0, 0, analysisW, analysisH);
-    const sensitivity = Number(sensitivitySlider.value);
-    const threshold = 300 - (sensitivity / 100) * 285; // 100%→~15 (loose), 0%→300 (strict)
-    computeEdgeMask(threshold);
-    const minArea = Number(minSizeSlider.value);
-    const maxArea = Number(maxSizeSlider.value);
-    const blobs = findBlobs(minArea, maxArea);
+    computeEdgeMagnitude();
+
+    if (outlineModeEnabled) renderOutlineCanvas();
 
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    overlayCtx.strokeStyle = "#7dd3fc";
-    overlayCtx.lineWidth = 2;
-    blobs.forEach((b) => {
-      overlayCtx.beginPath();
-      overlayCtx.arc(b.cx, b.cy, b.r, 0, Math.PI * 2);
-      overlayCtx.stroke();
-    });
-    detectedReadout.textContent = `Detected this frame: ${blobs.length}`;
+    if (detectEnabled) {
+      const sensitivity = Number(sensitivitySlider.value);
+      const threshold = 300 - (sensitivity / 100) * 285; // 100%→~15 (loose), 0%→300 (strict)
+      thresholdMask(threshold);
+      const minArea = Number(minSizeSlider.value);
+      const maxArea = Number(maxSizeSlider.value);
+      const blobs = findBlobs(minArea, maxArea);
+
+      overlayCtx.strokeStyle = "#7dd3fc";
+      overlayCtx.lineWidth = 2;
+      blobs.forEach((b) => {
+        overlayCtx.beginPath();
+        overlayCtx.arc(b.cx, b.cy, b.r, 0, Math.PI * 2);
+        overlayCtx.stroke();
+      });
+      detectedReadout.textContent = `Detected this frame: ${blobs.length}`;
+    } else {
+      detectedReadout.textContent = "Detected this frame: off";
+    }
   }
 
   function startDetectionLoop() {
@@ -317,6 +371,14 @@
   sensitivitySlider.addEventListener("input", () => { sensitivityLabel.textContent = sensitivitySlider.value + "%"; });
   minSizeSlider.addEventListener("input", () => { minSizeLabel.textContent = minSizeSlider.value + "px"; });
   maxSizeSlider.addEventListener("input", () => { maxSizeLabel.textContent = maxSizeSlider.value + "px"; });
+
+  outlineModeBtn.addEventListener("click", () => {
+    outlineModeEnabled = !outlineModeEnabled;
+    outlineModeBtn.setAttribute("aria-pressed", String(outlineModeEnabled));
+    outlineModeBtn.textContent = "Outline mode: " + (outlineModeEnabled ? "On" : "Off");
+    outlineModeBtn.classList.toggle("active", outlineModeEnabled);
+    outlineCanvas.classList.toggle("hide", !outlineModeEnabled);
+  });
 
   detectToggleBtn.addEventListener("click", () => {
     detectEnabled = !detectEnabled;
@@ -384,6 +446,7 @@
     renderLog();
     stopStream();
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    if (outlineCanvas.width) outlineCtx.clearRect(0, 0, outlineCanvas.width, outlineCanvas.height);
     tallyBlock.classList.add("hide");
     hud.classList.add("hide");
     overlay.classList.remove("hide");
