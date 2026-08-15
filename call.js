@@ -90,6 +90,7 @@
   const callHud = document.getElementById("callHud");
   const muteBtn = document.getElementById("muteBtn");
   const cameraBtn = document.getElementById("cameraBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
   const hangupBtn = document.getElementById("hangupBtn");
 
   function setStatus(msg) { statusEl.textContent = msg || ""; }
@@ -132,23 +133,34 @@
     canvasStream = localCanvas.captureStream(30);
   }
 
+  // Duo Colour's default two-tone palette — same values Video Production's
+  // own duoColourLo/duoColourHi default to, for consistency.
+  const DUO_LO = C.hexToRgb01("#0d0d0d");
+  const DUO_HI = C.hexToRgb01("#f2f2f2");
+
   function renderLocalFrame() {
     if (gl && cameraFeed.readyState >= cameraFeed.HAVE_CURRENT_DATA) {
       const cover = C.computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, localCanvas.width, localCanvas.height);
       // cameraBlurOn overrides the style picker entirely rather than
       // stopping the track: the edge-detection sampling radius (normally
-      // ~2px, for crisp outline mode) scaled x10 spreads the Sobel sample
-      // points so far apart that the result reads as a heavy blur/shape
-      // silhouette instead of a line drawing — obscures who/what's on
-      // camera while still sending a live, moving picture, rather than
-      // cutting to a flat black frame.
-      const cartoonOn = !cameraBlurOn && styleSelect.value === "cartoon";
+      // ~2px, for crisp Outline-style edges) scaled x10 spreads the Sobel
+      // sample points so far apart that the result reads as a heavy
+      // blur/shape silhouette instead of a line drawing — obscures who/
+      // what's on camera while still sending a live, moving picture,
+      // rather than cutting to a flat black frame.
+      // Every style transforms the image — there's deliberately no
+      // "Normal"/raw option (see the field-label hint in call.html), so
+      // the unprocessed camera feed is never what's actually sent.
+      const style = cameraBlurOn ? "blur" : styleSelect.value;
+      const outlineOn = style === "blur" || style === "outline";
+      const cartoonOn = style === "cartoon";
+      const duoOn = style === "duo";
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cameraFeed);
       gl.uniform1i(uniforms.uTex, 0);
       gl.uniform1f(uniforms.uBlend, 1);
-      gl.uniform1f(uniforms.uOutlineEnabled, cameraBlurOn ? 1 : 0);
-      gl.uniform1f(uniforms.uOutlineThickness, cameraBlurOn ? 20 : 2);
+      gl.uniform1f(uniforms.uOutlineEnabled, outlineOn ? 1 : 0);
+      gl.uniform1f(uniforms.uOutlineThickness, style === "blur" ? 20 : 2);
       gl.uniform1f(uniforms.uOutlineBlend, 1);
       gl.uniform1f(uniforms.uOutlineOpacity, 1);
       gl.uniform3f(uniforms.uOutlineColor, 1, 1, 1);
@@ -161,10 +173,10 @@
       gl.uniform1f(uniforms.uCartoonEdgeThickness, 2);
       gl.uniform1f(uniforms.uCartoonEdgeStrength, 0.6);
       gl.uniform1f(uniforms.uCartoonSaturation, 1.35);
-      gl.uniform1f(uniforms.uDuoEnabled, 0);
-      gl.uniform1f(uniforms.uDuoBlend, 0);
-      gl.uniform3f(uniforms.uDuoLo, 0, 0, 0);
-      gl.uniform3f(uniforms.uDuoHi, 1, 1, 1);
+      gl.uniform1f(uniforms.uDuoEnabled, duoOn ? 1 : 0);
+      gl.uniform1f(uniforms.uDuoBlend, 1);
+      gl.uniform3f(uniforms.uDuoLo, DUO_LO[0], DUO_LO[1], DUO_LO[2]);
+      gl.uniform3f(uniforms.uDuoHi, DUO_HI[0], DUO_HI[1], DUO_HI[2]);
       gl.uniform2f(uniforms.uTexelSize, 1 / cameraFeed.videoWidth, 1 / cameraFeed.videoHeight);
       gl.uniform1f(uniforms.uSpread, 4);
       gl.uniform1i(uniforms.uCvdType, 0);
@@ -461,6 +473,42 @@
 
   hangupBtn.addEventListener("click", () => endCall("Call ended."));
   window.addEventListener("beforeunload", () => { if (!torn) endCall(); });
+
+  // ---- Fullscreen, split screen ----
+  // Same requestFullscreen()/exitFullscreen() pattern Video Production's
+  // own fullscreen button uses. body.call-split-active (toggled below)
+  // is what actually switches #stage from the small-corner-inset layout
+  // to an equal-size split — see call.css.
+  async function toggleFullscreen() {
+    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFullscreen) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) { try { await exit.call(document); } catch (e) {} }
+    } else {
+      const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (!req) { alert("This browser doesn't support the Fullscreen API."); return; }
+      try { await req.call(document.documentElement); }
+      catch (e) { alert("Fullscreen didn't start: " + (e.name || "") + (e.message ? " — " + e.message : "")); }
+    }
+  }
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
+  // The browser's own exit gestures (Esc, swipe-down, back) bypass the
+  // click handler above, so this is what actually keeps the split layout
+  // and the button's pressed state honest regardless of how fullscreen
+  // was entered or left.
+  ["fullscreenchange", "webkitfullscreenchange"].forEach((evt) => {
+    document.addEventListener(evt, () => {
+      const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      fullscreenBtn.classList.toggle("active", active);
+      fullscreenBtn.setAttribute("aria-pressed", String(active));
+      document.body.classList.toggle("call-split-active", active);
+      // The split layout changes localCanvas's on-screen size immediately
+      // (corner inset -> half the screen) — resample its bounding rect
+      // right away rather than waiting on a window resize event that may
+      // not fire (or may lag the CSS class change) on every browser.
+      resizeLocalCanvas();
+    });
+  });
 
   startCallBtn.addEventListener("click", startCall);
   joinCallBtn.addEventListener("click", joinCall);

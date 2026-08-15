@@ -8,18 +8,15 @@
   background: #000;
 }
 
-#remoteVideo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #000;
+/* ---- Normal layout: remote fills the screen, local is a small corner
+   inset over it — same bottom-right picture-in-picture convention as
+   Video Production's dual camera mode. ---- */
+#remotePane {
+  position: absolute;
+  inset: 0;
 }
 
-/* Self-view: a small corner inset over the remote feed, same bottom-right
-   picture-in-picture convention as Video Production's dual camera mode.
-   A <canvas>, not a <video> — it's the styled (Normal/Cartoon) output,
-   the same thing that gets sent to the other side, not the raw camera. */
-#localCanvas {
+#localPane {
   position: fixed;
   right: 14px;
   bottom: 14px;
@@ -28,8 +25,43 @@
   aspect-ratio: 3 / 4;
   border-radius: 14px;
   border: 2px solid rgba(242, 242, 247, 0.25);
-  background: #111;
+  overflow: hidden;
   z-index: 2;
+  background: #111;
+}
+
+#remoteVideo, #localCanvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+/* ---- Split fullscreen (toggled by #fullscreenBtn, driven by
+   body.call-split-active): both panes equal size, side by side on
+   landscape/wide screens, stacked on narrow/portrait ones — same
+   responsive convention as viewer.html's own split view. ---- */
+body.call-split-active #stage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 700px), (orientation: portrait) {
+  body.call-split-active #stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+body.call-split-active #remotePane,
+body.call-split-active #localPane {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  border: none;
 }
 
 .call-status {
@@ -178,7 +210,17 @@
   color: #fecaca;
 }
 
+/* Fullscreen/split is a neutral mode toggle, not a warning state (unlike
+   Mute/Blur camera, which reuse the red .active above) — same accent
+   colour Video Production's own fullscreen button uses for the same
+   reason. */
+#fullscreenBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06202b;
+}
+
 @media (max-width: 520px) {
   .share-room-code { font-size: 42px; }
-  #localVideo { width: 34vw; }
+  #localPane { width: 34vw; }
 }
