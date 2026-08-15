@@ -100,6 +100,17 @@
     uniform float uDuoBlend;
     uniform vec3 uDuoLo;
     uniform vec3 uDuoHi;
+    // Audio colour tint — ported from Colour Vision Extreme's own version
+    // (ID and math both kept identical): a live microphone-driven hue
+    // nudge, not part of this file's own pipeline until Video Call needed
+    // it. uAudioTintHue/Level are computed JS-side from a frequency
+    // analyser, not here.
+    uniform float uAudioTintEnabled;
+    uniform float uAudioTintHue;
+    uniform float uAudioTintStrength;
+    uniform float uAudioTintSatStrength;
+    uniform float uAudioTintLightStrength;
+    uniform float uAudioTintLevel;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -266,6 +277,21 @@
         finalColor = mix(finalColor, outlineColor, uOutlineBlend);
       }
 
+      // Audio colour tint: a final nudge toward the live mic's dominant
+      // band hue, taking the shortest way around the colour wheel so it
+      // never jumps the long way round. Runs after Cartoon/Duo/Outline so
+      // it's a mood pass over whatever's already on screen. uAudioTintLevel
+      // is the live overall loudness, so louder audio pushes saturation/
+      // lightness further in whichever direction each strength is set.
+      if (uAudioTintEnabled > 0.5) {
+        vec3 tintHsl = rgb2hsl(finalColor);
+        float hueDiff = mod(uAudioTintHue - tintHsl.x + 540.0, 360.0) - 180.0;
+        tintHsl.x = mod(tintHsl.x + hueDiff * uAudioTintStrength + 360.0, 360.0);
+        tintHsl.y = clamp(tintHsl.y + uAudioTintLevel * uAudioTintSatStrength, 0.0, 1.0);
+        tintHsl.z = clamp(tintHsl.z + uAudioTintLevel * uAudioTintLightStrength, 0.0, 1.0);
+        finalColor = hsl2rgb(tintHsl);
+      }
+
       // Global image adjustments — this page's own Exposure/Contrast/
       // Brightness/Saturation sliders, applied last, on top of everything
       // above (correction, cartoon, outline) so they read as a camera-like
@@ -333,7 +359,9 @@
     const uniformNames = [
       "uTex", "uBlend", "uOutlineEnabled", "uOutlineThickness", "uOutlineBlend", "uOutlineOpacity", "uOutlineColor",
       "uCartoonEnabled", "uCartoonBlend", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
-      "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi", "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
+      "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi",
+      "uAudioTintEnabled", "uAudioTintHue", "uAudioTintStrength", "uAudioTintSatStrength", "uAudioTintLightStrength", "uAudioTintLevel",
+      "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
       "uCorrection2", "uCvdType", "uCvdStrength", "uExposure", "uContrast", "uBrightness", "uSaturation",
       "uRotate180", "uUvScale", "uUvOffset"
     ];

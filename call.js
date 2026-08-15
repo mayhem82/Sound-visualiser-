@@ -76,6 +76,7 @@
 
   const remoteVideo = document.getElementById("remoteVideo");
   const cameraFeed = document.getElementById("cameraFeed"); // raw camera, hidden — see call.html
+  const cameraFeed2 = document.getElementById("cameraFeed2"); // second camera, dual-camera mode only
   const localCanvas = document.getElementById("localCanvas"); // styled output — self-view + what's actually sent
   const styleSelect = document.getElementById("styleSelect");
   const callStatus = document.getElementById("callStatus");
@@ -88,6 +89,12 @@
   const shareRoomCode = document.getElementById("shareRoomCode");
   const shareLinkText = document.getElementById("shareLinkText");
   const callHud = document.getElementById("callHud");
+  const zoomOutBtn = document.getElementById("zoomOutBtn");
+  const zoomInBtn = document.getElementById("zoomInBtn");
+  const zoomValueEl = document.getElementById("zoomValue");
+  const switchCameraBtn = document.getElementById("switchCameraBtn");
+  const dualCameraBtn = document.getElementById("dualCameraBtn");
+  const swapCamerasBtn = document.getElementById("swapCamerasBtn");
   const muteBtn = document.getElementById("muteBtn");
   const cameraBtn = document.getElementById("cameraBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
@@ -106,6 +113,45 @@
   let heartbeatTimer = null;
   let remotePeerId = null;
   let torn = true; // true whenever no call is active/in-progress
+
+  // ---- Camera capability/switching — ported from Video Production's
+  // video-production-app.js (same variable roles, same functions), the
+  // proven implementation this suite already has for exactly this. ----
+  let videoTrack = null; // primary camera's track — the one Zoom/Switch camera act on
+  let torchSupported = false; // unused on this page (no torch control), kept only because probeTrackCapabilities returns it
+  let zoomCaps = null; // {min,max,step} if hardware zoom supported; digital-crop fallback otherwise
+  let zoomPercent = 100;
+  let videoDevices = [];
+  let currentDeviceIndex = -1;
+  let switchingCamera = false;
+
+  // ---- Dual camera (picture-in-picture) — same technique as Video
+  // Production: a second concurrent stream, drawn as a small inset inside
+  // localCanvas via a second texture + a viewport-restricted draw call. ----
+  let videoTexture2 = null;
+  let secondaryStream = null;
+  let secondaryVideoTrack = null;
+  let dualCameraActive = false;
+  let dualCameraBusy = false;
+
+  // ---- Audio Colour Tint — ported from Colour Vision Extreme, fixed to
+  // three bands (bass/mid/treble, same violet/cyan/pink language Sound
+  // Nebula's particle swarms use) rather than exposing the full band/
+  // strength editor: this page is "pick a style," not a tuning surface,
+  // same reasoning as Cartoon/Outline/Duo's own fixed defaults. Analyses
+  // localStream's own microphone track — no second getUserMedia() call —
+  // since audio is already being captured for the call itself. ----
+  const AUDIO_TINT_BANDS = [
+    { hue: 280, fromHz: 20, toHz: 150 },   // bass -> violet
+    { hue: 180, fromHz: 150, toHz: 2000 }, // mid -> cyan
+    { hue: 320, fromHz: 2000, toHz: 8000 } // treble -> pink
+  ];
+  let audioTintCtx = null;
+  let audioTintAnalyser = null;
+  let audioTintFreqData = null;
+  let audioTintIntervalId = null;
+  let audioTintHue = 0;
+  let audioTintLevel = 0;
 
   // ---- Video style pipeline ----
   // Runs continuously once a call starts, independent of connection state:
@@ -126,7 +172,7 @@
     if (gl) return; // already set up — startCall/joinCall can both call this once localStream exists
     const ctxState = C.initGLContext(localCanvas);
     gl = ctxState.gl; program = ctxState.program; uniforms = ctxState.uniforms; videoTexture = ctxState.videoTexture;
-    C.uploadPointUniforms(gl, program, uniforms, []); // no calibrated colour points on this page — Normal/Cartoon only
+    C.uploadPointUniforms(gl, program, uniforms, []); // no calibrated colour points on this page — every style here is fixed-parameter
     resizeLocalCanvas();
     window.addEventListener("resize", resizeLocalCanvas);
     renderLocalFrame();
@@ -140,7 +186,8 @@
 
   function renderLocalFrame() {
     if (gl && cameraFeed.readyState >= cameraFeed.HAVE_CURRENT_DATA) {
-      const cover = C.computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, localCanvas.width, localCanvas.height);
+      let cover = C.computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, localCanvas.width, localCanvas.height);
+      if (!zoomCaps) cover = C.applyDigitalZoom(cover, zoomPercent / 100);
       // cameraBlurOn overrides the style picker entirely rather than
       // stopping the track: the edge-detection sampling radius (normally
       // ~2px, for crisp Outline-style edges) scaled x10 spreads the Sobel
@@ -155,6 +202,7 @@
       const outlineOn = style === "blur" || style === "outline";
       const cartoonOn = style === "cartoon";
       const duoOn = style === "duo";
+      const audioTintOn = style === "audiotint";
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cameraFeed);
       gl.uniform1i(uniforms.uTex, 0);
@@ -177,6 +225,15 @@
       gl.uniform1f(uniforms.uDuoBlend, 1);
       gl.uniform3f(uniforms.uDuoLo, DUO_LO[0], DUO_LO[1], DUO_LO[2]);
       gl.uniform3f(uniforms.uDuoHi, DUO_HI[0], DUO_HI[1], DUO_HI[2]);
+      // Fixed strengths (0.5 hue pull, a small +10% saturation push on
+      // louder audio, no lightness push) — same "no sliders" philosophy
+      // as Cartoon/Outline/Duo above.
+      gl.uniform1f(uniforms.uAudioTintEnabled, audioTintOn ? 1 : 0);
+      gl.uniform1f(uniforms.uAudioTintHue, audioTintHue);
+      gl.uniform1f(uniforms.uAudioTintStrength, 0.5);
+      gl.uniform1f(uniforms.uAudioTintSatStrength, 0.1);
+      gl.uniform1f(uniforms.uAudioTintLightStrength, 0);
+      gl.uniform1f(uniforms.uAudioTintLevel, audioTintLevel);
       gl.uniform2f(uniforms.uTexelSize, 1 / cameraFeed.videoWidth, 1 / cameraFeed.videoHeight);
       gl.uniform1f(uniforms.uSpread, 4);
       gl.uniform1i(uniforms.uCvdType, 0);
@@ -189,6 +246,33 @@
       gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
       gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // Dual camera inset — same technique as Video Production: reuses
+      // every uniform already set above (same style applied to both
+      // feeds), only rebinding the texture, restating its own aspect-fit
+      // UVs/texel size, and restricting gl.viewport() to a corner rect,
+      // which is what actually places and scales it. No zoom applied to
+      // the inset — keeps it a stable, un-zoomed framing of the second
+      // feed. Drawn last so it always sits on top; every uniform touched
+      // here gets fully overwritten at the top of next frame's main pass,
+      // so nothing needs restoring except the viewport itself.
+      if (dualCameraActive && secondaryVideoTrack && cameraFeed2.readyState >= cameraFeed2.HAVE_CURRENT_DATA) {
+        const marginPx = Math.round(localCanvas.width * 0.03);
+        const insetW = Math.round(localCanvas.width * 0.34);
+        const insetH = Math.round(insetW * ((cameraFeed2.videoHeight / cameraFeed2.videoWidth) || 9 / 16));
+        const insetX = localCanvas.width - insetW - marginPx;
+        const insetY = marginPx; // gl.viewport's Y origin is the bottom of the canvas
+        const cover2 = C.computeCoverUv(cameraFeed2.videoWidth, cameraFeed2.videoHeight, insetW, insetH);
+        gl.viewport(insetX, insetY, insetW, insetH);
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture2);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cameraFeed2);
+        gl.uniform1i(uniforms.uTex, 0);
+        gl.uniform2f(uniforms.uTexelSize, 1 / cameraFeed2.videoWidth, 1 / cameraFeed2.videoHeight);
+        gl.uniform2f(uniforms.uUvScale, cover2.sx, cover2.sy);
+        gl.uniform2f(uniforms.uUvOffset, cover2.ox, cover2.oy);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.viewport(0, 0, localCanvas.width, localCanvas.height);
+      }
     }
     renderRafId = requestAnimationFrame(renderLocalFrame);
   }
@@ -196,8 +280,54 @@
   function stopLocalRenderPipeline() {
     if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = null; }
     window.removeEventListener("resize", resizeLocalCanvas);
-    gl = program = uniforms = videoTexture = undefined;
+    // videoTexture2 belongs to this same (now-discarded) gl context —
+    // resetting it here too, not just videoTexture, matters because
+    // enableDualCamera() only recreates it when falsy; leaving a stale
+    // reference around would make it skip recreating a texture that
+    // actually belongs to a destroyed context.
+    gl = program = uniforms = videoTexture = videoTexture2 = undefined;
     canvasStream = null;
+  }
+
+  // ---- Camera capabilities (zoom/torch) + device enumeration — ported
+  // directly from video-production-app.js's own functions of the same
+  // names/shapes. ----
+  function probeTrackCapabilities(track) {
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    return {
+      torch: !!(caps && caps.torch),
+      zoom: (caps && caps.zoom) ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 1 } : null
+    };
+  }
+
+  function applyPrimaryCapabilities(track) {
+    const caps = probeTrackCapabilities(track);
+    torchSupported = caps.torch;
+    zoomCaps = caps.zoom;
+  }
+
+  async function applyZoomHardware(percentValue) {
+    if (!zoomCaps || !videoTrack) return;
+    const factor = percentValue / 100;
+    const clamped = Math.min(zoomCaps.max, Math.max(zoomCaps.min, factor));
+    try { await videoTrack.applyConstraints({ advanced: [{ zoom: clamped }] }); } catch (e) { /* ignore */ }
+  }
+
+  async function refreshVideoDevices() {
+    if (!("mediaDevices" in navigator) || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      const hasMultiple = videoDevices.length > 1;
+      switchCameraBtn.classList.toggle("hide", !hasMultiple || dualCameraActive);
+      dualCameraBtn.classList.toggle("hide", !hasMultiple);
+      const activeId = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().deviceId : null;
+      currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
+      if (currentDeviceIndex === -1) currentDeviceIndex = 0;
+    } catch (err) {
+      switchCameraBtn.classList.add("hide");
+      dualCameraBtn.classList.add("hide");
+    }
   }
 
   // Tracks the in-flight request itself, not just the eventual localStream
@@ -213,7 +343,15 @@
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       cameraFeed.srcObject = localStream;
       await cameraFeed.play();
+      videoTrack = localStream.getVideoTracks()[0];
+      applyPrimaryCapabilities(videoTrack);
       initLocalRenderPipeline();
+      await refreshVideoDevices();
+      // Camera/mic controls are reachable through every stage from here on
+      // — framing yourself before Start/Join, waiting for the other
+      // device, and the call itself — not just once actually connected.
+      callHud.classList.remove("hide");
+      if (styleSelect.value === "audiotint") startAudioTint();
       return localStream;
     })().catch((err) => {
       localStreamPromise = null; // failed — a later call should be allowed to retry, not stay stuck rejected forever
@@ -287,7 +425,8 @@
         setCallStatus("");
         shareCodeBlock.classList.add("hide");
         overlay.classList.add("hide");
-        callHud.classList.remove("hide");
+        // callHud is already visible from the moment the camera preview
+        // started (see ensureLocalStream()) — nothing to show here.
         stopHeartbeat();
       } else if (conn.connectionState === "connecting") {
         setCallStatus("Connecting…");
@@ -426,15 +565,25 @@
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     clients.forEach((c) => { try { c.end(true); } catch (e) {} });
     clients = [];
+    disableDualCamera();
+    stopAudioTint();
     stopLocalRenderPipeline();
     if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
     localStreamPromise = null; // otherwise a later ensureLocalStream() would hand back the now-stopped stream
+    videoTrack = null;
+    zoomCaps = null;
+    zoomPercent = 100;
+    zoomValueEl.textContent = "100%";
+    videoDevices = [];
+    currentDeviceIndex = -1;
     cameraFeed.srcObject = null;
     remoteVideo.srcObject = null;
     room = null;
     remotePeerId = null;
     shareCodeBlock.classList.add("hide");
     callHud.classList.add("hide");
+    switchCameraBtn.classList.add("hide");
+    dualCameraBtn.classList.add("hide");
     setCallStatus("");
     overlay.classList.remove("hide");
     startCallBtn.disabled = false;
@@ -447,6 +596,230 @@
     // page-load preview at the bottom of this file.
     ensureLocalStream().catch(() => {});
   }
+
+  // ---- Zoom ----
+
+  function setZoom(percent) {
+    zoomPercent = Math.min(500, Math.max(100, percent));
+    zoomValueEl.textContent = Math.round(zoomPercent) + "%";
+    applyZoomHardware(zoomPercent); // no-op if the device only supports digital zoom — renderLocalFrame() covers that case
+  }
+  zoomOutBtn.addEventListener("click", () => setZoom(zoomPercent - 20));
+  zoomInBtn.addEventListener("click", () => setZoom(zoomPercent + 20));
+
+  // ---- Switch camera — ported from video-production-app.js's function of
+  // the same name/shape, adapted for localStream being a single stream
+  // shared with the call's outgoing audio: only its video track gets
+  // swapped (removeTrack/addTrack in place), audio and canvasStream (the
+  // actual outgoing video, decoupled from which physical camera feeds it)
+  // are both untouched — so switching cameras mid-call needs no
+  // renegotiation at all, unlike Video Production's own version. ----
+
+  function replacePrimaryVideoTrack(newTrack) {
+    const oldTrack = localStream.getVideoTracks()[0];
+    if (oldTrack) { localStream.removeTrack(oldTrack); oldTrack.stop(); }
+    localStream.addTrack(newTrack);
+    videoTrack = newTrack;
+    cameraFeed.srcObject = localStream;
+    return cameraFeed.play();
+  }
+
+  async function switchCamera() {
+    if (videoDevices.length <= 1 || switchingCamera || dualCameraActive) return;
+    switchingCamera = true;
+    switchCameraBtn.disabled = true;
+    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    const nextDevice = videoDevices[nextIndex];
+    // The old track is released inside replacePrimaryVideoTrack() only
+    // once the new one has already been granted (see below) — many
+    // phones, especially Android, refuse a second concurrent camera open,
+    // so requesting first and swapping second avoids a dark gap if the
+    // request itself fails.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: nextDevice.deviceId } },
+        audio: false
+      });
+      await replacePrimaryVideoTrack(stream.getVideoTracks()[0]);
+      applyPrimaryCapabilities(videoTrack);
+      currentDeviceIndex = nextIndex;
+      await refreshVideoDevices();
+    } catch (err) {
+      console.error("Couldn't switch camera", err);
+      // Try to recover some feed rather than leave the screen dark, same
+      // fallback Video Production's own switchCamera() uses.
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        await replacePrimaryVideoTrack(fallback.getVideoTracks()[0]);
+        applyPrimaryCapabilities(videoTrack);
+        await refreshVideoDevices();
+      } catch (err2) {
+        alert("Camera lost — reload the page to reconnect.");
+      }
+    } finally {
+      switchingCamera = false;
+      switchCameraBtn.disabled = false;
+    }
+  }
+  switchCameraBtn.addEventListener("click", switchCamera);
+  if ("mediaDevices" in navigator && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", () => { if (localStream) refreshVideoDevices(); });
+  }
+
+  // ---- Dual camera (picture-in-picture) — ported from
+  // video-production-app.js's functions of the same names/shapes. ----
+
+  function pickSecondaryDevice() {
+    if (videoDevices.length < 2) return null;
+    const others = videoDevices.filter((_, i) => i !== currentDeviceIndex);
+    const primaryLabel = (videoDevices[currentDeviceIndex] && videoDevices[currentDeviceIndex].label) || "";
+    const wantsFront = /back|environment|rear/i.test(primaryLabel);
+    const wantsBack = /front|user|selfie/i.test(primaryLabel);
+    if (wantsFront) {
+      const front = others.find((d) => /front|user|selfie/i.test(d.label));
+      if (front) return front;
+    }
+    if (wantsBack) {
+      const back = others.find((d) => /back|environment|rear/i.test(d.label));
+      if (back) return back;
+    }
+    return others[0] || null;
+  }
+
+  async function enableDualCamera() {
+    if (dualCameraActive || dualCameraBusy) return;
+    const device = pickSecondaryDevice();
+    if (!device) {
+      alert("Only one camera available — nothing to add as a second feed.");
+      return;
+    }
+    dualCameraBusy = true;
+    dualCameraBtn.disabled = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: device.deviceId } },
+        audio: false
+      });
+      secondaryStream = stream;
+      cameraFeed2.srcObject = stream;
+      await cameraFeed2.play();
+      secondaryVideoTrack = stream.getVideoTracks()[0];
+      if (!videoTexture2) videoTexture2 = C.createVideoTexture(gl);
+      dualCameraActive = true;
+      dualCameraBtn.classList.add("active");
+      dualCameraBtn.textContent = "\u{1F4F9} Dual camera: On";
+      swapCamerasBtn.classList.remove("hide");
+      await refreshVideoDevices(); // also hides Switch camera while dual mode holds a second device
+    } catch (err) {
+      alert("Couldn't open a second camera: " + (err.message || err.name || "unknown error") +
+        ". This device or browser may not support two camera streams at once.");
+    } finally {
+      dualCameraBusy = false;
+      dualCameraBtn.disabled = false;
+    }
+  }
+
+  function disableDualCamera() {
+    if (secondaryStream) { secondaryStream.getTracks().forEach((t) => t.stop()); secondaryStream = null; }
+    secondaryVideoTrack = null;
+    cameraFeed2.srcObject = null;
+    dualCameraActive = false;
+    dualCameraBtn.classList.remove("active");
+    dualCameraBtn.textContent = "\u{1F4F9} Dual camera";
+    swapCamerasBtn.classList.add("hide");
+    if (localStream) refreshVideoDevices(); // brings Switch camera back now only one device is held
+  }
+
+  dualCameraBtn.addEventListener("click", () => {
+    if (dualCameraActive) disableDualCamera(); else enableDualCamera();
+  });
+
+  async function swapCameras() {
+    if (!dualCameraActive || dualCameraBusy) return;
+    dualCameraBusy = true;
+    swapCamerasBtn.disabled = true;
+    try {
+      // Neither camera is reopened — both streams stay exactly as they
+      // are, only which stream object holds which already-live video
+      // track gets exchanged (localStream's audio track is untouched,
+      // never part of this swap).
+      const oldPrimaryTrack = localStream.getVideoTracks()[0];
+      const oldSecondaryTrack = secondaryVideoTrack;
+      localStream.removeTrack(oldPrimaryTrack);
+      localStream.addTrack(oldSecondaryTrack);
+      secondaryStream.removeTrack(oldSecondaryTrack);
+      secondaryStream.addTrack(oldPrimaryTrack);
+      cameraFeed.srcObject = localStream;
+      cameraFeed2.srcObject = secondaryStream;
+      await Promise.all([cameraFeed.play(), cameraFeed2.play()]);
+      videoTrack = oldSecondaryTrack;
+      secondaryVideoTrack = oldPrimaryTrack;
+      applyPrimaryCapabilities(videoTrack);
+      await refreshVideoDevices();
+    } finally {
+      dualCameraBusy = false;
+      swapCamerasBtn.disabled = false;
+    }
+  }
+  swapCamerasBtn.addEventListener("click", swapCameras);
+
+  // ---- Audio Colour Tint ----
+
+  function computeAudioTintHue() {
+    if (!audioTintAnalyser || !audioTintCtx) return;
+    const nyquist = audioTintCtx.sampleRate / 2;
+    audioTintAnalyser.getByteFrequencyData(audioTintFreqData);
+    const n = audioTintFreqData.length;
+    let weightedHue = 0, totalEnergy = 0;
+    AUDIO_TINT_BANDS.forEach((band) => {
+      const from = Math.min(1, band.fromHz / nyquist);
+      const to = Math.min(1, band.toHz / nyquist);
+      const start = Math.floor(from * n);
+      const end = Math.max(start + 1, Math.floor(to * n));
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += audioTintFreqData[i];
+      const energy = (sum / (end - start) / 255);
+      weightedHue += band.hue * energy;
+      totalEnergy += energy;
+    });
+    if (totalEnergy > 0) audioTintHue = weightedHue / totalEnergy;
+    audioTintLevel = Math.min(1, totalEnergy / AUDIO_TINT_BANDS.length);
+  }
+
+  function startAudioTint() {
+    if (audioTintAnalyser || !localStream) return; // already running, or no mic to analyse yet
+    try {
+      audioTintCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioTintCtx.createMediaStreamSource(localStream);
+      audioTintAnalyser = audioTintCtx.createAnalyser();
+      audioTintAnalyser.fftSize = 1024;
+      audioTintAnalyser.smoothingTimeConstant = 0.8;
+      source.connect(audioTintAnalyser);
+      audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+      audioTintIntervalId = setInterval(computeAudioTintHue, 100);
+    } catch (e) {
+      // No AudioContext, or analysis failed to set up — audioTintOn just
+      // stays visually a no-op (uAudioTintHue/Level default to 0) rather
+      // than breaking the call.
+    }
+  }
+
+  function stopAudioTint() {
+    if (audioTintIntervalId) { clearInterval(audioTintIntervalId); audioTintIntervalId = null; }
+    if (audioTintCtx) { try { audioTintCtx.close(); } catch (e) {} audioTintCtx = null; }
+    audioTintAnalyser = null;
+    audioTintFreqData = null;
+    audioTintHue = 0;
+    audioTintLevel = 0;
+  }
+
+  styleSelect.addEventListener("change", () => {
+    if (styleSelect.value === "audiotint" && localStream) startAudioTint();
+    else stopAudioTint();
+  });
 
   muteBtn.addEventListener("click", () => {
     if (!localStream) return;

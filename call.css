@@ -190,12 +190,38 @@ body.call-split-active #localPane {
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
-  z-index: 2;
+  /* Above #shareCodeBlock (z-index 3) and #overlay (z-index 2) — these
+     controls are meant to stay reachable through every stage (framing
+     yourself before you've even started/joined, waiting for the other
+     device, and the call itself), not just once actually connected. */
+  z-index: 4;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
+  max-width: calc(100vw - 28px);
 }
 
 #callHud.hide { display: none; }
+
+#zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 15, 25, 0.55);
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  border-radius: 10px;
+  padding: 0 4px;
+}
+#zoomControls .hud-btn { border: none; background: none; padding: 8px 10px; }
+.zoom-value {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 .hud-btn-danger {
   background: rgba(239, 68, 68, 0.18);

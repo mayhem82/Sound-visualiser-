@@ -15,6 +15,9 @@
        and is what's actually displayed as the self-view and sent to the
        other side. -->
   <video id="cameraFeed" playsinline muted hidden></video>
+  <!-- Second camera, dual-camera mode only — see call.js. Also never shown
+       directly; drawn as an inset inside localCanvas. -->
+  <video id="cameraFeed2" playsinline muted hidden></video>
   <div class="call-pane" id="remotePane">
     <video id="remoteVideo" playsinline autoplay></video>
   </div>
@@ -36,9 +39,10 @@
         <option value="cartoon">Cartoon</option>
         <option value="outline">Outline</option>
         <option value="duo">Duo Colour</option>
+        <option value="audiotint">Audio Colour Tint</option>
       </select>
     </label>
-    <p class="hint">No raw/original option — every style here transforms your image (posterize, edge lines, colour remap) before it's ever sent, so nobody on the other end can extract the unprocessed camera feed.</p>
+    <p class="hint">No raw/original option — every style here transforms your image (posterize, edge lines, colour remap) before it's ever sent, so nobody on the other end can extract the unprocessed camera feed. Audio Colour Tint needs microphone access separately from the call's own audio, to read live bass/mid/treble and tint your video toward whichever's loudest.</p>
 
     <button id="startCallBtn">Start a call</button>
 
@@ -60,6 +64,14 @@
 </div>
 
 <div id="callHud" class="hide">
+  <div id="zoomControls">
+    <button id="zoomOutBtn" class="hud-btn" type="button" aria-label="Zoom out">&minus;</button>
+    <span id="zoomValue" class="zoom-value">100%</span>
+    <button id="zoomInBtn" class="hud-btn" type="button" aria-label="Zoom in">+</button>
+  </div>
+  <button id="switchCameraBtn" class="hud-btn hide" type="button" title="Switch to the next available camera (e.g. front/back, or another lens)">&#128260; Switch camera</button>
+  <button id="dualCameraBtn" class="hud-btn hide" type="button" title="Add a second camera at the same time, as a picture-in-picture inset">&#127909; Dual camera</button>
+  <button id="swapCamerasBtn" class="hud-btn hide" type="button" title="Swap which camera is primary and which is the inset">&#8646; Swap</button>
   <button id="muteBtn" class="hud-btn" aria-pressed="false" title="Mute your microphone">&#127908; Mute</button>
   <button id="cameraBtn" class="hud-btn" aria-pressed="false" title="Obscure your video with a heavy outline blur, without cutting it off entirely">&#127787;&#65039; Blur camera</button>
   <button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, split screen — see the other person and yourself equally, both full size">&#9974; Split fullscreen</button>
