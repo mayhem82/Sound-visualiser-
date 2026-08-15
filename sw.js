@@ -8,7 +8,7 @@
 // with the page actually running — this is what makes the shell
 // installable as a PWA and lets it still load (to whatever extent the
 // shell alone can) on a flaky connection, not offline camera/mic use.
-const CACHE_NAME = "sound-visualiser-shell-v14";
+const CACHE_NAME = "sound-visualiser-shell-v15";
 const SHELL_FILES = [
   "index.html",
   "home.css",
