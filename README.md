@@ -13,11 +13,12 @@ share a dark visual style and a lot of underlying plumbing:
   hand (or a diagnosed deficiency type). The full experimental version of
   the correction engine — cartoon mode, diagnosed-CVD-type correction,
   photo/video capture, two-device tablet pairing, Templates.
-- **`colorassist.html`** ("Colour Assist") — a focused, everyday build on
-  that same engine: personal colour calibration, structural outlines, and
-  the camera/lighting controls that keep a calibration trustworthy, with
-  everything else trimmed away. See its own section below for why it
-  exists alongside Colour Vision Extreme rather than replacing it.
+- **`colorassist.html`** ("Colour Assist") — a stripped-down build on that
+  same engine: personal colour calibration, structural outlines, and
+  camera/lighting controls, with everything else trimmed away. Work in
+  progress — none of it is proven to actually help yet. See its own
+  section below for why it exists alongside Colour Vision Extreme rather
+  than replacing it.
 - **`restore.html`** ("Property Colour Reference") — live camera colour
   correction for real-estate photography, built around a known-true
   reference colour (a paint chip or swatch) rather than a generic filter.
@@ -315,8 +316,9 @@ just six things:
   compensation (EV), shutter, ISO, camera switching, and pause, exposed
   where the browser/hardware supports them. Automatic exposure and
   changing light can shift the apparent colour of whatever's being
-  calibrated against, so exposure locking here is treated as part of
-  calibration integrity, not just a photography nicety.
+  calibrated against, throwing the calibration off — locking exposure is
+  more than just a photography nicety here, though it doesn't guarantee
+  a good calibration.
 
 Saved colours use their own storage, separate from `colorvision.html` —
 calibrating one doesn't affect the other. The underlying WebGL shader is
@@ -328,8 +330,9 @@ improvement made to one engine applies to both without being ported by hand.
 
 Live camera colour correction for real-estate photography, built from a
 known-true reference colour (a paint chip, swatch, or matched sample)
-rather than a generic filter — aimed at keeping documentation and
-colour-matching accurate under whatever light you're shooting in. Click
+rather than a generic filter. Work in progress — how well it holds up
+under different light hasn't been proven, so check results against the
+real reference rather than trusting it blind. Click
 **Enable camera & start**, then **Match a reference colour** the same way
 `colorvision.html` calibrates a colour, or use **Quick presets** for
 one-tap corrections with no reference needed (10 lighting-condition
