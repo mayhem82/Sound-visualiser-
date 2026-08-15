@@ -1,0 +1,191 @@
+/* Flying Fox Count — page-specific styles only.
+   Shared look (vars, #overlay, #panel, .status, .hint, .hud-btn, .hud-slider,
+   .flash-status, .profiles-section/.profiles-row) comes from style.css so
+   this page stays visually consistent with the rest of the app. */
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background: #000;
+}
+
+#cameraFeed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+#overlayCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Its internal pixel buffer is sized to match the analysis resolution
+     (batcount.js), same aspect ratio as the native camera stream — with
+     the same object-fit:cover as #cameraFeed below, a blob marker drawn
+     at analysis-space (x,y) lands in the exact same on-screen spot as
+     that pixel in the video, no separate coordinate mapping needed. */
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.field-label {
+  display: block;
+  text-align: left;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.75);
+  margin: 0 0 16px;
+}
+
+.field-label select {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 12px 10px;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ---- The tally is the actual count that matters — big, bottom-centre,
+   thumb-reachable, deliberately more prominent than the auto-detect
+   readout below it. #hud (top-right, from style.css) holds the tuning
+   controls instead, so the two never compete for the same thumb. ---- */
+#tallyBlock {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(15, 15, 25, 0.72);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 22px;
+  padding: 14px 26px 18px;
+  text-align: center;
+  min-width: 220px;
+}
+
+#tallyBlock.hide { display: none; }
+
+#tallyLabel {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(242, 242, 247, 0.6);
+}
+
+#tallyCount {
+  margin: 2px 0 10px;
+  font-size: 60px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+#tallyButtons {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+#tallyMinusBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#tallyPlusBtn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 18px 42px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+#tallyPlusBtn:hover { filter: brightness(1.08); }
+#tallyPlusBtn:active, #tallyMinusBtn:active { transform: scale(0.94); }
+
+#detectedReadout {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.hud-btn-danger {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+}
+.hud-btn-danger:hover { background: rgba(239, 68, 68, 0.32); }
+
+#logSection { display: block; }
+
+#logList {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.log-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(242, 242, 247, 0.1);
+  font-size: 13px;
+}
+
+.log-entry:last-child { border-bottom: none; }
+
+.log-entry-meta {
+  color: rgba(242, 242, 247, 0.6);
+  text-align: left;
+}
+
+.log-entry-count {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.log-entry-delete {
+  appearance: none;
+  border: none;
+  background: none;
+  color: rgba(252, 165, 165, 0.85);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+#logEmptyHint {
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.5);
+  margin: 8px 0 0;
+}
+
+@media (max-width: 520px) {
+  #tallyCount { font-size: 48px; }
+  #tallyPlusBtn { padding: 15px 32px; font-size: 19px; }
+}

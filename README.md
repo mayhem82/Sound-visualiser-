@@ -26,6 +26,10 @@ share a dark visual style and a lot of underlying plumbing:
   tablet" broadcasts.
 - **`call.html`** — two-way peer-to-peer video calling, using the same
   room-code pairing as "Connect tablet" above.
+- **`batcount.html`** ("Flying Fox Count") — a counting aid for flying fox
+  (bat) colony emergence/return counts at sunset/sunrise: edge-outline
+  highlighting of likely blobs, plus a manual tally. Work in progress, not
+  a validated automated counter.
 - **`tutorials.html`** — a placeholder grid for short how-to video clips.
 
 No build step, no dependencies — open any `.html` file directly in a
@@ -376,6 +380,30 @@ restrictive ones (some corporate firewalls, certain mobile carrier setups)
 can still block the connection outright, since there's nothing here to
 relay the actual call media if a direct path can't be found. Deliberately
 the cheap option to try first, not a guarantee.
+
+## Flying Fox Count (`batcount.html`)
+
+A counting aid for flying fox (bat) colony counts at sunset (emergence) or
+sunrise (return). Self-contained — it doesn't share the WebGL correction
+engine the colour pages use, just a small 2D-canvas pipeline: grayscale,
+Sobel edge detection, and connected-component labelling on a downscaled
+copy of the camera frame, run a few times a second.
+
+**The tally is the count that matters.** Tap **+1** for each bat you see;
+**&minus;** corrects a misclick. **Blob highlight** draws a circle around
+each detected edge-blob and shows a live "Detected this frame" number, as
+a spotting aid against a dark sky — it is not the official count and isn't
+validated against real footage. Expect false positives (insects, birds,
+wind-shaken leaves) and false negatives (distant, overlapping, or fast
+bats). **Edge sensitivity**, **Min blob size**, and **Max blob size**
+adjust the detector for the lighting and framing on hand; the max-size
+filter (and a bounding-box aspect-ratio check in code) exists mainly to
+reject long straight wire segments and whole-tree foliage clusters, which
+otherwise register as one giant or one very elongated blob.
+
+**End session & save** logs the date, session type (sunset/sunrise), tally,
+and duration to a local session history (shown on the start panel, with
+**Export CSV** and **Clear log**) — nothing leaves the device.
 
 ## Video Tutorials (`tutorials.html`)
 

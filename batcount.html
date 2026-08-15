@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flying Fox Count</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦇</text></svg>">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="batcount.css">
+</head>
+<body>
+<div id="stage">
+  <video id="cameraFeed" playsinline muted></video>
+  <canvas id="overlayCanvas"></canvas>
+  <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
+</div>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Flying Fox Count</h1>
+    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — an edge-outline pass makes moving bats stand out as bright loops against the dark, and highlights likely blobs frame by frame. Work in progress: this does <strong>not</strong> reliably count for you. Treat detected blobs as a spotting aid; the tally you tap yourself is the count that matters.</p>
+
+    <label class="field-label">
+      Session
+      <select id="sessionTypeSelect">
+        <option value="sunset">Sunset emergence</option>
+        <option value="sunrise">Sunrise return</option>
+      </select>
+    </label>
+
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
+
+    <div id="logSection" class="hide">
+      <div class="profiles-section">
+        <h3>Past sessions</h3>
+        <div id="logList"></div>
+        <div class="profiles-row">
+          <button id="exportLogBtn" class="hud-btn reticle-btn-secondary">Export CSV</button>
+          <button id="clearLogBtn" class="hud-btn reticle-btn-secondary">Clear log</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tallyBlock" class="hide">
+  <p id="tallyLabel">Sunset emergence</p>
+  <p id="tallyCount">0</p>
+  <div id="tallyButtons">
+    <button id="tallyMinusBtn" class="hud-btn" type="button" aria-label="Subtract one">&minus;</button>
+    <button id="tallyPlusBtn" type="button" aria-label="Add one">+1</button>
+  </div>
+  <p id="detectedReadout">Detected this frame: 0</p>
+</div>
+
+<div id="hud" class="hide">
+  <button id="detectToggleBtn" class="hud-btn active" aria-pressed="true" title="Highlight and count likely bat-shaped blobs each frame. Turn off if it's distracting or your device is struggling.">Blob highlight: On</button>
+  <label id="sensitivityWrap" class="hud-slider" title="How strong an edge has to be before it counts. Lower it in very dim light; raise it if wires, leaves, or insects are triggering false blobs.">
+    Edge sensitivity: <span id="sensitivityLabel">50%</span>
+    <input id="sensitivitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="minSizeWrap" class="hud-slider" title="Smallest blob (in pixels, at detection resolution) counted as a possible bat. Raise it to ignore distant specks and insects.">
+    Min blob size: <span id="minSizeLabel">3px</span>
+    <input id="minSizeSlider" type="range" min="1" max="30" value="3">
+  </label>
+  <label id="maxSizeWrap" class="hud-slider" title="Largest blob counted as a possible bat, before it's assumed to be foliage, a building, or a cluster of overlapping wires instead.">
+    Max blob size: <span id="maxSizeLabel">220px</span>
+    <input id="maxSizeSlider" type="range" min="40" max="600" value="220">
+  </label>
+  <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="endSessionBtn" class="hud-btn hud-btn-danger" type="button">End session &amp; save</button>
+  <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
+</div>
+
+<script src="batcount.js"></script>
+</body>
+</html>
