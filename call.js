@@ -340,7 +340,34 @@
   function ensureLocalStream() {
     if (localStreamPromise) return localStreamPromise;
     localStreamPromise = (async () => {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      // Requested as two separate getUserMedia() calls, not one combined
+      // {video:true, audio:true} — every other page in this suite that
+      // uses both (Sound Nebula's camera background + separate mic
+      // analysis, Video Production's camera-only stream) keeps them
+      // separate too, never combined. On some Android/Chrome camera
+      // stacks, a combined audio+video capture session is held more
+      // exclusively than a video-only one, which was blocking Dual
+      // camera from opening a second, genuinely different physical
+      // camera — even though the exact same second-camera request works
+      // fine on Video Production's video-only primary stream. Video
+      // first, audio second: matches which one every other page treats
+      // as the primary resource.
+      const videoOnlyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      let audioOnlyStream;
+      try {
+        audioOnlyStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      } catch (err) {
+        // A call genuinely needs audio, but failing this separately from
+        // video (mic permission denied/no mic hardware) shouldn't nuke a
+        // camera stream that already succeeded — surface it and continue
+        // video-only rather than hard-failing the whole preview.
+        setStatus("Microphone unavailable: " + (err.message || err.name || "unknown error") + " — continuing video-only.");
+        audioOnlyStream = null;
+      }
+      localStream = new MediaStream([
+        ...videoOnlyStream.getVideoTracks(),
+        ...(audioOnlyStream ? audioOnlyStream.getAudioTracks() : [])
+      ]);
       cameraFeed.srcObject = localStream;
       await cameraFeed.play();
       videoTrack = localStream.getVideoTracks()[0];
