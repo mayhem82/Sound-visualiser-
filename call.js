@@ -97,6 +97,7 @@
 
   let localStream = null;
   let canvasStream = null; // captured from localCanvas — this is what's actually sent as the outgoing video track
+  let cameraBlurOn = false; // see renderLocalFrame() — heavy outline blur, not a black frame
   let pc = null;
   let clients = [];
   let deviceId = null;
@@ -134,13 +135,20 @@
   function renderLocalFrame() {
     if (gl && cameraFeed.readyState >= cameraFeed.HAVE_CURRENT_DATA) {
       const cover = C.computeCoverUv(cameraFeed.videoWidth, cameraFeed.videoHeight, localCanvas.width, localCanvas.height);
-      const cartoonOn = styleSelect.value === "cartoon";
+      // cameraBlurOn overrides the style picker entirely rather than
+      // stopping the track: the edge-detection sampling radius (normally
+      // ~2px, for crisp outline mode) scaled x10 spreads the Sobel sample
+      // points so far apart that the result reads as a heavy blur/shape
+      // silhouette instead of a line drawing — obscures who/what's on
+      // camera while still sending a live, moving picture, rather than
+      // cutting to a flat black frame.
+      const cartoonOn = !cameraBlurOn && styleSelect.value === "cartoon";
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cameraFeed);
       gl.uniform1i(uniforms.uTex, 0);
       gl.uniform1f(uniforms.uBlend, 1);
-      gl.uniform1f(uniforms.uOutlineEnabled, 0);
-      gl.uniform1f(uniforms.uOutlineThickness, 2);
+      gl.uniform1f(uniforms.uOutlineEnabled, cameraBlurOn ? 1 : 0);
+      gl.uniform1f(uniforms.uOutlineThickness, cameraBlurOn ? 20 : 2);
       gl.uniform1f(uniforms.uOutlineBlend, 1);
       gl.uniform1f(uniforms.uOutlineOpacity, 1);
       gl.uniform3f(uniforms.uOutlineColor, 1, 1, 1);
@@ -420,8 +428,8 @@
     startCallBtn.disabled = false;
     joinCallBtn.disabled = false;
     muteBtn.classList.remove("active"); muteBtn.setAttribute("aria-pressed", "false"); muteBtn.textContent = "\u{1F3A4} Mute";
-    cameraBtn.classList.remove("active"); cameraBtn.setAttribute("aria-pressed", "false"); cameraBtn.textContent = "\u{1F4F8} Camera off";
-    localCanvas.classList.remove("camera-off");
+    cameraBlurOn = false;
+    cameraBtn.classList.remove("active"); cameraBtn.setAttribute("aria-pressed", "false"); cameraBtn.textContent = "\u{1F32B}️ Blur camera";
     setStatus(message || "Call ended.");
     // Back to the lobby view, not a dark box — same reasoning as the
     // page-load preview at the bottom of this file.
@@ -441,18 +449,14 @@
 
   cameraBtn.addEventListener("click", () => {
     if (!canvasStream) return;
-    // Toggles the *outgoing* (canvas-captured) track, not the raw camera
-    // track — the camera itself keeps running so the local self-view
-    // preview stays live (dimmed via .camera-off, see call.css) even
-    // while the other side sees nothing.
-    const track = canvasStream.getVideoTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    const off = !track.enabled;
-    localCanvas.classList.toggle("camera-off", off);
-    cameraBtn.classList.toggle("active", off);
-    cameraBtn.setAttribute("aria-pressed", String(off));
-    cameraBtn.textContent = off ? "\u{1F4F7} Camera on" : "\u{1F4F8} Camera off";
+    // Doesn't stop or disable the outgoing track — see renderLocalFrame()
+    // for why: this switches what it's actually showing (a heavy outline
+    // blur) rather than cutting it to black, so the other side still sees
+    // a live, moving picture, just an obscured one.
+    cameraBlurOn = !cameraBlurOn;
+    cameraBtn.classList.toggle("active", cameraBlurOn);
+    cameraBtn.setAttribute("aria-pressed", String(cameraBlurOn));
+    cameraBtn.textContent = cameraBlurOn ? "\u{1F4F7} Unblur" : "\u{1F32B}️ Blur camera";
   });
 
   hangupBtn.addEventListener("click", () => endCall("Call ended."));

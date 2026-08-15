@@ -30,11 +30,6 @@
   border: 2px solid rgba(242, 242, 247, 0.25);
   background: #111;
   z-index: 2;
-  transition: opacity 0.15s;
-}
-
-#localCanvas.camera-off {
-  opacity: 0.35;
 }
 
 .call-status {
