@@ -51,6 +51,9 @@
   const minSizeLabel = document.getElementById("minSizeLabel");
   const maxSizeSlider = document.getElementById("maxSizeSlider");
   const maxSizeLabel = document.getElementById("maxSizeLabel");
+  const minMovementSlider = document.getElementById("minMovementSlider");
+  const minMovementLabel = document.getElementById("minMovementLabel");
+  const trackedReadout = document.getElementById("trackedReadout");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
   const pauseBtn = document.getElementById("pauseBtn");
   const endSessionBtn = document.getElementById("endSessionBtn");
@@ -66,6 +69,14 @@
   let outlineModeEnabled = true;
   let detectEnabled = true;
   let detectTimerId = null;
+
+  // Frame-to-frame blob tracking — a blob only gets circled/counted once
+  // it's been seen moving in a direction across ticks, the way bats
+  // crossing the sky do, not a static edge (tree texture, a wire
+  // junction, a lens speck) that never moves.
+  let trackedBlobs = [];
+  let nextTrackId = 1;
+  let autoTrackedApprox = 0;
 
   // Analysis buffers, (re)allocated once native video dimensions are known.
   let analysisW = 0, analysisH = 0;
@@ -148,9 +159,9 @@
   exportLogBtn.addEventListener("click", () => {
     const entries = loadLog();
     if (!entries.length) return;
-    const rows = ["date,session,tally,duration_minutes"];
+    const rows = ["date,session,tally,duration_minutes,auto_tracked_approx"];
     entries.forEach((e) => {
-      rows.push([e.date, e.sessionType, e.tally, e.durationMinutes].join(","));
+      rows.push([e.date, e.sessionType, e.tally, e.durationMinutes, e.autoTrackedApprox != null ? e.autoTrackedApprox : ""].join(","));
     });
     downloadBlob(new Blob([rows.join("\n")], { type: "text/csv" }), `flying-fox-counts-${new Date().toISOString().slice(0, 10)}.csv`);
   });
@@ -220,10 +231,6 @@
     analysisCanvas.width = analysisW;
     analysisCanvas.height = analysisH;
     analysisCtx = analysisCanvas.getContext("2d", { willReadFrequently: true });
-    // overlayCanvas mirrors analysisW/H as its own internal pixel buffer,
-    // then uses the same object-fit:cover CSS as the video element — so a
-    // point drawn at analysis-space (x,y) lands in the exact same on-screen
-    // spot as that pixel in the video, with no separate coordinate mapping.
     outlineCanvas.width = analysisW;
     outlineCanvas.height = analysisH;
     // overlayCanvas mirrors analysisW/H as its own internal pixel buffer,
@@ -240,6 +247,7 @@
     stackX = new Int32Array(analysisW * analysisH);
     stackY = new Int32Array(analysisW * analysisH);
     outlineImageData = outlineCtx.createImageData(analysisW, analysisH);
+    trackedBlobs = []; // old positions are in the previous resolution's coordinate space — invalid now
   }
 
   // ---- Edge detection, outline render, and blob labelling ----
@@ -320,6 +328,53 @@
     return blobs;
   }
 
+  // Matches this tick's raw blob candidates against last tick's tracked
+  // positions (nearest-centroid, within a distance tolerant of normal
+  // flight speed between ticks) to build a velocity per blob, then keeps
+  // only the ones that have actually moved — filtering out anything
+  // sitting still between ticks, which a real bat crossing the sky never
+  // does. Simple nearest-neighbour matching, not a validated tracker: it
+  // can mismatch when blobs cross paths or cluster tightly.
+  function updateTracks(candidates, minMovement) {
+    const maxMatchDist = Math.max(analysisW, analysisH) * 0.18;
+    const used = new Array(candidates.length).fill(false);
+
+    trackedBlobs.forEach((t) => { t.matchedThisTick = false; });
+    trackedBlobs.forEach((t) => {
+      let bestIdx = -1, bestDist = maxMatchDist;
+      candidates.forEach((c, idx) => {
+        if (used[idx]) return;
+        const d = Math.hypot(c.cx - t.cx, c.cy - t.cy);
+        if (d < bestDist) { bestDist = d; bestIdx = idx; }
+      });
+      if (bestIdx !== -1) {
+        const c = candidates[bestIdx];
+        t.vx = c.cx - t.cx;
+        t.vy = c.cy - t.cy;
+        t.cx = c.cx; t.cy = c.cy; t.r = c.r;
+        t.missedTicks = 0;
+        t.matchedThisTick = true;
+        used[bestIdx] = true;
+      } else {
+        t.missedTicks++;
+      }
+    });
+    candidates.forEach((c, idx) => {
+      if (used[idx]) return;
+      trackedBlobs.push({ id: nextTrackId++, cx: c.cx, cy: c.cy, r: c.r, vx: 0, vy: 0, missedTicks: 0, matchedThisTick: true, everQualified: false });
+    });
+    // Lost blobs (left frame, occluded, or detection dropped out) get a
+    // couple of ticks' grace before their track is dropped, so a brief
+    // missed frame doesn't reset the velocity a real bat had built up.
+    trackedBlobs = trackedBlobs.filter((t) => t.missedTicks <= 2);
+
+    const moving = trackedBlobs.filter((t) => t.matchedThisTick && Math.hypot(t.vx, t.vy) >= minMovement);
+    moving.forEach((t) => {
+      if (!t.everQualified) { t.everQualified = true; autoTrackedApprox++; }
+    });
+    return moving;
+  }
+
   function runDetection() {
     if (!analysisCtx || paused || cameraFeed.readyState < 2) {
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
@@ -342,16 +397,25 @@
       thresholdMask(threshold);
       const minArea = Number(minSizeSlider.value);
       const maxArea = Number(maxSizeSlider.value);
-      const blobs = findBlobs(minArea, maxArea);
+      const candidates = findBlobs(minArea, maxArea);
+      const minMovement = Number(minMovementSlider.value);
+      const moving = updateTracks(candidates, minMovement);
 
       overlayCtx.strokeStyle = "#7dd3fc";
       overlayCtx.lineWidth = 2;
-      blobs.forEach((b) => {
+      moving.forEach((t) => {
         overlayCtx.beginPath();
-        overlayCtx.arc(b.cx, b.cy, b.r, 0, Math.PI * 2);
+        overlayCtx.arc(t.cx, t.cy, t.r, 0, Math.PI * 2);
+        overlayCtx.stroke();
+        // A short trailing line showing the direction it's moving in —
+        // the whole point being tracked at all, not just circled.
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(t.cx - t.vx * 3, t.cy - t.vy * 3);
+        overlayCtx.lineTo(t.cx, t.cy);
         overlayCtx.stroke();
       });
-      detectedReadout.textContent = `Detected this frame: ${blobs.length}`;
+      detectedReadout.textContent = `Detected this frame: ${moving.length}`;
+      trackedReadout.textContent = `Auto-tracked (approx): ${autoTrackedApprox}`;
     } else {
       detectedReadout.textContent = "Detected this frame: off";
     }
@@ -371,6 +435,7 @@
   sensitivitySlider.addEventListener("input", () => { sensitivityLabel.textContent = sensitivitySlider.value + "%"; });
   minSizeSlider.addEventListener("input", () => { minSizeLabel.textContent = minSizeSlider.value + "px"; });
   maxSizeSlider.addEventListener("input", () => { maxSizeLabel.textContent = maxSizeSlider.value + "px"; });
+  minMovementSlider.addEventListener("input", () => { minMovementLabel.textContent = minMovementSlider.value + "px"; });
 
   outlineModeBtn.addEventListener("click", () => {
     outlineModeEnabled = !outlineModeEnabled;
@@ -388,6 +453,10 @@
     if (!detectEnabled) {
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
       detectedReadout.textContent = "Detected this frame: off";
+      // Tracks built up while highlighting was on go stale the moment
+      // ticks stop updating them — start clean on re-enable rather than
+      // matching fresh blobs against frozen old positions.
+      trackedBlobs = [];
     }
   });
 
@@ -417,11 +486,13 @@
       sessionType = sessionTypeSelect.value;
       sessionStartedAt = Date.now();
       setTally(0);
+      autoTrackedApprox = 0;
       tallyLabel.textContent = sessionType === "sunrise" ? "Sunrise return" : "Sunset emergence";
       overlay.classList.add("hide");
       tallyBlock.classList.remove("hide");
       hud.classList.remove("hide");
       detectedReadout.textContent = "Detected this frame: 0";
+      trackedReadout.textContent = "Auto-tracked (approx): 0";
       startDetectionLoop();
       setStatus("");
     } catch (err) {
@@ -440,7 +511,8 @@
       date: new Date().toISOString(),
       sessionType,
       tally,
-      durationMinutes
+      durationMinutes,
+      autoTrackedApprox
     });
     saveLog(entries);
     renderLog();

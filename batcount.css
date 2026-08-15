@@ -148,6 +148,12 @@
   color: rgba(242, 242, 247, 0.55);
 }
 
+#trackedReadout {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: rgba(242, 242, 247, 0.4);
+}
+
 .hud-btn-danger {
   background: rgba(239, 68, 68, 0.18);
   border-color: rgba(239, 68, 68, 0.5);

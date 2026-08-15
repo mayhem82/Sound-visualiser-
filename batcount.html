@@ -19,7 +19,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Flying Fox Count</h1>
-    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detected blobs get circled on top as a spotting aid. Work in progress: this does <strong>not</strong> reliably count for you — the tally you tap yourself is the count that matters.</p>
+    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detection tracks each edge-blob frame to frame and only circles the ones actually moving in a direction, the way bats crossing the sky do, not static clutter like a tree or a wire junction. Work in progress: this does <strong>not</strong> reliably count for you — the tally you tap yourself is the count that matters.</p>
 
     <label class="field-label">
       Session
@@ -55,6 +55,7 @@
     <button id="tallyPlusBtn" type="button" aria-label="Add one">+1</button>
   </div>
   <p id="detectedReadout">Detected this frame: 0</p>
+  <p id="trackedReadout">Auto-tracked (approx): 0</p>
 </div>
 
 <div id="hud" class="hide">
@@ -71,6 +72,10 @@
   <label id="maxSizeWrap" class="hud-slider" title="Largest blob counted as a possible bat, before it's assumed to be foliage, a building, or a cluster of overlapping wires instead.">
     Max blob size: <span id="maxSizeLabel">220px</span>
     <input id="maxSizeSlider" type="range" min="40" max="600" value="220">
+  </label>
+  <label id="minMovementWrap" class="hud-slider" title="How far a blob has to move between detection ticks to count as flight, not static clutter. Bats are only circled once they're seen moving in a direction across at least two ticks — raise this if a static edge (tree texture, a wire junction, a lens speck) is still getting circled.">
+    Min movement: <span id="minMovementLabel">4px</span>
+    <input id="minMovementSlider" type="range" min="0" max="30" value="4">
   </label>
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
