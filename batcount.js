@@ -27,8 +27,18 @@
 
   const overlay = document.getElementById("overlay");
   const sessionTypeSelect = document.getElementById("sessionTypeSelect");
+  const recordSessionCheckbox = document.getElementById("recordSessionCheckbox");
+  const recordingUnsupportedHint = document.getElementById("recordingUnsupportedHint");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
+
+  const reviewPanel = document.getElementById("reviewPanel");
+  const reviewSummary = document.getElementById("reviewSummary");
+  const reviewVideo = document.getElementById("reviewVideo");
+  const reviewBookmarksHint = document.getElementById("reviewBookmarksHint");
+  const reviewBookmarks = document.getElementById("reviewBookmarks");
+  const downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
+  const closeReviewBtn = document.getElementById("closeReviewBtn");
 
   const logSection = document.getElementById("logSection");
   const logList = document.getElementById("logList");
@@ -79,6 +89,29 @@
   let trackedBlobs = [];
   let nextTrackId = 1;
   let autoTrackedApprox = 0;
+
+  // Session recording — lets someone mount the camera, hit Start, and
+  // walk away entirely rather than having to stand there watching (and
+  // touching the phone) for the whole emergence/return window. Recorded
+  // from a small dedicated canvas (not the full native camera resolution)
+  // to keep an hour-long file a reasonable size; each auto-tracked
+  // crossing is bookmarked by its timestamp so reviewing afterwards means
+  // jumping straight to the moments that matter, not scrubbing blind.
+  const RECORD_MAX_DIM = 480;
+  const RECORD_FPS = 10;
+  const RECORD_MIME_CANDIDATES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+  const recordingSupported = typeof MediaRecorder !== "undefined" && RECORD_MIME_CANDIDATES.some((m) => MediaRecorder.isTypeSupported(m));
+  const recordMimeType = recordingSupported ? RECORD_MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) : null;
+  let recordCanvas = null, recordCtx = null, recordDrawTimerId = null;
+  let mediaRecorder = null, recordedChunks = [], recordingStartedAt = null;
+  let eventBookmarks = [];
+  let reviewBlobUrl = null;
+
+  if (!recordingSupported) {
+    recordSessionCheckbox.checked = false;
+    recordSessionCheckbox.disabled = true;
+    recordingUnsupportedHint.classList.remove("hide");
+  }
 
   // Analysis buffers, (re)allocated once native video dimensions are known.
   let analysisW = 0, analysisH = 0;
@@ -229,6 +262,104 @@
     }
   }
   switchCameraBtn.addEventListener("click", switchCamera);
+
+  // ---- Session recording ----
+
+  function startRecording() {
+    if (!recordingSupported) return;
+    const nativeW = cameraFeed.videoWidth, nativeH = cameraFeed.videoHeight;
+    if (!nativeW || !nativeH) return;
+    const scale = Math.min(1, RECORD_MAX_DIM / Math.max(nativeW, nativeH));
+    recordCanvas = document.createElement("canvas");
+    recordCanvas.width = Math.max(1, Math.round(nativeW * scale));
+    recordCanvas.height = Math.max(1, Math.round(nativeH * scale));
+    recordCtx = recordCanvas.getContext("2d");
+    recordDrawTimerId = setInterval(() => {
+      if (cameraFeed.readyState >= 2) recordCtx.drawImage(cameraFeed, 0, 0, recordCanvas.width, recordCanvas.height);
+    }, 1000 / RECORD_FPS);
+
+    recordedChunks = [];
+    eventBookmarks = [];
+    const recordStream = recordCanvas.captureStream(RECORD_FPS);
+    mediaRecorder = new MediaRecorder(recordStream, { mimeType: recordMimeType });
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recordedChunks.push(e.data); };
+    mediaRecorder.start(1000);
+    recordingStartedAt = Date.now();
+  }
+
+  // Stops recording (if any) and resolves with a playable WebM Blob, or
+  // null if nothing was recorded this session. Async because MediaRecorder
+  // delivers its last chunk and fires "stop" asynchronously after stop().
+  function stopRecording() {
+    return new Promise((resolve) => {
+      if (recordDrawTimerId) { clearInterval(recordDrawTimerId); recordDrawTimerId = null; }
+      if (!mediaRecorder) { resolve(null); return; }
+      const recorder = mediaRecorder;
+      const durationMs = recordingStartedAt ? Date.now() - recordingStartedAt : 0;
+      mediaRecorder = null;
+      recorder.addEventListener("stop", () => {
+        if (!recordedChunks.length) { resolve(null); return; }
+        const rawBlob = new Blob(recordedChunks, { type: recordMimeType });
+        rawBlob.arrayBuffer().then((buf) => {
+          // MediaRecorder never writes a WebM Duration element, so an
+          // unpatched recording plays but can't be scrubbed or trimmed —
+          // same fix Video Production uses for its Take recordings.
+          const fixed = window.VP_CORE && window.VP_CORE.fixWebmDuration
+            ? window.VP_CORE.fixWebmDuration(new Uint8Array(buf), durationMs)
+            : null;
+          resolve(new Blob([fixed || buf], { type: recordMimeType }));
+        }).catch(() => resolve(rawBlob));
+      });
+      if (recorder.state !== "inactive") recorder.stop();
+      else resolve(null);
+    });
+  }
+
+  function formatClock(totalSeconds) {
+    const s = Math.max(0, Math.round(totalSeconds));
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, "0");
+    return `${m}:${ss}`;
+  }
+
+  function showReview(blob) {
+    if (reviewBlobUrl) URL.revokeObjectURL(reviewBlobUrl);
+    reviewBlobUrl = URL.createObjectURL(blob);
+    reviewVideo.src = reviewBlobUrl;
+    reviewSummary.textContent = `${tally} counted, ${autoTrackedApprox} auto-tracked crossing${autoTrackedApprox === 1 ? "" : "s"} bookmarked below.`;
+    reviewBookmarks.innerHTML = "";
+    reviewBookmarksHint.classList.toggle("hide", eventBookmarks.length === 0);
+    eventBookmarks.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = formatClock(t);
+      btn.addEventListener("click", () => {
+        reviewVideo.currentTime = Math.max(0, t - 1);
+        reviewVideo.play().catch(() => {});
+      });
+      reviewBookmarks.appendChild(btn);
+    });
+    reviewPanel.classList.remove("hide");
+  }
+
+  downloadRecordingBtn.addEventListener("click", () => {
+    if (!reviewBlobUrl) return;
+    const a = document.createElement("a");
+    a.href = reviewBlobUrl;
+    a.download = `flying-fox-count-${new Date().toISOString().slice(0, 10)}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
+  closeReviewBtn.addEventListener("click", () => {
+    reviewPanel.classList.add("hide");
+    reviewVideo.pause();
+    reviewVideo.removeAttribute("src");
+    reviewVideo.load();
+    if (reviewBlobUrl) { URL.revokeObjectURL(reviewBlobUrl); reviewBlobUrl = null; }
+    overlay.classList.remove("hide");
+  });
 
   // ---- Analysis buffers ----
 
@@ -476,6 +607,9 @@
         t.everQualified = true;
         autoTrackedApprox++;
         if (autoCountEnabled) setTally(tally + 1, true);
+        if (mediaRecorder && recordingStartedAt) {
+          eventBookmarks.push((Date.now() - recordingStartedAt) / 1000);
+        }
       }
     });
     return moving;
@@ -582,7 +716,13 @@
     pauseBtn.setAttribute("aria-pressed", String(paused));
     pauseBtn.textContent = paused ? "Resume" : "Pause";
     pauseBtn.classList.toggle("active", paused);
-    if (paused) cameraFeed.pause(); else cameraFeed.play().catch(() => {});
+    if (paused) {
+      cameraFeed.pause();
+      if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.pause();
+    } else {
+      cameraFeed.play().catch(() => {});
+      if (mediaRecorder && mediaRecorder.state === "paused") mediaRecorder.resume();
+    }
   });
 
   function setTally(n, pulse) {
@@ -618,6 +758,7 @@
       hud.classList.remove("hide");
       detectedReadout.textContent = "Detected this frame: 0";
       trackedReadout.textContent = "Auto-tracked (approx): 0";
+      if (recordSessionCheckbox.checked) startRecording();
       startDetectionLoop();
       setStatus("");
     } catch (err) {
@@ -627,7 +768,8 @@
     }
   });
 
-  endSessionBtn.addEventListener("click", () => {
+  endSessionBtn.addEventListener("click", async () => {
+    endSessionBtn.disabled = true;
     stopDetectionLoop();
     const durationMinutes = sessionStartedAt ? Math.round((Date.now() - sessionStartedAt) / 60000) : 0;
     const entries = loadLog();
@@ -641,13 +783,20 @@
     });
     saveLog(entries);
     renderLog();
+    const recordingBlob = await stopRecording();
     stopStream();
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     if (outlineCanvas.width) outlineCtx.clearRect(0, 0, outlineCanvas.width, outlineCanvas.height);
     tallyBlock.classList.add("hide");
     hud.classList.add("hide");
-    overlay.classList.remove("hide");
-    setStatus(`Saved: ${tally} counted.`);
+    endSessionBtn.disabled = false;
+    if (recordingBlob) {
+      showReview(recordingBlob);
+      setStatus(`Saved: ${tally} counted.`);
+    } else {
+      overlay.classList.remove("hide");
+      setStatus(`Saved: ${tally} counted.`);
+    }
   });
 
   renderLog();

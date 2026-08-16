@@ -435,6 +435,21 @@ duration, and the auto-tracked figure to a local session history (shown on
 the start panel, with **Export CSV** and **Clear log**) — nothing leaves
 the device.
 
+**Record this session** (checked by default, on browsers that support
+`MediaRecorder`) is what makes Auto count actually practical for an
+hour-long emergence: mount the camera, hit Start, and walk away entirely
+instead of having to stand there watching and touching the phone the
+whole time. It records from a small dedicated canvas (downscaled from the
+native camera resolution, ~10fps) rather than the full-resolution feed, to
+keep an hour-long file a reasonable size. Every auto-tracked crossing is
+bookmarked by its timestamp; ending the session opens a review panel with
+the recording and a row of tappable bookmark times to jump straight to
+each one, plus a **Download recording** button — reusing the same
+Duration-metadata fix (`fixWebmDuration`, via `video-production.js`'s
+`VP_CORE` export) as Video Production's Take recordings, since
+`MediaRecorder` never writes that itself and an unpatched file can't be
+scrubbed or trimmed. Recording is entirely local; nothing is uploaded.
+
 ## Video Tutorials (`tutorials.html`)
 
 A placeholder grid of short how-to clips (getting started, fine-tuning a

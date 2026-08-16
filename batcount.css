@@ -222,3 +222,63 @@
   #tallyCount { font-size: 48px; }
   #tallyPlusBtn { padding: 15px 32px; font-size: 19px; }
 }
+
+/* Post-session recording review — same bottom-sheet dialog convention as
+   colorassist.css's #choosePanel/#tunePanel. */
+#reviewPanel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+}
+
+#reviewPanel.hide { display: none; }
+
+#reviewPanelInner {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(15, 15, 25, 0.92);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 18px 18px 0 0;
+  padding: 24px 24px 32px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+#reviewPanelInner h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+#reviewVideo {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+  margin: 12px 0;
+}
+
+#reviewBookmarks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+#reviewBookmarks button {
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+#reviewBookmarks button:hover { background: rgba(125, 211, 252, 0.18); }
