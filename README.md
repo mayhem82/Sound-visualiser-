@@ -417,6 +417,15 @@ check in code) exists mainly to reject long straight wire segments and
 whole-tree foliage clusters, on the rare occasion those are moving too
 (wind).
 
+**Strip top** / **Strip bottom** crop detection to a horizontal band of
+the frame (as a % of frame height), instead of relying on the motion/size
+filters alone to ignore whatever's outside where bats actually cross —
+useful for cutting out a treeline, a neighbouring roofline, or the ground
+outright. The excluded area is marked with a dashed line at each boundary
+(visible even in Outline mode's black background) and dimmed where
+there's a plain camera feed to dim. The two handles keep a minimum gap
+from each other rather than letting the strip collapse to nothing.
+
 **The tally is the count that matters.** Tap **+1** for each bat you see;
 **&minus;** corrects a misclick. By default nothing is added automatically
 — **Detected this frame** and **Auto-tracked (approx)** (a running count

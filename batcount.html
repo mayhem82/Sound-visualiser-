@@ -83,6 +83,14 @@
     Min movement: <span id="minMovementLabel">4px</span>
     <input id="minMovementSlider" type="range" min="0" max="30" value="4">
   </label>
+  <label id="stripTopWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing above this line counts, dimmed on screen so you can see exactly what's excluded. Useful for cropping out a bright sky, a neighbouring roofline, or anything above where bats actually cross.">
+    Strip top: <span id="stripTopLabel">0%</span>
+    <input id="stripTopSlider" type="range" min="0" max="95" value="0">
+  </label>
+  <label id="stripBottomWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing below this line counts. The usual reason to narrow this: cropping out trees, rooflines, or the ground, so they can't trigger false detections no matter what the other sliders are set to.">
+    Strip bottom: <span id="stripBottomLabel">100%</span>
+    <input id="stripBottomSlider" type="range" min="5" max="100" value="100">
+  </label>
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="endSessionBtn" class="hud-btn hud-btn-danger" type="button">End session &amp; save</button>

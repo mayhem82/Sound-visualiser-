@@ -64,6 +64,10 @@
   const maxSizeLabel = document.getElementById("maxSizeLabel");
   const minMovementSlider = document.getElementById("minMovementSlider");
   const minMovementLabel = document.getElementById("minMovementLabel");
+  const stripTopSlider = document.getElementById("stripTopSlider");
+  const stripTopLabel = document.getElementById("stripTopLabel");
+  const stripBottomSlider = document.getElementById("stripBottomSlider");
+  const stripBottomLabel = document.getElementById("stripBottomLabel");
   const trackedReadout = document.getElementById("trackedReadout");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
   const pauseBtn = document.getElementById("pauseBtn");
@@ -415,7 +419,7 @@
   //  4. Edge Thinning — non-maximum suppression along each gradient's own
   //     direction, collapsing a smeared band of edge-ish pixels down to
   //     the single-pixel-wide ridge line running through it.
-  function computeEdges() {
+  function computeEdges(stripTopPx, stripBottomPx) {
     const w = analysisW, h = analysisH;
     const imageData = analysisCtx.getImageData(0, 0, w, h);
     const src = imageData.data;
@@ -447,9 +451,13 @@
     }
     for (let i = 0; i < motionMaskBuf.length; i++) motionMaskBuf[i] = blurredDiffBuf[i] > DIFF_THRESHOLD ? 1 : 0;
 
-    // 3. Sobel Edge, gated to the motion mask
+    // 3. Sobel Edge, gated to the motion mask and to the detection strip —
+    // rows outside [stripTopPx, stripBottomPx) are left at 0, same as if
+    // nothing there had moved at all, so a cropped-out treeline or
+    // roofline can never contribute a blob no matter what it's doing.
     gxBuf.fill(0); gyBuf.fill(0); magBuf.fill(0);
-    for (let y = 1; y < h - 1; y++) {
+    const yStart = Math.max(1, stripTopPx), yEnd = Math.min(h - 1, stripBottomPx);
+    for (let y = yStart; y < yEnd; y++) {
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
         if (!motionMaskBuf[i]) continue;
@@ -625,12 +633,32 @@
       return;
     }
 
+    const stripTopPx = Math.round(analysisH * (Number(stripTopSlider.value) / 100));
+    const stripBottomPx = Math.round(analysisH * (Number(stripBottomSlider.value) / 100));
+
     analysisCtx.drawImage(cameraFeed, 0, 0, analysisW, analysisH);
-    computeEdges();
+    computeEdges(stripTopPx, stripBottomPx);
 
     if (outlineModeEnabled) renderOutlineCanvas();
 
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    // Mark what's cropped out of the detection strip, so narrowing it is
+    // something you can see happening, not a number on a slider. A plain
+    // dim fill disappears against Outline mode's black background, so
+    // this is a dashed boundary line (always visible) plus a fill (only
+    // actually shows up against the plain camera feed, but is free).
+    if (stripTopPx > 0 || stripBottomPx < analysisH) {
+      overlayCtx.fillStyle = "rgba(0, 0, 0, 0.55)";
+      if (stripTopPx > 0) overlayCtx.fillRect(0, 0, overlayCanvas.width, stripTopPx);
+      if (stripBottomPx < analysisH) overlayCtx.fillRect(0, stripBottomPx, overlayCanvas.width, analysisH - stripBottomPx);
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "#7dd3fc";
+      overlayCtx.lineWidth = 2;
+      overlayCtx.setLineDash([6, 5]);
+      if (stripTopPx > 0) { overlayCtx.beginPath(); overlayCtx.moveTo(0, stripTopPx); overlayCtx.lineTo(overlayCanvas.width, stripTopPx); overlayCtx.stroke(); }
+      if (stripBottomPx < analysisH) { overlayCtx.beginPath(); overlayCtx.moveTo(0, stripBottomPx); overlayCtx.lineTo(overlayCanvas.width, stripBottomPx); overlayCtx.stroke(); }
+      overlayCtx.restore();
+    }
     if (detectEnabled) {
       const sensitivity = Number(sensitivitySlider.value);
       const threshold = 300 - (sensitivity / 100) * 285; // 100%→~15 (loose), 0%→300 (strict)
@@ -677,6 +705,25 @@
   minSizeSlider.addEventListener("input", () => { minSizeLabel.textContent = minSizeSlider.value + "px"; });
   maxSizeSlider.addEventListener("input", () => { maxSizeLabel.textContent = maxSizeSlider.value + "px"; });
   minMovementSlider.addEventListener("input", () => { minMovementLabel.textContent = minMovementSlider.value + "px"; });
+
+  // Keeps a minimum gap between the two handles so the strip can't be
+  // dragged down to (or past) zero height — each pushes the other out of
+  // the way instead of just stopping dead against it.
+  const STRIP_MIN_GAP = 5;
+  stripTopSlider.addEventListener("input", () => {
+    if (Number(stripTopSlider.value) > Number(stripBottomSlider.value) - STRIP_MIN_GAP) {
+      stripBottomSlider.value = Math.min(100, Number(stripTopSlider.value) + STRIP_MIN_GAP);
+      stripBottomLabel.textContent = stripBottomSlider.value + "%";
+    }
+    stripTopLabel.textContent = stripTopSlider.value + "%";
+  });
+  stripBottomSlider.addEventListener("input", () => {
+    if (Number(stripBottomSlider.value) < Number(stripTopSlider.value) + STRIP_MIN_GAP) {
+      stripTopSlider.value = Math.max(0, Number(stripBottomSlider.value) - STRIP_MIN_GAP);
+      stripTopLabel.textContent = stripTopSlider.value + "%";
+    }
+    stripBottomLabel.textContent = stripBottomSlider.value + "%";
+  });
 
   outlineModeBtn.addEventListener("click", () => {
     outlineModeEnabled = !outlineModeEnabled;
