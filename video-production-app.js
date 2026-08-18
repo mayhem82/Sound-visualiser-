@@ -39,7 +39,8 @@
     { id: "rotate180", label: "Rotate 180°", kind: "toggle", default: false, group: "Camera" },
     { id: "torch", label: "Flashlight", kind: "toggle", default: false, group: "Camera", capability: "torch" },
     { id: "goldFlash", label: "Gold flash", kind: "trigger", group: "FX" },
-    { id: "fadeToBlack", label: "Fade to black", kind: "trigger", group: "FX" }
+    { id: "fadeToBlack", label: "Fade to black", kind: "trigger", group: "FX" },
+    { id: "micVolume", label: "Mic volume", kind: "range", min: 0, max: 200, step: 5, default: 100, unit: "%", group: "Audio", capability: "mic" }
   ];
   const PARAM_BY_ID = {};
   PARAMS.forEach((p) => { PARAM_BY_ID[p.id] = p; });
@@ -70,6 +71,11 @@
   let videoTrack = null;
   let torchSupported = false;
   let zoomCaps = null; // {min,max,step} if hardware zoom supported
+  let micStream = null;
+  let audioCtx = null;
+  let micGainNode = null;
+  let micDestNode = null; // .stream carries the (gain-adjusted) mic audio track fed into Take recordings
+  let micAvailable = false;
   let calibrationPoints = C.loadCalibrationPoints();
   let running = false;
 
@@ -190,6 +196,7 @@
     liveState[id] = value;
     if (id === "zoom" && zoomCaps) applyZoomHardware(value);
     if (id === "torch") applyTorch(!!value);
+    if (id === "micVolume" && micGainNode) micGainNode.gain.value = value / 100;
     if (reflectDom) {
       const ref = domRefs[id];
       if (ref) {
@@ -1356,6 +1363,9 @@
     renderCueRuler();
     takeStartedAt = new Date().toISOString();
     const canvasStream = stage.captureStream(30);
+    const takeTracks = [...canvasStream.getVideoTracks()];
+    if (micAvailable && micDestNode) takeTracks.push(...micDestNode.stream.getAudioTracks());
+    const recordStream = new MediaStream(takeTracks);
     takeChunks = [];
     // mp4 first: real MP4 output where the browser's MediaRecorder can
     // mux it (Safari always can; Chrome only on some platforms/versions).
@@ -1368,7 +1378,7 @@
     ];
     const mimeType = mimeCandidates.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || "";
     try {
-      takeRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+      takeRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       takeStatus.textContent = "Couldn't start recording: " + e.message;
       return;
@@ -1400,13 +1410,14 @@
       liveLog: liveLog.slice(),
       templateInstancesUsed: [...new Set(liveLog.map((e) => `${e.templateName} v${e.templateVersion}`))],
       calibrationRef: { pointCount: calibrationPoints.length },
-      videoMimeType
+      videoMimeType,
+      hasAudio: micAvailable
     };
     takesInMemory.push({ meta, videoUrl: url });
     const persisted = loadTakesMeta();
     persisted.push(meta);
     saveTakesMeta(persisted);
-    takeStatus.textContent = `Take saved — ${(duration / 1000).toFixed(1)}s, ${meta.templateInstancesUsed.length} template(s) used.`;
+    takeStatus.textContent = `Take saved — ${(duration / 1000).toFixed(1)}s, ${meta.templateInstancesUsed.length} template(s) used, ${meta.hasAudio ? "with audio" : "no audio (mic unavailable)"}.`;
     renderTakesList();
   }
 
@@ -1461,7 +1472,7 @@
       v.src = videoUrl; v.controls = true; v.playsInline = true;
       const info = document.createElement("div");
       info.className = "vp-take-info";
-      info.innerHTML = `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s)<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}`;
+      info.innerHTML = `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s · ${meta.liveLog.length} trigger(s) · ${meta.hasAudio ? "with audio" : "silent"}<br>${meta.templateInstancesUsed.join(", ") || "no templates used"}`;
       card.append(v, info, makeTakeActions(meta, videoUrl));
       takesList.appendChild(card);
     });
@@ -1575,6 +1586,30 @@
   // CAMERA START
   // ============================================================
 
+  // Mic capture is requested separately from the camera (never in the same
+  // getUserMedia call) so denying the mic prompt — or a device with no mic —
+  // never breaks camera setup. The gain node is never connected to
+  // audioCtx.destination, so recording-time volume changes are silent on
+  // this device's speakers; only the MediaStreamAudioDestinationNode's
+  // track (used by startTakeBtn) carries the adjusted audio.
+  async function startMic() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") await audioCtx.resume().catch(() => {});
+      const micSource = audioCtx.createMediaStreamSource(micStream);
+      micGainNode = audioCtx.createGain();
+      micGainNode.gain.value = liveState.micVolume / 100;
+      micDestNode = audioCtx.createMediaStreamDestination();
+      micSource.connect(micGainNode).connect(micDestNode);
+      micAvailable = true;
+    } catch (e) {
+      micAvailable = false;
+    }
+    domRefs.micVolume.wrap.classList.toggle("vp-unavailable", !micAvailable);
+    domRefs.micVolume.input.disabled = !micAvailable;
+  }
+
   async function startCamera() {
     statusEl.textContent = "Requesting camera…";
     try {
@@ -1603,6 +1638,7 @@
       requestAnimationFrame(renderFrame);
       overlay.classList.add("hide");
       app.classList.remove("hide");
+      startMic();
     } catch (err) {
       statusEl.textContent = "Camera access failed: " + (err.message || err.name || "unknown error");
     }

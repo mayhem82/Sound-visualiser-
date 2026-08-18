@@ -40,11 +40,14 @@ than a blanket path prefix over the whole site.
 ## Permissions
 
 - **Camera** — required; every page in this bundle uses it.
-- **Microphone** — required for Sound Nebula's audio-reactive visuals
-  (`index.html`/`script.js`). Video Production explicitly requests
-  `audio: false` and never uses it — the permission is declared once at the
-  app level because Android permissions aren't page-scoped, but the privacy
-  policy is specific about which page actually uses it.
+- **Microphone** — used by Sound Nebula for its audio-reactive visuals
+  (`index.html`/`script.js`), and by Video Production
+  (`video-production-app.js`) to record audio into Takes via a separate
+  `getUserMedia({ audio: true })` call (muteable with the Mic volume
+  slider, or skippable by denying the prompt). Property Colour Reference
+  never uses it. The permission is declared once at the app level because
+  Android permissions aren't page-scoped; see the privacy policy for the
+  full breakdown.
 - **Internet** — required to load the app's own pages on first launch and
   after updates. No data is uploaded anywhere.
 

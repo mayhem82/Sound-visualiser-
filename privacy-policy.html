@@ -27,7 +27,7 @@
 <main>
   <a class="back" href="index.html">&larr; Back to Sound Visualiser</a>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 13 August 2026</p>
+  <p class="updated">Last updated: 13 August 2026 (Video Production audio recording added)</p>
 
   <p>This policy covers the Sound Visualiser app bundle: Sound Nebula, Property Colour Reference, and Video Production. (Colour Vision Extreme, Colour Assist, and their Viewer/Tutorials pages are a separate product with their own listing and privacy policy.) Everything below processes on your own device. There is no server, no account, and nothing described here is ever sent anywhere.</p>
 
@@ -38,7 +38,7 @@
 
   <section>
     <h2>Microphone</h2>
-    <p><strong>Sound Nebula</strong> uses the microphone to drive its audio-reactive particle visuals — audio is analysed in memory for volume/frequency and never recorded or stored. <strong>Video Production explicitly does not use the microphone</strong> (its camera request is video-only); <strong>Property Colour Reference</strong> doesn't use it either. Android permissions apply to the whole app rather than one page at a time, which is why the app requests microphone access even though two of its three tools never use it.</p>
+    <p><strong>Sound Nebula</strong> uses the microphone to drive its audio-reactive particle visuals — audio is analysed in memory for volume/frequency and never recorded or stored. <strong>Video Production</strong> requests the microphone separately from the camera so it can record synchronised audio into your Takes; a Mic volume slider (down to 0%, effectively muting it) controls how much of that audio is captured, and denying the microphone prompt still lets you record video-only. <strong>Property Colour Reference</strong> doesn't use the microphone at all.</p>
   </section>
 
   <section>
@@ -54,7 +54,7 @@
 
   <section>
     <h2>Recorded video (Takes)</h2>
-    <p>When Video Production records a Take, the resulting video is held in memory for that session only, so you can preview and download it. It is not automatically saved anywhere and does not survive a reload or app restart unless you explicitly download it first.</p>
+    <p>When Video Production records a Take, the resulting video (with audio, if the microphone was granted and Mic volume wasn't muted) is held in memory for that session only, so you can preview and download it. It is not automatically saved anywhere and does not survive a reload or app restart unless you explicitly download it first.</p>
   </section>
 
   <section>
@@ -66,7 +66,7 @@
     <h2>Permissions this app requests</h2>
     <ul>
       <li><strong>Camera</strong> — required; every included page processes the live camera feed.</li>
-      <li><strong>Microphone</strong> — required for Sound Nebula's audio-reactive visuals only; unused elsewhere in the bundle.</li>
+      <li><strong>Microphone</strong> — used by Sound Nebula for its audio-reactive visuals, and by Video Production to record audio into Takes (optional — mute it with the Mic volume slider, or deny the prompt). Unused by Property Colour Reference.</li>
       <li><strong>Internet</strong> (Android package only) — required to load the app's own pages on first launch and after updates. No data is uploaded.</li>
     </ul>
   </section>

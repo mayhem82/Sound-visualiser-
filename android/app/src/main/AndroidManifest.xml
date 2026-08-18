@@ -4,11 +4,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- RECORD_AUDIO: Sound Nebula (index.html/script.js) uses the mic
-         for its audio-reactive visuals. Android permissions aren't
-         page-scoped, so this covers the whole app even though Video
-         Production's own getUserMedia call is video-only (audio: false)
-         and never touches it — see the privacy policy for which page
-         actually uses what. -->
+         for its audio-reactive visuals, and Video Production
+         (video-production-app.js) requests it separately from the camera
+         to record synchronised audio into Takes (mutable via the Mic
+         volume slider, or skippable by denying the prompt). Android
+         permissions aren't page-scoped, so this one declaration covers
+         both — Property Colour Reference never touches it. See the
+         privacy policy for the full breakdown. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
