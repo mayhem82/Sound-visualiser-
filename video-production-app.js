@@ -40,7 +40,10 @@
     { id: "torch", label: "Flashlight", kind: "toggle", default: false, group: "Camera", capability: "torch" },
     { id: "goldFlash", label: "Gold flash", kind: "trigger", group: "FX" },
     { id: "fadeToBlack", label: "Fade to black", kind: "trigger", group: "FX" },
-    { id: "micVolume", label: "Mic volume", kind: "range", min: 0, max: 200, step: 5, default: 100, unit: "%", group: "Audio", capability: "mic" }
+    { id: "micVolume", label: "Mic volume", kind: "range", min: 0, max: 200, step: 5, default: 100, unit: "%", group: "Audio", capability: "mic" },
+    { id: "micLowCut", label: "Low-cut (rumble)", kind: "range", min: 20, max: 300, step: 5, default: 20, unit: "Hz", group: "Audio", capability: "mic" },
+    { id: "micTone", label: "Mic tone (warmer ↔ brighter)", kind: "range", min: -100, max: 100, step: 5, default: 0, group: "Audio", capability: "mic" },
+    { id: "micCompression", label: "Mic compression", kind: "range", min: 0, max: 100, step: 5, default: 0, unit: "%", group: "Audio", capability: "mic" }
   ];
   const PARAM_BY_ID = {};
   PARAMS.forEach((p) => { PARAM_BY_ID[p.id] = p; });
@@ -106,8 +109,13 @@
   let micStream = null;
   let audioCtx = null;
   let micGainNode = null;
-  let micDestNode = null; // .stream carries the (gain-adjusted) mic audio track fed into Take recordings
+  let micHighpass = null;
+  let micLowShelf = null;
+  let micHighShelf = null;
+  let micCompressor = null;
+  let micDestNode = null; // .stream carries the fully-processed mic audio track fed into Take recordings
   let micAvailable = false;
+  const MIC_PARAM_IDS = ["micVolume", "micLowCut", "micTone", "micCompression"];
   let calibrationPoints = C.loadCalibrationPoints();
   let running = false;
 
@@ -268,6 +276,18 @@
       liveZoomValue.textContent = formatParamValue(def, value);
     }
     if (id === "micVolume" && micGainNode) micGainNode.gain.value = value / 100;
+    if (id === "micLowCut" && micHighpass) micHighpass.frequency.value = value;
+    if (id === "micTone" && micLowShelf && micHighShelf) {
+      const db = (value / 100) * 12;
+      micLowShelf.gain.value = -db;
+      micHighShelf.gain.value = db;
+    }
+    if (id === "micCompression" && micCompressor) {
+      // 0% is a true bypass (ratio 1:1 applies no gain reduction regardless
+      // of threshold); 100% is a fairly aggressive leveling compressor.
+      micCompressor.ratio.value = 1 + (value / 100) * 11;
+      micCompressor.threshold.value = -50 + (100 - value) * 0.4;
+    }
     if (reflectDom) {
       const ref = domRefs[id];
       if (ref) {
@@ -1904,26 +1924,48 @@
 
   // Mic capture is requested separately from the camera (never in the same
   // getUserMedia call) so denying the mic prompt — or a device with no mic —
-  // never breaks camera setup. The gain node is never connected to
-  // audioCtx.destination, so recording-time volume changes are silent on
-  // this device's speakers; only the MediaStreamAudioDestinationNode's
-  // track (used by startTakeBtn) carries the adjusted audio.
+  // never breaks camera setup. The chain (highpass -> tilt EQ -> compressor
+  // -> gain) is never connected to audioCtx.destination, so none of this
+  // plays out loud on this device's speakers; only the
+  // MediaStreamAudioDestinationNode's track (used by startTakeBtn) carries
+  // the fully-processed audio.
   async function startMic() {
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === "suspended") await audioCtx.resume().catch(() => {});
       const micSource = audioCtx.createMediaStreamSource(micStream);
+      micHighpass = audioCtx.createBiquadFilter();
+      micHighpass.type = "highpass";
+      micHighpass.frequency.value = liveState.micLowCut;
+      micLowShelf = audioCtx.createBiquadFilter();
+      micLowShelf.type = "lowshelf";
+      micLowShelf.frequency.value = 320;
+      micHighShelf = audioCtx.createBiquadFilter();
+      micHighShelf.type = "highshelf";
+      micHighShelf.frequency.value = 3200;
+      const initialToneDb = (liveState.micTone / 100) * 12;
+      micLowShelf.gain.value = -initialToneDb;
+      micHighShelf.gain.value = initialToneDb;
+      micCompressor = audioCtx.createDynamicsCompressor();
+      micCompressor.ratio.value = 1 + (liveState.micCompression / 100) * 11;
+      micCompressor.threshold.value = -50 + (100 - liveState.micCompression) * 0.4;
+      micCompressor.knee.value = 24;
+      micCompressor.attack.value = 0.01;
+      micCompressor.release.value = 0.25;
       micGainNode = audioCtx.createGain();
       micGainNode.gain.value = liveState.micVolume / 100;
       micDestNode = audioCtx.createMediaStreamDestination();
-      micSource.connect(micGainNode).connect(micDestNode);
+      micSource.connect(micHighpass).connect(micLowShelf).connect(micHighShelf)
+        .connect(micCompressor).connect(micGainNode).connect(micDestNode);
       micAvailable = true;
     } catch (e) {
       micAvailable = false;
     }
-    domRefs.micVolume.wrap.classList.toggle("vp-unavailable", !micAvailable);
-    domRefs.micVolume.input.disabled = !micAvailable;
+    MIC_PARAM_IDS.forEach((id) => {
+      domRefs[id].wrap.classList.toggle("vp-unavailable", !micAvailable);
+      domRefs[id].input.disabled = !micAvailable;
+    });
   }
 
   async function startCamera() {
