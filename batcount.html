@@ -91,6 +91,14 @@
     Strip bottom: <span id="stripBottomLabel">100%</span>
     <input id="stripBottomSlider" type="range" min="5" max="100" value="100">
   </label>
+  <label id="stripLeftWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing left of this line counts. Bats crossing sideways rather than up/down need this (and Strip right) more than the top/bottom lines — crop out a building, tree, or wire run to either side of where they actually cross.">
+    Strip left: <span id="stripLeftLabel">0%</span>
+    <input id="stripLeftSlider" type="range" min="0" max="95" value="0">
+  </label>
+  <label id="stripRightWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing right of this line counts.">
+    Strip right: <span id="stripRightLabel">100%</span>
+    <input id="stripRightSlider" type="range" min="5" max="100" value="100">
+  </label>
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="endSessionBtn" class="hud-btn hud-btn-danger" type="button">End session &amp; save</button>

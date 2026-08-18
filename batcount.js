@@ -68,6 +68,10 @@
   const stripTopLabel = document.getElementById("stripTopLabel");
   const stripBottomSlider = document.getElementById("stripBottomSlider");
   const stripBottomLabel = document.getElementById("stripBottomLabel");
+  const stripLeftSlider = document.getElementById("stripLeftSlider");
+  const stripLeftLabel = document.getElementById("stripLeftLabel");
+  const stripRightSlider = document.getElementById("stripRightSlider");
+  const stripRightLabel = document.getElementById("stripRightLabel");
   const trackedReadout = document.getElementById("trackedReadout");
   const switchCameraBtn = document.getElementById("switchCameraBtn");
   const pauseBtn = document.getElementById("pauseBtn");
@@ -419,7 +423,7 @@
   //  4. Edge Thinning — non-maximum suppression along each gradient's own
   //     direction, collapsing a smeared band of edge-ish pixels down to
   //     the single-pixel-wide ridge line running through it.
-  function computeEdges(stripTopPx, stripBottomPx) {
+  function computeEdges(stripTopPx, stripBottomPx, stripLeftPx, stripRightPx) {
     const w = analysisW, h = analysisH;
     const imageData = analysisCtx.getImageData(0, 0, w, h);
     const src = imageData.data;
@@ -452,13 +456,19 @@
     for (let i = 0; i < motionMaskBuf.length; i++) motionMaskBuf[i] = blurredDiffBuf[i] > DIFF_THRESHOLD ? 1 : 0;
 
     // 3. Sobel Edge, gated to the motion mask and to the detection strip —
-    // rows outside [stripTopPx, stripBottomPx) are left at 0, same as if
-    // nothing there had moved at all, so a cropped-out treeline or
-    // roofline can never contribute a blob no matter what it's doing.
+    // rows outside [stripTopPx, stripBottomPx) and columns outside
+    // [stripLeftPx, stripRightPx) are left at 0, same as if nothing there
+    // had moved at all, so a cropped-out treeline, roofline, building, or
+    // wire run to either side can never contribute a blob no matter what
+    // it's doing. Both axes are independent — a colony crossing sideways
+    // rather than up/down needs the left/right pair more than top/bottom,
+    // but nothing stops shaping all four to match whatever's actually in
+    // shot.
     gxBuf.fill(0); gyBuf.fill(0); magBuf.fill(0);
     const yStart = Math.max(1, stripTopPx), yEnd = Math.min(h - 1, stripBottomPx);
+    const xStart = Math.max(1, stripLeftPx), xEnd = Math.min(w - 1, stripRightPx);
     for (let y = yStart; y < yEnd; y++) {
-      for (let x = 1; x < w - 1; x++) {
+      for (let x = xStart; x < xEnd; x++) {
         const i = y * w + x;
         if (!motionMaskBuf[i]) continue;
         const gx = -grayBuf[i - w - 1] - 2 * grayBuf[i - 1] - grayBuf[i + w - 1]
@@ -635,9 +645,11 @@
 
     const stripTopPx = Math.round(analysisH * (Number(stripTopSlider.value) / 100));
     const stripBottomPx = Math.round(analysisH * (Number(stripBottomSlider.value) / 100));
+    const stripLeftPx = Math.round(analysisW * (Number(stripLeftSlider.value) / 100));
+    const stripRightPx = Math.round(analysisW * (Number(stripRightSlider.value) / 100));
 
     analysisCtx.drawImage(cameraFeed, 0, 0, analysisW, analysisH);
-    computeEdges(stripTopPx, stripBottomPx);
+    computeEdges(stripTopPx, stripBottomPx, stripLeftPx, stripRightPx);
 
     if (outlineModeEnabled) renderOutlineCanvas();
 
@@ -647,16 +659,20 @@
     // dim fill disappears against Outline mode's black background, so
     // this is a dashed boundary line (always visible) plus a fill (only
     // actually shows up against the plain camera feed, but is free).
-    if (stripTopPx > 0 || stripBottomPx < analysisH) {
+    if (stripTopPx > 0 || stripBottomPx < analysisH || stripLeftPx > 0 || stripRightPx < analysisW) {
       overlayCtx.fillStyle = "rgba(0, 0, 0, 0.55)";
       if (stripTopPx > 0) overlayCtx.fillRect(0, 0, overlayCanvas.width, stripTopPx);
       if (stripBottomPx < analysisH) overlayCtx.fillRect(0, stripBottomPx, overlayCanvas.width, analysisH - stripBottomPx);
+      if (stripLeftPx > 0) overlayCtx.fillRect(0, 0, stripLeftPx, overlayCanvas.height);
+      if (stripRightPx < analysisW) overlayCtx.fillRect(stripRightPx, 0, analysisW - stripRightPx, overlayCanvas.height);
       overlayCtx.save();
       overlayCtx.strokeStyle = "#7dd3fc";
       overlayCtx.lineWidth = 2;
       overlayCtx.setLineDash([6, 5]);
       if (stripTopPx > 0) { overlayCtx.beginPath(); overlayCtx.moveTo(0, stripTopPx); overlayCtx.lineTo(overlayCanvas.width, stripTopPx); overlayCtx.stroke(); }
       if (stripBottomPx < analysisH) { overlayCtx.beginPath(); overlayCtx.moveTo(0, stripBottomPx); overlayCtx.lineTo(overlayCanvas.width, stripBottomPx); overlayCtx.stroke(); }
+      if (stripLeftPx > 0) { overlayCtx.beginPath(); overlayCtx.moveTo(stripLeftPx, 0); overlayCtx.lineTo(stripLeftPx, overlayCanvas.height); overlayCtx.stroke(); }
+      if (stripRightPx < analysisW) { overlayCtx.beginPath(); overlayCtx.moveTo(stripRightPx, 0); overlayCtx.lineTo(stripRightPx, overlayCanvas.height); overlayCtx.stroke(); }
       overlayCtx.restore();
     }
     if (detectEnabled) {
@@ -724,29 +740,47 @@
     }
     stripBottomLabel.textContent = stripBottomSlider.value + "%";
   });
+  stripLeftSlider.addEventListener("input", () => {
+    if (Number(stripLeftSlider.value) > Number(stripRightSlider.value) - STRIP_MIN_GAP) {
+      stripRightSlider.value = Math.min(100, Number(stripLeftSlider.value) + STRIP_MIN_GAP);
+      stripRightLabel.textContent = stripRightSlider.value + "%";
+    }
+    stripLeftLabel.textContent = stripLeftSlider.value + "%";
+  });
+  stripRightSlider.addEventListener("input", () => {
+    if (Number(stripRightSlider.value) < Number(stripLeftSlider.value) + STRIP_MIN_GAP) {
+      stripLeftSlider.value = Math.max(0, Number(stripRightSlider.value) - STRIP_MIN_GAP);
+      stripLeftLabel.textContent = stripLeftSlider.value + "%";
+    }
+    stripRightLabel.textContent = stripRightSlider.value + "%";
+  });
 
-  // Lets the strip's top/bottom boundary lines be dragged directly on the
-  // video, not just via the sliders in the HUD. Position is read straight
-  // from the pointer's clientY each move (never a delta), so which way the
-  // line moves can't come out inverted from which way the finger moves —
-  // and it just feeds the same sliders' own "input" event, so gap
-  // enforcement and label updates stay in that one place rather than
-  // duplicated here.
+  // Lets all four strip boundary lines (top, bottom, left, right) be
+  // dragged directly on the video, not just via the sliders in the HUD —
+  // a colony crossing sideways rather than up/down needs left/right at
+  // least as much as top/bottom, so both axes work the same way. Position
+  // is read straight from the pointer's clientX/clientY each move (never
+  // a delta), so which way a line moves can't come out inverted from
+  // which way the finger moves — and it just feeds the matching slider's
+  // own "input" event, so gap enforcement and label updates stay in that
+  // one place rather than duplicated here.
   const STRIP_DRAG_HIT_PX = 28; // finger-friendly grab radius around a line, in CSS px
   function attachStripDragHandlers() {
     overlayCanvas.addEventListener("pointerdown", (e) => {
       const rect = overlayCanvas.getBoundingClientRect();
-      if (!rect.height) return;
-      const pct = ((e.clientY - rect.top) / rect.height) * 100;
-      const topPct = Number(stripTopSlider.value);
-      const bottomPct = Number(stripBottomSlider.value);
-      const hitTolerancePct = (STRIP_DRAG_HIT_PX / rect.height) * 100;
-      const distToTop = Math.abs(pct - topPct);
-      const distToBottom = Math.abs(pct - bottomPct);
-      let target = null;
-      if (distToTop <= hitTolerancePct && distToTop <= distToBottom) target = stripTopSlider;
-      else if (distToBottom <= hitTolerancePct) target = stripBottomSlider;
-      if (!target) return; // tapped/dragged somewhere else on the video — not this gesture
+      if (!rect.height || !rect.width) return;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const hitToleranceYPct = (STRIP_DRAG_HIT_PX / rect.height) * 100;
+      const hitToleranceXPct = (STRIP_DRAG_HIT_PX / rect.width) * 100;
+      const candidates = [
+        { slider: stripTopSlider, axis: "y", dist: Math.abs(yPct - Number(stripTopSlider.value)), tolerance: hitToleranceYPct },
+        { slider: stripBottomSlider, axis: "y", dist: Math.abs(yPct - Number(stripBottomSlider.value)), tolerance: hitToleranceYPct },
+        { slider: stripLeftSlider, axis: "x", dist: Math.abs(xPct - Number(stripLeftSlider.value)), tolerance: hitToleranceXPct },
+        { slider: stripRightSlider, axis: "x", dist: Math.abs(xPct - Number(stripRightSlider.value)), tolerance: hitToleranceXPct }
+      ].filter((c) => c.dist <= c.tolerance);
+      if (!candidates.length) return; // tapped/dragged somewhere else on the video — not this gesture
+      const picked = candidates.reduce((a, b) => (b.dist < a.dist ? b : a));
 
       e.preventDefault();
       const pointerId = e.pointerId;
@@ -754,10 +788,12 @@
 
       const onMove = (ev) => {
         const r = overlayCanvas.getBoundingClientRect();
-        if (!r.height) return;
-        const movePct = Math.min(100, Math.max(0, ((ev.clientY - r.top) / r.height) * 100));
-        target.value = movePct;
-        target.dispatchEvent(new Event("input", { bubbles: true }));
+        if (!r.height || !r.width) return;
+        const movePct = picked.axis === "y"
+          ? Math.min(100, Math.max(0, ((ev.clientY - r.top) / r.height) * 100))
+          : Math.min(100, Math.max(0, ((ev.clientX - r.left) / r.width) * 100));
+        picked.slider.value = movePct;
+        picked.slider.dispatchEvent(new Event("input", { bubbles: true }));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
