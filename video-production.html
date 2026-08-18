@@ -18,6 +18,7 @@
 <body>
 <canvas id="vpStage"></canvas>
 <video id="vpCameraFeed" playsinline muted hidden></video>
+<video id="vpCameraFeed2" playsinline muted hidden></video>
 <canvas id="vpThumbCanvas" hidden></canvas>
 <div id="vpScreenFlash" aria-hidden="true"></div>
 <div id="vpFadeOverlay" aria-hidden="true"></div>
@@ -40,6 +41,34 @@
     <button class="vp-tab" data-view="Takes">Takes</button>
     <button id="vpFullscreenBtn" class="vp-btn vp-btn-small vp-fullscreen-btn" type="button" aria-pressed="false" aria-label="Fullscreen" title="Fullscreen">&#9974;</button>
   </nav>
+
+  <!-- Sibling of the .vp-view sections (like #vpTabs), not inside any of
+       them, so fullscreen's "hide every view's own controls" rule never
+       touches it. Zoom and Switch camera are camera controls, not
+       Studio/Live-specific ones, so they stay visible on every tab (Switch
+       camera only actually shows once more than one camera is detected).
+       Start/Stop Take is Live's own concept (Studio records Templates
+       instead, via its own Record Template button inside #vpTransport),
+       so #vpTakeControls is shown only while the Live tab is active. -->
+  <div id="vpLiveTransport">
+    <div id="vpLiveZoom">
+      <span class="vp-live-zoom-label">Zoom</span>
+      <button id="vpZoomOutBtn" class="vp-btn vp-btn-small" type="button" aria-label="Zoom out">&minus;</button>
+      <input id="vpZoomSlider" type="range" min="100" max="500" step="1" value="100" aria-label="Zoom level">
+      <span id="vpZoomValue" class="vp-zoom-value">100%</span>
+      <button id="vpZoomInBtn" class="vp-btn vp-btn-small" type="button" aria-label="Zoom in">+</button>
+      <button id="vpZoomResetBtn" class="vp-btn vp-btn-small vp-btn-secondary" type="button">Reset</button>
+    </div>
+    <button id="vpSwitchCameraBtn" class="vp-btn vp-btn-small hide" type="button" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+    <button id="vpDualCameraBtn" class="vp-btn vp-btn-small hide" type="button" title="Open a second camera at the same time as a picture-in-picture inset — needs a device that supports two concurrent camera streams.">Dual camera</button>
+    <button id="vpSwapCamerasBtn" class="vp-btn vp-btn-small hide" type="button" title="Swap which camera is full-screen and which is the inset.">Swap</button>
+    <span class="vp-transport-gap"></span>
+    <div id="vpTakeControls" class="hide">
+      <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>
+      <button id="vpStopTakeBtn" class="vp-btn" disabled>Stop Take</button>
+      <span id="vpTakeStatus" class="vp-hint"></span>
+    </div>
+  </div>
 
   <section id="vpViewStudio" class="vp-view">
     <div id="vpTransport">
@@ -80,9 +109,6 @@
           <option value="dock">Floating dock</option>
         </select>
       </label>
-      <button id="vpStartTakeBtn" class="vp-btn vp-btn-record">Start Take</button>
-      <button id="vpStopTakeBtn" class="vp-btn" disabled>Stop Take</button>
-      <span id="vpTakeStatus" class="vp-hint"></span>
     </div>
     <details id="vpTemplatePickerWrap">
       <summary>Choose Templates to show as buttons</summary>

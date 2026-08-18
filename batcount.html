@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flying Fox Count</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦇</text></svg>">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="batcount.css">
+</head>
+<body>
+<div id="stage">
+  <video id="cameraFeed" playsinline muted></video>
+  <canvas id="outlineCanvas"></canvas>
+  <canvas id="overlayCanvas"></canvas>
+  <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
+</div>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Flying Fox Count</h1>
+    <p>A counting aid for flying fox (bat) colony emergence and return, at sunset or sunrise. Point the camera at the sky — <strong>Outline mode</strong> redraws the whole feed as bright edge-lines on black, the same effect used elsewhere in this suite, which makes moving bats stand out as bright loops against the dark. Detection tracks each edge-blob frame to frame and only circles the ones actually moving in a direction, the way bats crossing the sky do, not static clutter like a tree or a wire junction. Tap the tally yourself by default; once the camera's fixed in place, <strong>Auto count</strong> can add each tracked crossing for you. Work in progress either way: this does <strong>not</strong> reliably count for you — check it and correct it by hand.</p>
+
+    <label class="field-label">
+      Session
+      <select id="sessionTypeSelect">
+        <option value="sunset">Sunset emergence</option>
+        <option value="sunrise">Sunrise return</option>
+      </select>
+    </label>
+    <label class="camera-only-mode-wrap">
+      <input id="recordSessionCheckbox" type="checkbox" checked>
+      Record this session, so you can walk away and review it afterwards
+    </label>
+
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p id="recordingUnsupportedHint" class="hint hide">This browser can't record video, so sessions will run live-only — everything above still works, there's just nothing to review afterwards.</p>
+    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
+
+    <div id="logSection" class="hide">
+      <div class="profiles-section">
+        <h3>Past sessions</h3>
+        <div id="logList"></div>
+        <div class="profiles-row">
+          <button id="exportLogBtn" class="hud-btn reticle-btn-secondary">Export CSV</button>
+          <button id="clearLogBtn" class="hud-btn reticle-btn-secondary">Clear log</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tallyBlock" class="hide">
+  <p id="tallyLabel">Sunset emergence</p>
+  <p id="tallyCount">0</p>
+  <div id="tallyButtons">
+    <button id="tallyMinusBtn" class="hud-btn" type="button" aria-label="Subtract one">&minus;</button>
+    <button id="tallyPlusBtn" type="button" aria-label="Add one">+1</button>
+  </div>
+  <p id="detectedReadout">Detected this frame: 0</p>
+  <p id="trackedReadout">Auto-tracked (approx): 0</p>
+</div>
+
+<div id="hud" class="hide">
+  <button id="outlineModeBtn" class="hud-btn active" aria-pressed="true" title="Redraw the whole feed as bright edge-lines on black, so moving bats stand out against the dark sky. Turn off to see the plain camera feed underneath.">Outline mode: On</button>
+  <button id="detectToggleBtn" class="hud-btn active" aria-pressed="true" title="Circle and count likely bat-shaped blobs each frame. Turn off if it's distracting or your device is struggling.">Blob highlight: On</button>
+  <button id="autoCountBtn" class="hud-btn" aria-pressed="false" title="Once the camera is fixed in place (mounted or set down, not handheld) and you're happy with the sliders below, each tracked bat crossing adds to the tally on its own instead of waiting for a tap. Still expect the odd miss or false add — keep an eye on the count and correct it by hand with +1/&minus; as needed.">Auto count: Off</button>
+  <label id="sensitivityWrap" class="hud-slider" title="How strong an edge has to be before it counts. Lower it in very dim light; raise it if wires, leaves, or insects are triggering false blobs.">
+    Edge sensitivity: <span id="sensitivityLabel">50%</span>
+    <input id="sensitivitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="minSizeWrap" class="hud-slider" title="Smallest blob (in pixels, at detection resolution) counted as a possible bat. Raise it to ignore distant specks and insects.">
+    Min blob size: <span id="minSizeLabel">3px</span>
+    <input id="minSizeSlider" type="range" min="1" max="30" value="3">
+  </label>
+  <label id="maxSizeWrap" class="hud-slider" title="Largest blob counted as a possible bat, before it's assumed to be foliage, a building, or a cluster of overlapping wires instead.">
+    Max blob size: <span id="maxSizeLabel">220px</span>
+    <input id="maxSizeSlider" type="range" min="40" max="600" value="220">
+  </label>
+  <label id="minMovementWrap" class="hud-slider" title="How far a blob has to move, relative to everything else in frame, to count as flight rather than static clutter or the camera's own shake. Most detected edges each tick are static background, so their shared movement is treated as camera shake/pan and subtracted out first — raise this if handheld shake is still triggering false circles.">
+    Min movement: <span id="minMovementLabel">4px</span>
+    <input id="minMovementSlider" type="range" min="0" max="30" value="4">
+  </label>
+  <label id="stripTopWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing above this line counts, dimmed on screen so you can see exactly what's excluded. Useful for cropping out a bright sky, a neighbouring roofline, or anything above where bats actually cross.">
+    Strip top: <span id="stripTopLabel">0%</span>
+    <input id="stripTopSlider" type="range" min="0" max="95" value="0">
+  </label>
+  <label id="stripBottomWrap" class="hud-slider" title="Only detect within this strip of the frame — nothing below this line counts. The usual reason to narrow this: cropping out trees, rooflines, or the ground, so they can't trigger false detections no matter what the other sliders are set to.">
+    Strip bottom: <span id="stripBottomLabel">100%</span>
+    <input id="stripBottomSlider" type="range" min="5" max="100" value="100">
+  </label>
+  <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="endSessionBtn" class="hud-btn hud-btn-danger" type="button">End session &amp; save</button>
+  <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
+</div>
+
+<div id="reviewPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="reviewPanelTitle">
+  <div id="reviewPanelInner">
+    <h2 id="reviewPanelTitle">Session recording</h2>
+    <p id="reviewSummary" class="hint"></p>
+    <video id="reviewVideo" controls playsinline></video>
+    <p class="hint" id="reviewBookmarksHint">Tap a time below to jump to that detected crossing:</p>
+    <div id="reviewBookmarks"></div>
+    <div class="tune-actions">
+      <button id="downloadRecordingBtn" class="hud-btn reticle-btn-secondary">Download recording</button>
+      <button id="closeReviewBtn" class="hud-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- video-production.js is loaded for its window.VP_CORE export (specifically
+     fixWebmDuration — MediaRecorder never writes a WebM Duration element, so
+     an unpatched recording plays but can't be scrubbed/trimmed), not for
+     anything else on this page. -->
+<script src="video-production.js"></script>
+<script src="batcount.js"></script>
+</body>
+</html>

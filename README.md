@@ -6,29 +6,36 @@ real-estate colour reference, and sound-reactive visuals.*
 A small suite of dependency-free, single-page camera/microphone tools that
 share a dark visual style and a lot of underlying plumbing:
 
-- **`index.html`** ("Sound Nebula") — a mic-reactive particle visualiser,
+- **`index.html`** — the suite's home page: the journey behind these tools
+  and a card linking to each one. No camera/mic of its own.
+- **`nebula.html`** ("Sound Nebula") — a mic-reactive particle visualiser,
   with an optional live camera background that can be colour-corrected.
-- **`colorvision.html`** ("Colour Vision Extreme") — live camera colour
-  correction for colourblind users, built around colours you calibrate by
-  hand (or a diagnosed deficiency type). The full experimental version of
-  the correction engine — cartoon mode, diagnosed-CVD-type correction,
-  photo/video capture, two-device tablet pairing, Templates.
-- **`colorassist.html`** ("Colour Assist") — a focused, everyday build on
-  that same engine: personal colour calibration, structural outlines, and
-  the camera/lighting controls that keep a calibration trustworthy, with
-  everything else trimmed away. See its own section below for why it
-  exists alongside Colour Vision Extreme rather than replacing it.
+- **`colorassist.html`** ("Colour Assist") — built for colourblind eyes:
+  personal colour calibration, structural outlines, and camera/lighting
+  controls, with everything else trimmed away. Work in progress — none of
+  it is proven to actually help yet.
+- **`colorvision.html`** ("Colour Vision Extreme") — the same correction
+  engine taken further, as an experimental space for pushing what colour
+  correction and photography can do — cartoon mode, diagnosed-CVD-type
+  correction, photo/video capture, two-device tablet pairing, Templates.
+  See its own section below for how it relates to Colour Assist.
 - **`restore.html`** ("Property Colour Reference") — live camera colour
   correction for real-estate photography, built around a known-true
   reference colour (a paint chip or swatch) rather than a generic filter.
 - **`viewer.html`** — a read-only viewer for any of the above pages' "Connect
   tablet" broadcasts.
+- **`call.html`** — two-way peer-to-peer video calling, using the same
+  room-code pairing as "Connect tablet" above.
+- **`batcount.html`** ("Flying Fox Count") — a counting aid for flying fox
+  (bat) colony emergence/return counts at sunset/sunrise: edge-outline
+  highlighting of likely blobs, plus a manual tally. Work in progress, not
+  a validated automated counter.
 - **`tutorials.html`** — a placeholder grid for short how-to video clips.
 
 No build step, no dependencies — open any `.html` file directly in a
 browser, or serve the folder with any static server.
 
-## Sound Nebula (`index.html`)
+## Sound Nebula (`nebula.html`)
 
 Click **Enable microphone & start**. Bass, mid, and treble frequencies each
 drive their own swarm of glowing particles orbiting a pulsing core.
@@ -265,10 +272,47 @@ Both directions degrade gracefully if the public relays are unreachable
 (e.g. no internet, or a restrictive network) — the status line explains
 what went wrong rather than hanging silently.
 
+## Colour Assist (`colorassist.html`)
+
+Built for colourblind eyes. Colour Assist's control surface is deliberately
+just six things:
+
+- **Calibrate Colour** / **Saved Colours** — aim the camera at a real
+  colour, tune hue, saturation, lightness, contrast, and exposure until it
+  reads right, and save it.
+- **Correction Spread** — how far a saved calibration's correction
+  generalises to perceptually nearby colours, using Lab-space
+  colour-distance weighting, not just an exact RGB match.
+- **True ↔ Corrected** — blends between the raw and corrected view.
+- **Outlines** — a Sobel edge-detection overlay, with thickness/blend/
+  opacity sliders. It's calculated from the raw camera image, so
+  structural edges stay visible regardless of whatever colour correction
+  is currently applied — a second information channel for when colour
+  differentiation alone isn't enough.
+- **Light / Camera Controls** — flashlight, exposure lock, exposure
+  compensation (EV), shutter, ISO, camera switching, and pause, exposed
+  where the browser/hardware supports them. Automatic exposure and
+  changing light can shift the apparent colour of whatever's being
+  calibrated against, throwing the calibration off — locking exposure is
+  more than just a photography nicety here, though it doesn't guarantee
+  a good calibration.
+
+Saved colours use their own storage, separate from `colorvision.html` —
+calibrating one doesn't affect the other.
+
 ## Colour Vision Extreme (`colorvision.html`)
 
-Live camera colour correction for colourblind users. Click **Enable camera
-& start**, then either:
+The same correction engine as Colour Assist, taken further: an
+experimental space for pushing colour correction and photography
+techniques beyond what Colour Assist exposes — cartoon mode,
+diagnosed-CVD-type correction, capture, tablet pairing, Templates.
+Anything that proves useful here can graduate into Colour Assist
+individually later; the underlying WebGL shader is shared between the two
+(Colour Assist just never turns its cartoon/CVD-type branches on), so any
+correction-quality improvement made to one applies to both without being
+ported by hand.
+
+Click **Enable camera & start**, then either:
 
 - **Calibrate a colour**: aim the camera at a real colour, tune hue,
   saturation, lightness, contrast, and exposure until it's recognisable,
@@ -286,48 +330,13 @@ your saved colour points. Photo/Record (with FPS selection), the floating
 capture bar, volume-button shutter, and two-device tablet pairing
 (broadcast/camera-only/receive) all work the same way as described above.
 
-## Colour Assist (`colorassist.html`)
-
-A focused, everyday sibling of Colour Vision Extreme, built on the exact
-same correction engine rather than a rewrite of it — `colorvision.html`
-stays the full experimental page where new techniques (cartoon mode,
-diagnosed-CVD-type correction, capture, tablet pairing, Templates) keep
-getting tried; anything that proves useful there can graduate into this
-page individually later. Colour Assist's control surface is deliberately
-just six things:
-
-- **Calibrate Colour** / **Saved Colours** — the same aim-freeze-tune-save
-  workflow as Colour Vision Extreme, tuning hue, saturation, lightness,
-  contrast, and exposure until a real-world colour reads right.
-- **Correction Spread** — how far a saved calibration's correction
-  generalises to perceptually nearby colours, using the same Lab-space
-  colour-distance weighting as Colour Vision Extreme, not just an exact RGB
-  match.
-- **True ↔ Corrected** — blends between the raw and corrected view.
-- **Outlines** — the same Sobel edge-detection overlay as elsewhere, with
-  thickness/blend/opacity sliders. It's calculated from the raw camera
-  image, so structural edges stay visible regardless of whatever colour
-  correction is currently applied — a second information channel for when
-  colour differentiation alone isn't enough.
-- **Light / Camera Controls** — flashlight, exposure lock, exposure
-  compensation (EV), shutter, ISO, camera switching, and pause, exposed
-  where the browser/hardware supports them. Automatic exposure and
-  changing light can shift the apparent colour of whatever's being
-  calibrated against, so exposure locking here is treated as part of
-  calibration integrity, not just a photography nicety.
-
-Saved colours use their own storage, separate from `colorvision.html` —
-calibrating one doesn't affect the other. The underlying WebGL shader is
-kept identical to Colour Vision Extreme's (including its cartoon/CVD-type
-branches, which this page simply never turns on), so any correction-quality
-improvement made to one engine applies to both without being ported by hand.
-
 ## Property Colour Reference (`restore.html`)
 
 Live camera colour correction for real-estate photography, built from a
 known-true reference colour (a paint chip, swatch, or matched sample)
-rather than a generic filter — aimed at keeping documentation and
-colour-matching accurate under whatever light you're shooting in. Click
+rather than a generic filter. Work in progress — how well it holds up
+under different light hasn't been proven, so check results against the
+real reference rather than trusting it blind. Click
 **Enable camera & start**, then **Match a reference colour** the same way
 `colorvision.html` calibrates a colour, or use **Quick presets** for
 one-tap corrections with no reference needed (10 lighting-condition
@@ -350,6 +359,105 @@ three pages above — open it on a second device and enter the room code (or
 open the direct link shown on the broadcasting device). Shows a single view
 normally, or the raw/original feed alongside the corrected one side by side
 when the broadcaster is sending both.
+
+## Video Call (`call.html`)
+
+Peer-to-peer video calling between two devices — direct WebRTC, no account,
+no call server. Reuses the same room-code pairing as "Connect tablet" above
+(a short code, handshake signaled over public MQTT relays), but two-way:
+both sides send camera and microphone, instead of one broadcasting to a
+read-only viewer.
+
+**Start a call** generates a room code and waits; **join with a room code**
+(or open the shared link, which prefills and auto-joins) connects to it.
+Once connected: **Mute** and **Camera off** toggle your own tracks without
+dropping the call, **Hang up** ends it.
+
+Like the rest of this suite's pairing, there's no TURN relay configured —
+only a public STUN server, used to discover a direct path between the two
+devices. That's enough for most home and mobile networks, but very
+restrictive ones (some corporate firewalls, certain mobile carrier setups)
+can still block the connection outright, since there's nothing here to
+relay the actual call media if a direct path can't be found. Deliberately
+the cheap option to try first, not a guarantee.
+
+## Flying Fox Count (`batcount.html`)
+
+A counting aid for flying fox (bat) colony counts at sunset (emergence) or
+sunrise (return). Self-contained — it doesn't share the WebGL correction
+engine the colour pages use, just a small 2D-canvas pipeline on a
+downscaled copy of the camera frame, run a few times a second:
+
+1. **Subtract** — frame-difference the current tick against the last one,
+   so only pixels that actually changed survive.
+2. **Blur & Thresh** — a 3x3 box blur suppresses single-pixel sensor
+   noise, then it's binarized into a motion mask.
+3. **Sobel Edge** — the gradient of the *current* frame's real detail,
+   computed only where the motion mask says something changed. Static
+   clutter (wires, foliage, rooflines) never becomes an edge at all,
+   rather than being detected and filtered out afterward.
+4. **Edge Thinning** — non-maximum suppression along each gradient's own
+   direction collapses a smeared band of edge-ish pixels down to a single
+   crisp line down its ridge.
+
+**Outline mode** shows the result of that pipeline directly — bright
+crisp lines on black, but now only of whatever's *currently moving*,
+which is a much cleaner "spot the bat" view than outlining the whole
+static scene. **Blob highlight** goes one step further on top of it: it
+connects those thinned edge-pixels into blobs, matches each tick's blobs
+against the previous tick's tracked positions to get a velocity, then
+subtracts the median velocity across everything (treated as the camera's
+own shake/pan, since most surviving motion in any frame is still the
+whole scene shifting together under a handheld shake) — only blobs still
+moving *relative to that* get circled. **Min movement** sets how much of
+that relative motion counts as flight. **Edge sensitivity**, **Min blob
+size**, and **Max blob size** adjust the detector for the lighting and
+framing on hand; the max-size filter (and a bounding-box aspect-ratio
+check in code) exists mainly to reject long straight wire segments and
+whole-tree foliage clusters, on the rare occasion those are moving too
+(wind).
+
+**Strip top** / **Strip bottom** crop detection to a horizontal band of
+the frame (as a % of frame height), instead of relying on the motion/size
+filters alone to ignore whatever's outside where bats actually cross —
+useful for cutting out a treeline, a neighbouring roofline, or the ground
+outright. The excluded area is marked with a dashed line at each boundary
+(visible even in Outline mode's black background) and dimmed where
+there's a plain camera feed to dim. The two handles keep a minimum gap
+from each other rather than letting the strip collapse to nothing.
+
+**The tally is the count that matters.** Tap **+1** for each bat you see;
+**&minus;** corrects a misclick. By default nothing is added automatically
+— **Detected this frame** and **Auto-tracked (approx)** (a running count
+of distinct tracked blobs, once each) are spotting aids only, not
+validated against real footage. Once the camera is fixed in place (not
+handheld) and the sliders look right, **Auto count** can be switched on to
+add each newly tracked crossing to the tally itself — the number still
+pulses on every automatic add so it stays easy to eyeball against what's
+actually flying past, and manual +1/&minus; keeps working alongside it to
+correct misses or false adds. Auto count turns itself off if Blob
+highlight is turned off (nothing left for it to track), and starts off
+again at the beginning of every new session.
+
+**End session & save** logs the date, session type (sunset/sunrise), tally,
+duration, and the auto-tracked figure to a local session history (shown on
+the start panel, with **Export CSV** and **Clear log**) — nothing leaves
+the device.
+
+**Record this session** (checked by default, on browsers that support
+`MediaRecorder`) is what makes Auto count actually practical for an
+hour-long emergence: mount the camera, hit Start, and walk away entirely
+instead of having to stand there watching and touching the phone the
+whole time. It records from a small dedicated canvas (downscaled from the
+native camera resolution, ~10fps) rather than the full-resolution feed, to
+keep an hour-long file a reasonable size. Every auto-tracked crossing is
+bookmarked by its timestamp; ending the session opens a review panel with
+the recording and a row of tappable bookmark times to jump straight to
+each one, plus a **Download recording** button — reusing the same
+Duration-metadata fix (`fixWebmDuration`, via `video-production.js`'s
+`VP_CORE` export) as Video Production's Take recordings, since
+`MediaRecorder` never writes that itself and an unpatched file can't be
+scrubbed or trimmed. Recording is entirely local; nothing is uploaded.
 
 ## Video Tutorials (`tutorials.html`)
 

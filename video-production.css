@@ -80,6 +80,7 @@
 .vp-btn-small { min-height: 36px; padding: 6px 12px; font-size: 13px; }
 .vp-btn-danger { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #fca5a5; }
 .vp-btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+.vp-btn.active { background: var(--accent); color: #06202b; border-color: var(--accent); }
 .vp-file-btn { display: inline-flex; align-items: center; justify-content: center; }
 
 input[type="text"], select {
@@ -150,8 +151,28 @@ input[type="color"] { width: 44px; height: 36px; border-radius: 8px; border: non
    cue sheet, Takes' list) so the camera feed underneath actually shows
    more of the screen instead of the same amount behind an unchanged UI.
    The tab bar — Studio/Live/Takes plus the Fullscreen button itself —
-   stays up, so switching views and toggling back off both still work. */
+   stays up, so switching views and toggling back off both still work.
+   #vpLiveTransport (zoom + Start/Stop Take) is a sibling of .vp-view,
+   not one, so it's untouched by this rule and stays reachable through
+   a whole take in fullscreen. */
 body.vp-fullscreen-active .vp-view { display: none !important; }
+
+/* ---- Live transport (persistent zoom + take controls) ---- */
+#vpLiveTransport {
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 10, 16, 0.85);
+  backdrop-filter: blur(8px);
+  padding: 10px 12px;
+}
+#vpLiveZoom { display: flex; align-items: center; gap: 8px; }
+#vpTakeControls { display: flex; align-items: center; gap: 8px; }
+.vp-live-zoom-label { font-size: 13px; font-weight: 700; color: rgba(242, 242, 247, 0.7); }
+#vpZoomSlider { width: 140px; }
+.vp-zoom-value { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
 
 /* ---- Studio ---- */
 #vpTransport {

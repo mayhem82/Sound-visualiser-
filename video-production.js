@@ -100,6 +100,17 @@
     uniform float uDuoBlend;
     uniform vec3 uDuoLo;
     uniform vec3 uDuoHi;
+    // Audio colour tint — ported from Colour Vision Extreme's own version
+    // (ID and math both kept identical): a live microphone-driven hue
+    // nudge, not part of this file's own pipeline until Video Call needed
+    // it. uAudioTintHue/Level are computed JS-side from a frequency
+    // analyser, not here.
+    uniform float uAudioTintEnabled;
+    uniform float uAudioTintHue;
+    uniform float uAudioTintStrength;
+    uniform float uAudioTintSatStrength;
+    uniform float uAudioTintLightStrength;
+    uniform float uAudioTintLevel;
     uniform vec2 uTexelSize;
     uniform float uSpread;
     uniform int uPointCount;
@@ -266,6 +277,21 @@
         finalColor = mix(finalColor, outlineColor, uOutlineBlend);
       }
 
+      // Audio colour tint: a final nudge toward the live mic's dominant
+      // band hue, taking the shortest way around the colour wheel so it
+      // never jumps the long way round. Runs after Cartoon/Duo/Outline so
+      // it's a mood pass over whatever's already on screen. uAudioTintLevel
+      // is the live overall loudness, so louder audio pushes saturation/
+      // lightness further in whichever direction each strength is set.
+      if (uAudioTintEnabled > 0.5) {
+        vec3 tintHsl = rgb2hsl(finalColor);
+        float hueDiff = mod(uAudioTintHue - tintHsl.x + 540.0, 360.0) - 180.0;
+        tintHsl.x = mod(tintHsl.x + hueDiff * uAudioTintStrength + 360.0, 360.0);
+        tintHsl.y = clamp(tintHsl.y + uAudioTintLevel * uAudioTintSatStrength, 0.0, 1.0);
+        tintHsl.z = clamp(tintHsl.z + uAudioTintLevel * uAudioTintLightStrength, 0.0, 1.0);
+        finalColor = hsl2rgb(tintHsl);
+      }
+
       // Global image adjustments — this page's own Exposure/Contrast/
       // Brightness/Saturation sliders, applied last, on top of everything
       // above (correction, cartoon, outline) so they read as a camera-like
@@ -294,6 +320,21 @@
     return sh;
   }
 
+  // Factored out of initGLContext so a second camera feed (dual/PiP mode)
+  // can get its own texture using the exact same setup, without needing a
+  // second shader program — both textures are sampled by the same uTex
+  // uniform, one draw call at a time, just rebound between them.
+  function createVideoTexture(glCtx) {
+    const tex = glCtx.createTexture();
+    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
+    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
+    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+    return tex;
+  }
+
   function initGLContext(canvas) {
     const glCtx = canvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
       canvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
@@ -314,17 +355,13 @@
     const aPos = glCtx.getAttribLocation(prog, "aPos");
     glCtx.enableVertexAttribArray(aPos);
     glCtx.vertexAttribPointer(aPos, 2, glCtx.FLOAT, false, 0, 0);
-    const tex = glCtx.createTexture();
-    glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
-    glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, true);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_S, glCtx.CLAMP_TO_EDGE);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_WRAP_T, glCtx.CLAMP_TO_EDGE);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MIN_FILTER, glCtx.LINEAR);
-    glCtx.texParameteri(glCtx.TEXTURE_2D, glCtx.TEXTURE_MAG_FILTER, glCtx.LINEAR);
+    const tex = createVideoTexture(glCtx);
     const uniformNames = [
       "uTex", "uBlend", "uOutlineEnabled", "uOutlineThickness", "uOutlineBlend", "uOutlineOpacity", "uOutlineColor",
       "uCartoonEnabled", "uCartoonBlend", "uCartoonLevels", "uCartoonEdgeThickness", "uCartoonEdgeStrength", "uCartoonSaturation",
-      "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi", "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
+      "uDuoEnabled", "uDuoBlend", "uDuoLo", "uDuoHi",
+      "uAudioTintEnabled", "uAudioTintHue", "uAudioTintStrength", "uAudioTintSatStrength", "uAudioTintLightStrength", "uAudioTintLevel",
+      "uTexelSize", "uSpread", "uPointCount", "uSourceLab", "uCorrection",
       "uCorrection2", "uCvdType", "uCvdStrength", "uExposure", "uContrast", "uBrightness", "uSaturation",
       "uRotate180", "uUvScale", "uUvOffset"
     ];
@@ -391,10 +428,162 @@
     glCtx.uniform2fv(uni.uCorrection2, corr2Arr);
   }
 
+  // ============================================================
+  // WebM duration fix
+  //
+  // MediaRecorder's WebM muxer is a streaming writer — it doesn't know
+  // the final duration when it writes the Segment/Info header, and
+  // unlike some encoders it doesn't come back and fill one in at
+  // stop(): the Duration element is simply never written at all.
+  // video.duration on a raw recording reads as Infinity, and anything
+  // that trusts the container's declared duration instead of doing its
+  // own full scan (very much including phone gallery editors, which is
+  // what surfaced this) ends up trimming against whatever fallback
+  // value it invents for "unknown" — a barely-editable sliver of the
+  // actual footage. There's also no SeekHead/Cues in MediaRecorder's
+  // output (it never writes an index either), which is what makes
+  // patching safe: nothing elsewhere in the file stores an absolute
+  // byte offset that an insertion into Info would invalidate. This is
+  // verified defensively anyway — see the SeekHead/Cues bail-out below
+  // — rather than assumed.
+  // ============================================================
+
+  const EBML_SEGMENT_ID = 0x18538067;
+  const EBML_INFO_ID = 0x1549A966;
+  const EBML_TIMECODE_SCALE_ID = 0x2AD7B1;
+  const EBML_DURATION_ID = 0x4489;
+  const EBML_SEEKHEAD_ID = 0x114D9B74;
+  const EBML_CUES_ID = 0x1C53BB6B;
+
+  function ebmlReadVint(bytes, offset, keepMarker) {
+    const first = bytes[offset];
+    let length = 1, mask = 0x80;
+    while (length <= 8 && !(first & mask)) { length++; mask >>= 1; }
+    if (length > 8 || offset + length > bytes.length) return null;
+    let value = keepMarker ? first : (first & (mask - 1));
+    for (let i = 1; i < length; i++) value = value * 256 + bytes[offset + i];
+    return { value, length };
+  }
+
+  function ebmlSizeVintCapacity(width) { return Math.pow(2, 7 * width) - 2; }
+
+  function ebmlEncodeSizeVint(value, width) {
+    const out = new Uint8Array(width);
+    let v = value;
+    for (let i = width - 1; i >= 0; i--) { out[i] = v & 0xff; v = Math.floor(v / 256); }
+    out[0] |= (0x80 >> (width - 1));
+    return out;
+  }
+
+  // bytes: Uint8Array of a WebM file. durationMs: real duration, from our
+  // own JS-side timer, not anything read out of the file. Returns a new
+  // Uint8Array with Duration patched in (or updated, if one somehow
+  // already existed), or null if anything looked unexpected enough that
+  // patching wasn't provably safe — callers should fall back to the
+  // original bytes unmodified in that case, never guess.
+  function fixWebmDuration(bytes, durationMs) {
+    if (!(durationMs > 0) || !Number.isFinite(durationMs)) return null;
+
+    let offset = 0, segmentDataStart = -1;
+    while (offset < bytes.length) {
+      const idInfo = ebmlReadVint(bytes, offset, true);
+      if (!idInfo) return null;
+      const sizeOffset = offset + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) return null;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_SEGMENT_ID) { segmentDataStart = dataStart; break; }
+      if (!Number.isFinite(sizeInfo.value)) return null;
+      offset = dataStart + sizeInfo.value;
+    }
+    if (segmentDataStart === -1) return null;
+
+    let o = segmentDataStart;
+    let infoSizeVintStart = -1, infoSizeVintWidth = -1, infoDataStart = -1, infoDataSize = -1;
+    while (o < bytes.length - 1) {
+      const idInfo = ebmlReadVint(bytes, o, true);
+      if (!idInfo) break;
+      const sizeOffset = o + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) break;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_SEEKHEAD_ID || idInfo.value === EBML_CUES_ID) return null;
+      if (idInfo.value === EBML_INFO_ID) {
+        infoSizeVintStart = sizeOffset;
+        infoSizeVintWidth = sizeInfo.length;
+        infoDataStart = dataStart;
+        infoDataSize = sizeInfo.value;
+      }
+      if (!Number.isFinite(sizeInfo.value)) break; // an unknown-size Cluster — nothing past it matters here
+      o = dataStart + sizeInfo.value;
+    }
+    if (infoDataStart === -1) return null;
+
+    let timecodeScaleNs = 1000000; // EBML default when TimecodeScale is absent
+    let existingDuration = null;
+    let io = infoDataStart;
+    const infoDataEnd = infoDataStart + infoDataSize;
+    while (io < infoDataEnd) {
+      const idInfo = ebmlReadVint(bytes, io, true);
+      if (!idInfo) break;
+      const sizeOffset = io + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) break;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_TIMECODE_SCALE_ID) {
+        let v = 0;
+        for (let i = 0; i < sizeInfo.value; i++) v = v * 256 + bytes[dataStart + i];
+        timecodeScaleNs = v;
+      }
+      if (idInfo.value === EBML_DURATION_ID) existingDuration = { dataStart, size: sizeInfo.value };
+      io = dataStart + sizeInfo.value;
+    }
+
+    const durationUnits = (durationMs * 1e6) / timecodeScaleNs;
+    const durationBytes = new Uint8Array(8);
+    new DataView(durationBytes.buffer).setFloat64(0, durationUnits, false);
+
+    if (existingDuration) {
+      if (existingDuration.size !== 8 && existingDuration.size !== 4) return null;
+      const out = bytes.slice();
+      if (existingDuration.size === 8) {
+        out.set(durationBytes, existingDuration.dataStart);
+      } else {
+        const f32 = new Uint8Array(4);
+        new DataView(f32.buffer).setFloat32(0, durationUnits, false);
+        out.set(f32, existingDuration.dataStart);
+      }
+      return out;
+    }
+
+    // The common case: no Duration element at all. Insert one as Info's
+    // first child and grow Info's own declared size to match, re-encoding
+    // its size VINT at the SAME byte-width it already had — if the new
+    // size doesn't fit that width, bail out rather than widen the VINT
+    // (which would shift everything again). Info is always tiny in
+    // practice (TimecodeScale/MuxingApp/WritingApp), so this essentially
+    // never happens.
+    const durationElement = new Uint8Array(11); // 2-byte ID + 1-byte size(8) + 8-byte float
+    durationElement.set([0x44, 0x89, 0x88], 0);
+    durationElement.set(durationBytes, 3);
+    const newInfoSize = infoDataSize + durationElement.length;
+    if (newInfoSize > ebmlSizeVintCapacity(infoSizeVintWidth)) return null;
+    const newSizeVint = ebmlEncodeSizeVint(newInfoSize, infoSizeVintWidth);
+
+    const out = new Uint8Array(bytes.length + durationElement.length);
+    let w = 0;
+    out.set(bytes.subarray(0, infoSizeVintStart), w); w += infoSizeVintStart;
+    out.set(newSizeVint, w); w += newSizeVint.length;
+    out.set(durationElement, w); w += durationElement.length;
+    out.set(bytes.subarray(infoDataStart), w);
+    return out;
+  }
+
   window.VP_CORE = {
     hexToRgb01, rgb01ToHex, rgb2lab, clamp01, CVD_TYPE_CODES,
     VERT_SRC, FRAG_SRC, compileShaderFor, initGLContext, computeCoverUv,
-    applyDigitalZoom, loadCalibrationPoints, uploadPointUniforms,
+    applyDigitalZoom, createVideoTexture, loadCalibrationPoints, uploadPointUniforms,
+    fixWebmDuration,
     CALIBRATION_STORAGE_KEY, MAX_POINTS, TEMPLATES_KEY, TAKES_META_KEY, LIVE_LAYOUT_KEY, SCHEDULED_CUES_KEY
   };
 })();

@@ -16,12 +16,14 @@
 <div id="overlay">
   <div id="panel">
     <h1>Colour Assist</h1>
-    <p>A focused, everyday version of Colour Vision Extreme: personal colour calibration, structural outlines, and the camera/lighting controls that keep a calibration trustworthy — nothing else. Aim at a colour, tune it until it reads right, save it.</p>
+    <p>A colourblind assist app, work in progress — a stripped-down version of Colour Vision Extreme: personal colour calibration, structural outlines, and camera/lighting controls. None of it is proven to actually help yet, it's still being built and tested. Aim at a colour, tune it until it looks right, save it.</p>
     <button id="startBtn">Enable camera &amp; start</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
-    <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
     <p class="hint"><a href="colorvision.html">Colour Vision Extreme &rarr;</a></p>
     <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
+    <p class="hint"><a href="call.html">Video Call &rarr;</a></p>
+    <p class="hint"><a href="batcount.html">Flying Fox Count &rarr;</a></p>
     <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
   </div>
 </div>
@@ -57,7 +59,7 @@
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
-  <button id="exposureModeBtn" class="hud-btn hide" aria-pressed="false" title="Lock the camera's exposure so it stops auto-adjusting brightness — automatic exposure and changing light can shift the apparent colour of whatever you're calibrating against, so locking it is part of keeping a calibration trustworthy, not just a photography nicety.">Exposure: Auto</button>
+  <button id="exposureModeBtn" class="hud-btn hide" aria-pressed="false" title="Lock the camera's exposure so it stops auto-adjusting brightness — automatic exposure and changing light can shift the apparent colour of whatever you're calibrating against, throwing the calibration off, so locking it is more than just a photography nicety.">Exposure: Auto</button>
   <label id="shutterWrap" class="hud-slider hide" title="Manual shutter speed. Lower is faster/darker, higher is slower/brighter.">
     Shutter: <span id="shutterLabel"></span>
     <input id="shutterSlider" type="range">
@@ -71,10 +73,12 @@
     <input id="evSlider" type="range">
   </label>
   <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
-  <a href="index.html" class="hud-btn">&larr; Sound Nebula</a>
+  <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
   <a href="colorvision.html" class="hud-btn">Colour Vision Extreme &rarr;</a>
   <a href="video-production.html" class="hud-btn">Video Production &rarr;</a>
   <a href="restore.html" class="hud-btn">Property Colour Reference &rarr;</a>
+  <a href="call.html" class="hud-btn">Video Call &rarr;</a>
+  <a href="batcount.html" class="hud-btn">Flying Fox Count &rarr;</a>
   <a href="tutorials.html" class="hud-btn">Video Tutorials &rarr;</a>
 </div>
 

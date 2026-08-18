@@ -22,15 +22,17 @@
 <div id="overlay">
   <div id="panel">
     <h1>Property Colour Reference</h1>
-    <p>Live camera correction built from a known-true reference colour — a paint chip, swatch, or matched sample — not a generic filter. Aim at the reference, tune the correction until the feed matches its true colour, save it — corrections blend outward across the whole scene so documentation and colour-matching stay accurate under whatever light you're working in.</p>
+    <p>Live camera correction built from a known-true reference colour — a paint chip, swatch, or matched sample — not a generic filter. Aim at the reference, tune the correction until the feed matches its true colour, save it — corrections then blend outward across the rest of the scene. Work in progress; how well that holds up under different light hasn't been proven, so check it against the real reference rather than trusting it blind.</p>
     <button id="startBtn">Enable camera &amp; start</button>
     <label id="cameraOnlyModeWrap" class="hud-slider camera-only-mode-wrap" title="For a two-device setup: this device just points at the property and broadcasts, with no controls of its own. Do all the calibration and correction on the other (receiving) device instead.">
       <input id="cameraOnlyModeCheckbox" type="checkbox">
       Camera-only mode (broadcast to another device)
     </label>
     <p id="status" class="status" role="status" aria-live="polite"></p>
-    <p class="hint"><a href="index.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
     <p class="hint"><a href="colorassist.html">Colour Assist &rarr;</a></p>
+    <p class="hint"><a href="call.html">Video Call &rarr;</a></p>
+    <p class="hint"><a href="batcount.html">Flying Fox Count &rarr;</a></p>
     <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
 
     <div id="receiveModeSection">
@@ -128,9 +130,11 @@
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a client's tablet) as a read-only viewer.">Connect tablet</button>
   <button id="maskBtn" class="hud-btn" title="Paint over an area (like a ceiling) to protect it from a correction, regardless of how close its colour is to the reference.">&#128396; Mask</button>
-  <a href="index.html" class="hud-btn">&larr; Sound Nebula</a>
+  <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
   <a href="colorassist.html" class="hud-btn">Colour Assist &rarr;</a>
   <a href="colorvision.html" class="hud-btn">Colour Vision &rarr;</a>
+  <a href="call.html" class="hud-btn">Video Call &rarr;</a>
+  <a href="batcount.html" class="hud-btn">Flying Fox Count &rarr;</a>
   <a href="tutorials.html" class="hud-btn">Video Tutorials &rarr;</a>
 </div>
 

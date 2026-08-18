@@ -1,0 +1,252 @@
+/* Video Call — page-specific styles only.
+   Shared look (vars, #overlay, #panel, .status, .hint, .hud-btn) comes from
+   style.css so this page stays visually consistent with the rest of the app. */
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background: #000;
+}
+
+/* ---- Normal layout: remote fills the screen, local is a small corner
+   inset over it — same bottom-right picture-in-picture convention as
+   Video Production's dual camera mode. ---- */
+#remotePane {
+  position: absolute;
+  inset: 0;
+}
+
+#localPane {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: 30vw;
+  max-width: 220px;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  border: 2px solid rgba(242, 242, 247, 0.25);
+  overflow: hidden;
+  z-index: 2;
+  background: #111;
+}
+
+#remoteVideo, #localCanvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+/* ---- Split fullscreen (toggled by #fullscreenBtn, driven by
+   body.call-split-active): both panes equal size, side by side on
+   landscape/wide screens, stacked on narrow/portrait ones — same
+   responsive convention as viewer.html's own split view. ---- */
+body.call-split-active #stage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 700px), (orientation: portrait) {
+  body.call-split-active #stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+body.call-split-active #remotePane,
+body.call-split-active #localPane {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  border: none;
+}
+
+.call-status {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  margin: 0;
+  background: rgba(15, 15, 25, 0.55);
+  color: var(--fg);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.call-status:empty {
+  display: none;
+}
+
+.field-label {
+  display: block;
+  text-align: left;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.75);
+  margin: 18px 0 0;
+}
+
+.field-label input[type="text"] {
+  display: block;
+  width: 100%;
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 14px 10px;
+  margin-top: 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.field-label input[type="text"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field-label select {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 12px 10px;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.field-label select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#startCallBtn, #joinCallBtn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+  margin-top: 16px;
+  width: 100%;
+}
+
+#startCallBtn:hover, #joinCallBtn:hover { filter: brightness(1.08); }
+#startCallBtn:active, #joinCallBtn:active { transform: scale(0.98); }
+#startCallBtn:disabled, #joinCallBtn:disabled { opacity: 0.6; cursor: default; }
+
+#shareCodeBlock {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(5, 5, 10, 0.88);
+  color: var(--fg);
+  text-align: center;
+  padding: 24px;
+}
+
+#shareCodeBlock.hide { display: none; }
+
+.share-room-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  margin: 4px 0 10px;
+  color: var(--accent);
+}
+
+#shareLinkText {
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.7);
+}
+
+#callHud {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  /* Above #shareCodeBlock (z-index 3) and #overlay (z-index 2) — these
+     controls are meant to stay reachable through every stage (framing
+     yourself before you've even started/joined, waiting for the other
+     device, and the call itself), not just once actually connected. */
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: calc(100vw - 28px);
+}
+
+#callHud.hide { display: none; }
+
+#zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 15, 25, 0.55);
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  border-radius: 10px;
+  padding: 0 4px;
+}
+#zoomControls .hud-btn { border: none; background: none; padding: 8px 10px; }
+.zoom-value {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.hud-btn-danger {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+}
+.hud-btn-danger:hover { background: rgba(239, 68, 68, 0.32); }
+
+.hud-btn.active {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #fecaca;
+}
+
+/* Fullscreen/split is a neutral mode toggle, not a warning state (unlike
+   Mute/Blur camera, which reuse the red .active above) — same accent
+   colour Video Production's own fullscreen button uses for the same
+   reason. */
+#fullscreenBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06202b;
+}
+
+@media (max-width: 520px) {
+  .share-room-code { font-size: 42px; }
+  #localPane { width: 34vw; }
+}
