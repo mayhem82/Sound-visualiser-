@@ -44,7 +44,12 @@
      spot as that pixel in the video, no separate coordinate mapping
      needed. */
   object-fit: cover;
-  pointer-events: none;
+  /* Auto (not none) so the strip's top/bottom boundary lines can be
+     dragged directly on screen — see attachStripDragHandlers in
+     batcount.js. touch-action:none stops the browser reading a vertical
+     drag as a page scroll/pull-to-refresh mid-gesture. */
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .field-label {

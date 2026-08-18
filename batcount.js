@@ -725,6 +725,53 @@
     stripBottomLabel.textContent = stripBottomSlider.value + "%";
   });
 
+  // Lets the strip's top/bottom boundary lines be dragged directly on the
+  // video, not just via the sliders in the HUD. Position is read straight
+  // from the pointer's clientY each move (never a delta), so which way the
+  // line moves can't come out inverted from which way the finger moves —
+  // and it just feeds the same sliders' own "input" event, so gap
+  // enforcement and label updates stay in that one place rather than
+  // duplicated here.
+  const STRIP_DRAG_HIT_PX = 28; // finger-friendly grab radius around a line, in CSS px
+  function attachStripDragHandlers() {
+    overlayCanvas.addEventListener("pointerdown", (e) => {
+      const rect = overlayCanvas.getBoundingClientRect();
+      if (!rect.height) return;
+      const pct = ((e.clientY - rect.top) / rect.height) * 100;
+      const topPct = Number(stripTopSlider.value);
+      const bottomPct = Number(stripBottomSlider.value);
+      const hitTolerancePct = (STRIP_DRAG_HIT_PX / rect.height) * 100;
+      const distToTop = Math.abs(pct - topPct);
+      const distToBottom = Math.abs(pct - bottomPct);
+      let target = null;
+      if (distToTop <= hitTolerancePct && distToTop <= distToBottom) target = stripTopSlider;
+      else if (distToBottom <= hitTolerancePct) target = stripBottomSlider;
+      if (!target) return; // tapped/dragged somewhere else on the video — not this gesture
+
+      e.preventDefault();
+      const pointerId = e.pointerId;
+      try { overlayCanvas.setPointerCapture(pointerId); } catch (err) { /* not critical */ }
+
+      const onMove = (ev) => {
+        const r = overlayCanvas.getBoundingClientRect();
+        if (!r.height) return;
+        const movePct = Math.min(100, Math.max(0, ((ev.clientY - r.top) / r.height) * 100));
+        target.value = movePct;
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        try { overlayCanvas.releasePointerCapture(pointerId); } catch (err) { /* not critical */ }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, { once: true });
+      window.addEventListener("pointercancel", onUp, { once: true });
+    });
+  }
+  attachStripDragHandlers();
+
   outlineModeBtn.addEventListener("click", () => {
     outlineModeEnabled = !outlineModeEnabled;
     outlineModeBtn.setAttribute("aria-pressed", String(outlineModeEnabled));
