@@ -1722,7 +1722,26 @@
         float minDist = 1.0e6;
         for (int i = 0; i < ${MAX_POINTS}; i++) {
           if (i >= uPointCount) break;
-          minDist = min(minDist, distance(labSmoothed, uSourceLab[i]));
+          vec3 diff = labSmoothed - uSourceLab[i];
+          // A plain Lab distance treats a lightness difference and a hue
+          // difference as interchangeable, which is wrong in both
+          // directions: two genuinely different hues that happen to share
+          // a similar brightness end up "close enough" (a saturated colour
+          // needs hue/chroma to matter far more than incidental lighting),
+          // while a real tone/grey point (see the Tone slider above) has
+          // no hue at all, so it *should* match anything at that
+          // brightness regardless of colour. Scaling each point's own
+          // weighting by how saturated it actually is — near-zero chroma
+          // (a tone) leans on lightness only; real chroma (a colour) leans
+          // on hue/chroma and barely cares about lightness — makes the
+          // match behave like whichever of those two things was actually
+          // picked, instead of one fixed formula fighting both cases.
+          float chroma = length(uSourceLab[i].yz);
+          float hueWeight = clamp(chroma / 20.0, 0.0, 1.0);
+          float lWeight = mix(1.0, 0.35, hueWeight);
+          float abWeight = mix(0.25, 2.0, hueWeight);
+          float d = sqrt(diff.x * diff.x * lWeight + (diff.y * diff.y + diff.z * diff.z) * abWeight);
+          minDist = min(minDist, d);
         }
         float mask = 1.0 - smoothstep(uFreezeSpread * 0.5, uFreezeSpread, minDist);
         finalColor = mix(finalColor, finalColor * mask, uFreezeBlend);
