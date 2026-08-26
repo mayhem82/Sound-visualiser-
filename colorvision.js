@@ -318,6 +318,8 @@
   const floatingCalibrateBtn = document.getElementById("floatingCalibrateBtn");
   const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
   const floatingRecordBtn = document.getElementById("floatingRecordBtn");
+  const floatingPointsBtn = document.getElementById("floatingPointsBtn");
+  const floatingGlassesModeBtn = document.getElementById("floatingGlassesModeBtn");
 
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const viewerPanel = document.getElementById("viewerPanel");
@@ -4243,6 +4245,17 @@
   // presents itself once it's on an external display.
   let glassesModeActive = false;
 
+  // The HUD's own Glasses mode button is exactly what Glasses mode hides,
+  // so its floating-bar twin needs to reflect the same on/off state — both
+  // updated together here rather than duplicating this in both toggle
+  // functions below.
+  function setGlassesModeButtonsState(active) {
+    [glassesModeBtn, floatingGlassesModeBtn].forEach((btn) => {
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", String(active));
+    });
+  }
+
   async function enterGlassesMode() {
     try {
       const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
@@ -4253,14 +4266,13 @@
     } catch (e) { /* not supported on this device/browser — ignore */ }
     glassesModeActive = true;
     hud.classList.add("hide");
-    glassesModeBtn.classList.add("active");
-    glassesModeBtn.setAttribute("aria-pressed", "true");
+    updateFloatingCaptureBarVisibility();
+    setGlassesModeButtonsState(true);
   }
 
   function exitGlassesMode() {
     glassesModeActive = false;
-    glassesModeBtn.classList.remove("active");
-    glassesModeBtn.setAttribute("aria-pressed", "false");
+    setGlassesModeButtonsState(false);
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* ignore */ }
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) {
@@ -4268,10 +4280,11 @@
     }
   }
 
-  glassesModeBtn.addEventListener("click", () => {
-    if (glassesModeActive) exitGlassesMode();
-    else enterGlassesMode();
-  });
+  function toggleGlassesMode() {
+    if (glassesModeActive) exitGlassesMode(); else enterGlassesMode();
+  }
+  glassesModeBtn.addEventListener("click", toggleGlassesMode);
+  floatingGlassesModeBtn.addEventListener("click", toggleGlassesMode);
 
   // The browser's own fullscreen-exit gesture (Esc key, swipe-down on
   // mobile, back gesture) doesn't go through exitGlassesMode() above, so
@@ -4384,13 +4397,18 @@
     pointsBtn.focus();
   }
 
-  pointsBtn.addEventListener("click", () => {
+  function openPointsPanel() {
     hideOverlayPanels();
     setSelectMode(false);
     importExportStatus.textContent = "";
     pointsPanel.classList.remove("hide");
     closePointsBtn.focus();
-  });
+  }
+  pointsBtn.addEventListener("click", openPointsPanel);
+  // The HUD's own Saved colours button is unreachable whenever the HUD is
+  // hidden (plain tap-to-hide, or Glasses mode) — this is the floating
+  // bar's twin of it, same as Photo/Record/Calibrate already have theirs.
+  floatingPointsBtn.addEventListener("click", openPointsPanel);
   closePointsBtn.addEventListener("click", closePointsPanel);
   selectModeBtn.addEventListener("click", () => setSelectMode(!selectMode));
   deleteSelectedBtn.addEventListener("click", deleteSelected);
