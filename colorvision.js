@@ -272,6 +272,7 @@
   const freezeSpreadWrap = document.getElementById("freezeSpreadWrap");
   const freezeSpreadSlider = document.getElementById("freezeSpreadSlider");
   const freezeSpreadLabel = document.getElementById("freezeSpreadLabel");
+  const freezeCalibrateBtn = document.getElementById("freezeCalibrateBtn");
   const cartoonBtn = document.getElementById("cartoonBtn");
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
   const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
@@ -1316,7 +1317,7 @@
     freezeIsolateBtn.textContent = freezeIsolateEnabled ? "Freeze isolate: On" : "Freeze isolate: Off";
     freezeIsolateBtn.classList.toggle("active", freezeIsolateEnabled);
     freezeIsolateBtn.setAttribute("aria-pressed", String(freezeIsolateEnabled));
-    [freezeBlendWrap, freezeSpreadWrap].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
+    [freezeBlendWrap, freezeSpreadWrap, freezeCalibrateBtn].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
   }
 
   function toggleFreezeIsolateMode() {
@@ -4428,6 +4429,10 @@
   // Glasses mode. Now opens the same choose panel calibrateBtn does,
   // returning focus to this button instead of the HUD's hidden one.
   floatingCalibrateBtn.addEventListener("click", () => openChoosePanel(floatingCalibrateBtn));
+  // Shortcut into the same choose panel (tone slider included) from right
+  // inside the Freeze isolate controls, so calibrating a colour to freeze
+  // doesn't mean hunting elsewhere in the HUD for the Calibrate button.
+  freezeCalibrateBtn.addEventListener("click", () => openChoosePanel(freezeCalibrateBtn));
   colourPickerInput.addEventListener("input", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
