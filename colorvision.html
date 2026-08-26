@@ -265,6 +265,15 @@
     Outline colour
     <input id="outlineColorInput" type="color" value="#ffffff" aria-label="Outline colour">
   </label>
+  <button id="freezeIsolateBtn" class="hud-btn" aria-pressed="false" title="Show only your saved (frozen) colours in their corrected true colour — everything else in shot fades to black. Needs at least one saved colour; with none saved, the whole frame goes black.">Freeze isolate: Off</button>
+  <label id="freezeBlendWrap" class="hud-slider hide" title="0% is the normal view. 100% is fully isolated — anything not near a saved colour goes fully black.">
+    Freeze blend: <span id="freezeBlendLabel">100%</span>
+    <input id="freezeBlendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="freezeSpreadWrap" class="hud-slider hide" title="How close a shade in shot has to be to one of your saved colours to still show through. Lower is stricter (only the almost-exact shade shows); higher is looser (nearby shades show too).">
+    Freeze match distance: <span id="freezeSpreadLabel">15</span>
+    <input id="freezeSpreadSlider" type="range" min="1" max="40" value="15">
+  </label>
   <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the camera view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
   <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
     Cartoon levels: <span id="cartoonLevelsLabel">6</span>

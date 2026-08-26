@@ -20,6 +20,11 @@
   const OUTLINE_DEFAULT_OPACITY = 1;
   const OUTLINE_COLOR_KEY = "outlineColor_colorVision_v1";
   const OUTLINE_DEFAULT_COLOR = "#ffffff";
+  const FREEZE_ENABLED_KEY = "freezeIsolateEnabled_colorVision_v1";
+  const FREEZE_BLEND_KEY = "freezeBlend_colorVision_v1";
+  const FREEZE_SPREAD_KEY = "freezeSpread_colorVision_v1";
+  const FREEZE_DEFAULT_BLEND = 1;
+  const FREEZE_DEFAULT_SPREAD = 15;
   const CARTOON_ENABLED_KEY = "cartoonEnabled_colorVision_v1";
   const CARTOON_LEVELS_KEY = "cartoonLevels_colorVision_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
@@ -257,6 +262,13 @@
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
   const outlineColorWrap = document.getElementById("outlineColorWrap");
   const outlineColorInput = document.getElementById("outlineColorInput");
+  const freezeIsolateBtn = document.getElementById("freezeIsolateBtn");
+  const freezeBlendWrap = document.getElementById("freezeBlendWrap");
+  const freezeBlendSlider = document.getElementById("freezeBlendSlider");
+  const freezeBlendLabel = document.getElementById("freezeBlendLabel");
+  const freezeSpreadWrap = document.getElementById("freezeSpreadWrap");
+  const freezeSpreadSlider = document.getElementById("freezeSpreadSlider");
+  const freezeSpreadLabel = document.getElementById("freezeSpreadLabel");
   const cartoonBtn = document.getElementById("cartoonBtn");
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
   const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
@@ -423,6 +435,11 @@
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
   let outlineColor = loadOutlineColorPref();
   let outlineColorRgb = hexToRgb01(outlineColor);
+  let freezeIsolateEnabled = (() => {
+    try { return localStorage.getItem(FREEZE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let freezeBlend = loadOutlineNumberPref(FREEZE_BLEND_KEY, FREEZE_DEFAULT_BLEND);
+  let freezeSpread = loadOutlineNumberPref(FREEZE_SPREAD_KEY, FREEZE_DEFAULT_SPREAD);
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -688,6 +705,9 @@
       outlineBlend: OUTLINE_DEFAULT_BLEND,
       outlineOpacity: OUTLINE_DEFAULT_OPACITY,
       outlineColor: OUTLINE_DEFAULT_COLOR,
+      freezeIsolateEnabled: false,
+      freezeBlend: FREEZE_DEFAULT_BLEND,
+      freezeSpread: FREEZE_DEFAULT_SPREAD,
       cartoonEnabled: false,
       cartoonLevels: CARTOON_DEFAULT_LEVELS,
       cartoonEdgeThickness: CARTOON_DEFAULT_EDGE_THICKNESS,
@@ -834,6 +854,15 @@
   }
   function saveOutlinesEnabledPref() {
     try { localStorage.setItem(OUTLINE_ENABLED_KEY, outlinesEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveFreezeIsolateEnabledPref() {
+    try { localStorage.setItem(FREEZE_ENABLED_KEY, freezeIsolateEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveFreezeBlendPref() {
+    try { localStorage.setItem(FREEZE_BLEND_KEY, String(freezeBlend)); } catch (e) {}
+  }
+  function saveFreezeSpreadPref() {
+    try { localStorage.setItem(FREEZE_SPREAD_KEY, String(freezeSpread)); } catch (e) {}
   }
   function saveOutlineThicknessPref() {
     try { localStorage.setItem(OUTLINE_THICKNESS_KEY, String(outlineThickness)); } catch (e) {}
@@ -1262,6 +1291,19 @@
     updateOutlinesUi();
   }
 
+  function updateFreezeIsolateUi() {
+    freezeIsolateBtn.textContent = freezeIsolateEnabled ? "Freeze isolate: On" : "Freeze isolate: Off";
+    freezeIsolateBtn.classList.toggle("active", freezeIsolateEnabled);
+    freezeIsolateBtn.setAttribute("aria-pressed", String(freezeIsolateEnabled));
+    [freezeBlendWrap, freezeSpreadWrap].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
+  }
+
+  function toggleFreezeIsolateMode() {
+    freezeIsolateEnabled = !freezeIsolateEnabled;
+    saveFreezeIsolateEnabledPref();
+    updateFreezeIsolateUi();
+  }
+
   function saveCartoonEnabledPref() {
     try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
   }
@@ -1419,6 +1461,9 @@
     uniform vec2 uCorrection2[${MAX_POINTS}];  // contrastAdjust, exposureAdjust
     uniform int uCvdType;      // 0=none, 1=protan, 2=deutan, 3=tritan
     uniform float uCvdStrength;
+    uniform float uFreezeEnabled;
+    uniform float uFreezeBlend;
+    uniform float uFreezeSpread;
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -1573,6 +1618,7 @@
       vec3 correction = vec3(0.0);
       vec2 correction2 = vec2(0.0);
 
+      float freezeMinDist = 1.0e6;
       if (uPointCount > 0) {
         vec3 labP = rgb2lab(original);
         float totalWeight = 0.0;
@@ -1585,6 +1631,7 @@
           weightedSum += uCorrection[i] * w;
           weightedSum2 += uCorrection2[i] * w;
           totalWeight += w;
+          freezeMinDist = min(freezeMinDist, d);
         }
         // A "null" anchor standing in for "no correction", weighted as if
         // a point were a fixed reference distance away. Without this, a
@@ -1644,6 +1691,18 @@
         tintHsl.y = clamp(tintHsl.y + uAudioTintLevel * uAudioTintSatStrength, 0.0, 1.0);
         tintHsl.z = clamp(tintHsl.z + uAudioTintLevel * uAudioTintLightStrength, 0.0, 1.0);
         finalColor = hsl2rgb(tintHsl);
+      }
+
+      // Freeze isolate: a final mask over everything above, so it works
+      // the same regardless of what else (Cartoon, Outlines, audio tint)
+      // is on. freezeMinDist already comes from the same per-point
+      // distance the correction loop above computes — no saved colours
+      // means it stays at its huge initial value, so the mask is 0
+      // (fully black) everywhere, same as "only frozen colours, and
+      // there are none".
+      if (uFreezeEnabled > 0.5) {
+        float mask = 1.0 - smoothstep(uFreezeSpread * 0.5, uFreezeSpread, freezeMinDist);
+        finalColor = mix(finalColor, finalColor * mask, uFreezeBlend);
       }
 
       gl_FragColor = vec4(finalColor, 1.0);
@@ -1739,7 +1798,10 @@
       uCorrection: glCtx.getUniformLocation(prog, "uCorrection"),
       uCorrection2: glCtx.getUniformLocation(prog, "uCorrection2"),
       uCvdType: glCtx.getUniformLocation(prog, "uCvdType"),
-      uCvdStrength: glCtx.getUniformLocation(prog, "uCvdStrength")
+      uCvdStrength: glCtx.getUniformLocation(prog, "uCvdStrength"),
+      uFreezeEnabled: glCtx.getUniformLocation(prog, "uFreezeEnabled"),
+      uFreezeBlend: glCtx.getUniformLocation(prog, "uFreezeBlend"),
+      uFreezeSpread: glCtx.getUniformLocation(prog, "uFreezeSpread")
     };
     return { gl: glCtx, program: prog, uniforms: uni, quadBuffer: qBuf, videoTexture: tex };
   }
@@ -1885,6 +1947,9 @@
       gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
       gl.uniform1i(uniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
       gl.uniform1f(uniforms.uCvdStrength, cvdStrength);
+      gl.uniform1f(uniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
+      gl.uniform1f(uniforms.uFreezeBlend, freezeBlend);
+      gl.uniform1f(uniforms.uFreezeSpread, freezeSpread);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       if (originalCtx) {
@@ -1948,6 +2013,9 @@
         fixedGl.uniform2f(fixedUniforms.uUvOffset, cover.ox, cover.oy);
         fixedGl.uniform1i(fixedUniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
         fixedGl.uniform1f(fixedUniforms.uCvdStrength, cvdStrength);
+        fixedGl.uniform1f(fixedUniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
+        fixedGl.uniform1f(fixedUniforms.uFreezeBlend, freezeBlend);
+        fixedGl.uniform1f(fixedUniforms.uFreezeSpread, freezeSpread);
         fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
     }
@@ -3329,6 +3397,9 @@
       outlineBlend,
       outlineOpacity,
       outlineColor,
+      freezeIsolateEnabled,
+      freezeBlend,
+      freezeSpread,
       cartoonEnabled,
       cartoonLevels,
       cartoonEdgeThickness,
@@ -3462,6 +3533,19 @@
       outlineColorRgb = hexToRgb01(outlineColor);
       outlineColorInput.value = outlineColor;
       saveOutlineColorPref();
+    }
+    if (typeof s.freezeIsolateEnabled === "boolean" && s.freezeIsolateEnabled !== freezeIsolateEnabled) toggleFreezeIsolateMode();
+    if (Number.isFinite(s.freezeBlend)) {
+      freezeBlend = s.freezeBlend;
+      freezeBlendSlider.value = String(Math.round(freezeBlend * 100));
+      freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
+      saveFreezeBlendPref();
+    }
+    if (Number.isFinite(s.freezeSpread)) {
+      freezeSpread = s.freezeSpread;
+      freezeSpreadSlider.value = String(freezeSpread);
+      freezeSpreadLabel.textContent = String(freezeSpread);
+      saveFreezeSpreadPref();
     }
     if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
     if (Number.isFinite(s.cartoonLevels)) {
@@ -3883,6 +3967,23 @@
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
   outlineColorInput.value = outlineColor;
   updateOutlinesUi();
+
+  freezeIsolateBtn.addEventListener("click", toggleFreezeIsolateMode);
+  freezeBlendSlider.addEventListener("input", () => {
+    freezeBlend = parseFloat(freezeBlendSlider.value) / 100;
+    freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
+    saveFreezeBlendPref();
+  });
+  freezeSpreadSlider.addEventListener("input", () => {
+    freezeSpread = parseFloat(freezeSpreadSlider.value);
+    freezeSpreadLabel.textContent = String(freezeSpread);
+    saveFreezeSpreadPref();
+  });
+  freezeBlendSlider.value = String(Math.round(freezeBlend * 100));
+  freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
+  freezeSpreadSlider.value = String(freezeSpread);
+  freezeSpreadLabel.textContent = String(freezeSpread);
+  updateFreezeIsolateUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);
