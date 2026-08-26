@@ -3832,10 +3832,10 @@
     });
   }
 
-  function openChoosePanel() {
+  function openChoosePanel(returnFocusEl = calibrateBtn) {
     hideOverlayPanels();
     renderPresetGrid();
-    choosePanelReturnFocusEl = calibrateBtn;
+    choosePanelReturnFocusEl = returnFocusEl;
     choosePanel.classList.remove("hide");
     chooseAimBtn.focus();
   }
@@ -4348,17 +4348,19 @@
     else fireShutter();
   });
 
-  calibrateBtn.addEventListener("click", openChoosePanel);
+  calibrateBtn.addEventListener("click", () => openChoosePanel());
   chooseAimBtn.addEventListener("click", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
     startAiming();
   });
-  floatingCalibrateBtn.addEventListener("click", () => {
-    hideOverlayPanels();
-    choosePanelReturnFocusEl = null;
-    startAiming();
-  });
+  // Previously skipped straight to aiming, with no way to reach the preset
+  // swatches or the plain colour picker — the only way to open Calibrate
+  // at all once the HUD (and its own calibrateBtn) is hidden, so those
+  // options were entirely unreachable while the HUD was hidden or in
+  // Glasses mode. Now opens the same choose panel calibrateBtn does,
+  // returning focus to this button instead of the HUD's hidden one.
+  floatingCalibrateBtn.addEventListener("click", () => openChoosePanel(floatingCalibrateBtn));
   colourPickerInput.addEventListener("input", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
