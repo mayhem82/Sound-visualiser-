@@ -1756,7 +1756,13 @@
           float chroma = length(uSourceLab[i].yz);
           float hueWeight = clamp(chroma / 20.0, 0.0, 1.0);
           float lWeight = mix(1.0, 0.35, hueWeight);
-          float abWeight = mix(0.25, 2.0, hueWeight);
+          // A true tone (chroma 0) must ignore hue/chroma entirely (weight
+          // 0), not just mostly — any non-zero weight here means a strongly
+          // saturated colour at the matching lightness (e.g. pure green vs
+          // a mid-grey, Lab chroma ~75) can still fail the distance check
+          // even though lightness alone is exactly what a tone is meant to
+          // match on.
+          float abWeight = mix(0.0, 2.0, hueWeight);
           float d = sqrt(diff.x * diff.x * lWeight + (diff.y * diff.y + diff.z * diff.z) * abWeight);
           minDist = min(minDist, d);
         }
