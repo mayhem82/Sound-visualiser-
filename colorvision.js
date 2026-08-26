@@ -302,7 +302,7 @@
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
-  const glassesModeBtn = document.getElementById("glassesModeBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
   const torchBtn = document.getElementById("torchBtn");
   const exposureModeBtn = document.getElementById("exposureModeBtn");
   const shutterWrap = document.getElementById("shutterWrap");
@@ -326,7 +326,6 @@
   const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
   const floatingRecordBtn = document.getElementById("floatingRecordBtn");
   const floatingPointsBtn = document.getElementById("floatingPointsBtn");
-  const floatingGlassesModeBtn = document.getElementById("floatingGlassesModeBtn");
 
   const connectTabletBtn = document.getElementById("connectTabletBtn");
   const viewerPanel = document.getElementById("viewerPanel");
@@ -4309,63 +4308,56 @@
     saveRotatePref();
   });
 
-  // ---- Glasses mode ----
-  // Fullscreen + HUD hidden + landscape where the browser allows it —
-  // meant for viewing this corrected feed on tethered AR/smart glasses (or
-  // any other external display mirroring the screen), which are typically
-  // landscape and have no room or need for the on-screen HUD. Whatever the
-  // glasses actually show is whatever this page already renders — this
-  // doesn't change the correction pipeline at all, only how the page
-  // presents itself once it's on an external display.
-  let glassesModeActive = false;
+  // ---- Fullscreen ----
+  // Replaced the old "Glasses mode" (fullscreen + HUD hidden + forced
+  // landscape, for tethered AR/smart glasses) with a plain fullscreen
+  // toggle — the landscape lock and AR framing went unused, and burying
+  // the only way in behind either that button or the tiny gap of bare
+  // video between HUD controls meant a mistap had no easy way back short
+  // of reloading the page. This button lives outside both #hud and
+  // #floatingCaptureBar, pinned to the screen at all times regardless of
+  // HUD state, so there's always one large, unmissable target to get in
+  // and back out.
+  let fullscreenActive = false;
 
-  // The HUD's own Glasses mode button is exactly what Glasses mode hides,
-  // so its floating-bar twin needs to reflect the same on/off state — both
-  // updated together here rather than duplicating this in both toggle
-  // functions below.
-  function setGlassesModeButtonsState(active) {
-    [glassesModeBtn, floatingGlassesModeBtn].forEach((btn) => {
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-pressed", String(active));
-    });
+  function setFullscreenBtnState(active) {
+    fullscreenBtn.classList.toggle("active", active);
+    fullscreenBtn.setAttribute("aria-pressed", String(active));
   }
 
-  async function enterGlassesMode() {
+  async function enterFullscreen() {
     try {
       const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
       if (req) await req.call(document.documentElement);
     } catch (e) { /* fullscreen not available/permitted — still hide the HUD below */ }
-    try {
-      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape");
-    } catch (e) { /* not supported on this device/browser — ignore */ }
-    glassesModeActive = true;
+    fullscreenActive = true;
     hud.classList.add("hide");
     updateFloatingCaptureBarVisibility();
-    setGlassesModeButtonsState(true);
+    setFullscreenBtnState(true);
   }
 
-  function exitGlassesMode() {
-    glassesModeActive = false;
-    setGlassesModeButtonsState(false);
-    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* ignore */ }
+  function exitFullscreenMode() {
+    fullscreenActive = false;
+    hud.classList.remove("hide");
+    updateFloatingCaptureBarVisibility();
+    setFullscreenBtnState(false);
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) {
       exit.call(document).catch ? exit.call(document).catch(() => {}) : exit.call(document);
     }
   }
 
-  function toggleGlassesMode() {
-    if (glassesModeActive) exitGlassesMode(); else enterGlassesMode();
+  function toggleFullscreenMode() {
+    if (fullscreenActive) exitFullscreenMode(); else enterFullscreen();
   }
-  glassesModeBtn.addEventListener("click", toggleGlassesMode);
-  floatingGlassesModeBtn.addEventListener("click", toggleGlassesMode);
+  fullscreenBtn.addEventListener("click", toggleFullscreenMode);
 
   // The browser's own fullscreen-exit gesture (Esc key, swipe-down on
-  // mobile, back gesture) doesn't go through exitGlassesMode() above, so
+  // mobile, back gesture) doesn't go through exitFullscreenMode() above, so
   // this catches that path too and keeps the button/HUD state in sync.
   ["fullscreenchange", "webkitfullscreenchange"].forEach((evt) => {
     document.addEventListener(evt, () => {
-      if (glassesModeActive && !document.fullscreenElement && !document.webkitFullscreenElement) exitGlassesMode();
+      if (fullscreenActive && !document.fullscreenElement && !document.webkitFullscreenElement) exitFullscreenMode();
     });
   });
 
@@ -4432,7 +4424,7 @@
   // swatches or the plain colour picker — the only way to open Calibrate
   // at all once the HUD (and its own calibrateBtn) is hidden, so those
   // options were entirely unreachable while the HUD was hidden or in
-  // Glasses mode. Now opens the same choose panel calibrateBtn does,
+  // fullscreen. Now opens the same choose panel calibrateBtn does,
   // returning focus to this button instead of the HUD's hidden one.
   floatingCalibrateBtn.addEventListener("click", () => openChoosePanel(floatingCalibrateBtn));
   colourPickerInput.addEventListener("input", () => {
@@ -4492,7 +4484,7 @@
   }
   pointsBtn.addEventListener("click", openPointsPanel);
   // The HUD's own Saved colours button is unreachable whenever the HUD is
-  // hidden (plain tap-to-hide, or Glasses mode) — this is the floating
+  // hidden (plain tap-to-hide, or fullscreen) — this is the floating
   // bar's twin of it, same as Photo/Record/Calibrate already have theirs.
   floatingPointsBtn.addEventListener("click", openPointsPanel);
   closePointsBtn.addEventListener("click", closePointsPanel);
@@ -4539,7 +4531,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar, #fullscreenBtn"
     ));
   }
 
