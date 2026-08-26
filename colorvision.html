@@ -222,7 +222,7 @@
     Band 6 high: <span id="audioTintBand6ToHzLabel">20000 Hz</span>
     <input id="audioTintBand6ToHzSlider" type="range" min="0" max="20000" value="20000">
   </label>
-  <button id="beatFlashBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone to detect beats (borrowed from Sound Nebula) and fires camera torch, phone vibration, and/or a full-screen colour flash in time with them. Beat detection listens to the Bass band's frequency range above.">Flash + vibrate on beat: Off</button>
+  <button id="beatFlashBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone to detect beats (borrowed from Sound Nebula) and fires camera torch and/or a full-screen colour flash in time with them. Beat detection listens to the Bass band's frequency range above.">Flash on beat: Off</button>
   <label id="beatSensitivityWrap" class="hud-slider hide" title="How easily a beat triggers. Higher reacts to quieter/softer hits too; lower only fires on strong, obvious beats.">
     Beat sensitivity: <span id="beatSensitivityLabel">50%</span>
     <input id="beatSensitivitySlider" type="range" min="0" max="100" value="50">
@@ -242,6 +242,10 @@
   <label id="beatScreenFlashWrap" class="hud-slider camera-only-mode-wrap hide" title="Flashes the whole screen on each beat, colour-blended from the same weighted band hue as audio colour tint above. Works on every device, even ones without a camera flash.">
     <input id="beatScreenFlashCheckbox" type="checkbox">
     Screen flash on beat
+  </label>
+  <label id="beatVibrateWrap" class="hud-slider hide" title="Vibrates the phone on each beat. Kept separate from Flash — the vibration motor's own mechanical buzz is loud enough for the mic to pick up, which could otherwise re-trigger the flash as if it were a new beat.">
+    <input id="beatVibrateCheckbox" type="checkbox">
+    Vibrate on beat
   </label>
   <button id="beatTestFlashBtn" class="hud-btn hide" title="Manually fires one flash, independent of beat detection — use this to check it works.">Test flash</button>
   <label id="beatSyncDelayWrap" class="hud-slider hide" title="Delays torch/vibrate/screen flash after a beat is detected, to compensate for a slower device's own hardware response lag, or to match timing with another device.">

@@ -11,6 +11,7 @@
   const restartBtn = document.getElementById("restartBtn");
   const micModeBtn = document.getElementById("micModeBtn");
   const flashBtn = document.getElementById("flashBtn");
+  const vibrateBtn = document.getElementById("vibrateBtn");
   const flashStatus = document.getElementById("flashStatus");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
   const speedSlider = document.getElementById("speedSlider");
@@ -294,6 +295,7 @@
   const DIM_FLICKER_KEY = "dimFlicker_soundNebula_v1";
   const TORCH_INVERTED_KEY = "torchInverted_soundNebula_v1";
   const SCREEN_FLASH_KEY = "screenFlash_soundNebula_v1";
+  const VIBRATE_ENABLED_KEY = "vibrateEnabled_soundNebula_v1";
   const FREQ_LOW_KEY = "freqLow_soundNebula_v1";
   const FREQ_HIGH_KEY = "freqHigh_soundNebula_v1";
   const SYNC_DELAY_KEY = "syncDelay_soundNebula_v1";
@@ -478,6 +480,12 @@
   let torchFailCount = 0;
   const TORCH_MAX_FAILS = 5;
   let vibrateSupported = typeof navigator.vibrate === "function";
+  // Separate from Flash on purpose: a phone's vibration motor makes its own
+  // mechanical buzz, loud enough for the mic to pick up — with both tied to
+  // one button, that buzz could itself register as a beat and re-trigger
+  // the flash, a feedback loop with no way to break it short of turning
+  // everything off. Independent toggles mean either can run without it.
+  let vibrateEnabled = loadBoolPref(VIBRATE_ENABLED_KEY, false);
   let bassHistory = [];
   let lastBeatAt = 0;
   let bassBeatTriggerEnabled = loadBoolPref(BASS_BEAT_TRIGGER_KEY, true);
@@ -836,10 +844,10 @@
   }
 
   function fireBeatEffects(strength) {
+    if (vibrateEnabled && vibrateSupported) {
+      try { navigator.vibrate(35); } catch (_) { /* ignore */ }
+    }
     if (flashEnabled) {
-      if (vibrateSupported) {
-        try { navigator.vibrate(35); } catch (_) { /* ignore */ }
-      }
       if (torchSupported && torchTrack && !torchBusy) {
         const duration = lerp(minFlashMs, maxFlashMs, strength);
         pulseTorch(duration);
@@ -2856,6 +2864,7 @@
       dimFlickerEnabled,
       torchInverted,
       screenFlashEnabled,
+      vibrateEnabled,
       freqLow: Number(freqLowSlider.value),
       freqHigh: Number(freqHighSlider.value),
       syncDelayMs,
@@ -2928,6 +2937,13 @@
       screenFlashEnabled = s.screenFlashEnabled;
       screenFlashToggle.checked = screenFlashEnabled;
       saveBoolPref(SCREEN_FLASH_KEY, screenFlashEnabled);
+    }
+    if (typeof s.vibrateEnabled === "boolean") {
+      vibrateEnabled = s.vibrateEnabled;
+      vibrateBtn.textContent = "Vibrate on beat: " + (vibrateEnabled ? "On" : "Off");
+      vibrateBtn.classList.toggle("active", vibrateEnabled);
+      vibrateBtn.setAttribute("aria-pressed", String(vibrateEnabled));
+      saveBoolPref(VIBRATE_ENABLED_KEY, vibrateEnabled);
     }
     if (Number.isFinite(s.freqLow)) freqLowSlider.value = String(s.freqLow);
     if (Number.isFinite(s.freqHigh)) freqHighSlider.value = String(s.freqHigh);
@@ -3340,10 +3356,7 @@
     flashStatus.classList.remove("hide");
 
     if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
-      appendFlashStatus(
-        "Camera flash isn't available in this browser." +
-          (vibrateSupported ? " Vibrate-only mode armed." : "")
-      );
+      appendFlashStatus("Camera flash isn't available in this browser.");
       return;
     }
 
@@ -3353,9 +3366,7 @@
     } catch (err) {
       if (!isTransientCameraError(err)) {
         appendFlashStatus(
-          "Couldn't access the camera for flash: " +
-            (err && err.message ? err.message : err) +
-            (vibrateSupported ? " Vibrate-only mode armed." : "")
+          "Couldn't access the camera for flash: " + (err && err.message ? err.message : err)
         );
         return;
       }
@@ -3367,8 +3378,7 @@
         appendFlashStatus(
           "Couldn't access the camera for flash: " +
             (err2 && err2.message ? err2.message : err2) +
-            " Close any other app or tab using the camera, then toggle flash off and back on to retry." +
-            (vibrateSupported ? " Vibrate-only mode armed for now." : "")
+            " Close any other app or tab using the camera, then toggle flash off and back on to retry."
         );
         return;
       }
@@ -3387,17 +3397,10 @@
             "or the tab losing focus). Turn the flash toggle off and back on to reconnect."
         )
       );
-      appendFlashStatus(
-        vibrateSupported
-          ? "Flash + vibrate armed."
-          : "Flash armed (vibrate unsupported)."
-      );
+      appendFlashStatus("Flash armed.");
     } else {
       track.stop();
-      appendFlashStatus(
-        "This device/browser doesn't expose a camera flash (common on iPhone/Safari)." +
-          (vibrateSupported ? " Vibrate-only mode armed." : "")
-      );
+      appendFlashStatus("This device/browser doesn't expose a camera flash (common on iPhone/Safari).");
     }
   }
 
@@ -3446,7 +3449,7 @@
         // First arm, or a previous arm was lost — (re)request the camera.
         await requestFlashCapability();
       }
-      flashBtn.textContent = "Flash + vibrate on beat: On";
+      flashBtn.textContent = "Flash on beat: On";
       flashBtn.classList.add("active");
       if (torchSupported && torchTrack && torchInverted) {
         // Inverted mode's base state is ON; establish it as soon as armed.
@@ -3459,7 +3462,7 @@
 
   async function disarmFlash() {
     flashEnabled = false;
-    flashBtn.textContent = "Flash + vibrate on beat: Off";
+    flashBtn.textContent = "Flash on beat: Off";
     flashBtn.classList.remove("active");
     if (!torchTrack) return;
     torchBusy = true;
@@ -3476,6 +3479,16 @@
     } else {
       await armFlash();
     }
+  }
+
+  // No camera/torch permission dance needed — navigator.vibrate() just
+  // works (or doesn't exist) — so this is a plain toggle, unlike Flash.
+  function toggleVibrate() {
+    vibrateEnabled = !vibrateEnabled;
+    saveBoolPref(VIBRATE_ENABLED_KEY, vibrateEnabled);
+    vibrateBtn.textContent = "Vibrate on beat: " + (vibrateEnabled ? "On" : "Off");
+    vibrateBtn.classList.toggle("active", vibrateEnabled);
+    vibrateBtn.setAttribute("aria-pressed", String(vibrateEnabled));
   }
 
   function updateSensitivity() {
@@ -3999,6 +4012,7 @@
   micModeBtn.addEventListener("click", toggleMicMode);
   updateMicModeBtn();
   flashBtn.addEventListener("click", toggleFlash);
+  vibrateBtn.addEventListener("click", toggleVibrate);
   sensitivitySlider.addEventListener("input", updateSensitivity);
   speedSlider.addEventListener("input", updateFlashSpeed);
   dimToggle.addEventListener("change", () => {
@@ -4291,6 +4305,9 @@
   nebulaBtn.textContent = nebulaEnabled ? "Nebula: On" : "Nebula: Off";
   nebulaBtn.classList.toggle("active", !nebulaEnabled);
   nebulaBtn.setAttribute("aria-pressed", String(!nebulaEnabled));
+  vibrateBtn.textContent = "Vibrate on beat: " + (vibrateEnabled ? "On" : "Off");
+  vibrateBtn.classList.toggle("active", vibrateEnabled);
+  vibrateBtn.setAttribute("aria-pressed", String(vibrateEnabled));
   updateSensitivity();
   updateFlashSpeed();
   updateFreqRange("low");

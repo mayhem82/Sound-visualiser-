@@ -46,7 +46,8 @@
   <button id="pauseBtn" class="hud-btn">Pause</button>
   <button id="restartBtn" class="hud-btn">Restart</button>
   <button id="micModeBtn" class="hud-btn" aria-pressed="false" title="Voice mode uses the browser's default echo cancellation / noise suppression, which is tuned for speech and mutes music playing from this device's own speaker. Music mode turns that off so the mic also picks up Spotify or other audio playing out loud.">Mic mode: Voice</button>
-  <button id="flashBtn" class="hud-btn">Flash + vibrate on beat: Off</button>
+  <button id="flashBtn" class="hud-btn" title="Pulses the camera's torch on each beat. Needs camera access — separate from Vibrate, so a phone's own vibration buzz can never get picked up by the mic and re-trigger this.">Flash on beat: Off</button>
+  <button id="vibrateBtn" class="hud-btn" aria-pressed="false" title="Vibrates on each beat. Kept separate from Flash — the vibration motor's own mechanical buzz is loud enough for the mic to pick up, which could otherwise re-trigger the flash as if it were a new beat.">Vibrate on beat: Off</button>
   <label id="sensitivityWrap" class="hud-slider">
     Beat sensitivity
     <input id="sensitivitySlider" type="range" min="0" max="100" value="50">

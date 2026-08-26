@@ -126,6 +126,7 @@
   const BEAT_DIM_FLICKER_KEY = "beatDimFlicker_colorVision_v1";
   const BEAT_TORCH_INVERTED_KEY = "beatTorchInverted_colorVision_v1";
   const BEAT_SCREEN_FLASH_KEY = "beatScreenFlash_colorVision_v1";
+  const BEAT_VIBRATE_KEY = "beatVibrate_colorVision_v1";
   const BEAT_SYNC_DELAY_KEY = "beatSyncDelay_colorVision_v1";
   const BEAT_HISTORY_LEN = 40;
   // Beat strength (0..1, how far above the detection threshold a hit
@@ -242,6 +243,8 @@
   const beatTorchInvertedCheckbox = document.getElementById("beatTorchInvertedCheckbox");
   const beatScreenFlashWrap = document.getElementById("beatScreenFlashWrap");
   const beatScreenFlashCheckbox = document.getElementById("beatScreenFlashCheckbox");
+  const beatVibrateWrap = document.getElementById("beatVibrateWrap");
+  const beatVibrateCheckbox = document.getElementById("beatVibrateCheckbox");
   const beatTestFlashBtn = document.getElementById("beatTestFlashBtn");
   const beatSyncDelayWrap = document.getElementById("beatSyncDelayWrap");
   const beatSyncDelaySlider = document.getElementById("beatSyncDelaySlider");
@@ -489,6 +492,15 @@
   let beatScreenFlashEnabled = (() => {
     try { return localStorage.getItem(BEAT_SCREEN_FLASH_KEY) === "1"; } catch (e) { return false; }
   })();
+  // Separate from torch on purpose: a phone's vibration motor makes its own
+  // mechanical buzz, loud enough for the mic to pick up — with both tied
+  // to the one Flash button, that buzz could itself register as a beat and
+  // re-trigger the torch, a feedback loop with no way out short of turning
+  // everything off. Off by default, unlike the old always-on-if-supported
+  // behaviour, since this is exactly the failure mode being avoided.
+  let beatVibrateEnabled = (() => {
+    try { return localStorage.getItem(BEAT_VIBRATE_KEY) === "1"; } catch (e) { return false; }
+  })();
   let beatSyncDelayMs = loadOutlineNumberPref(BEAT_SYNC_DELAY_KEY, 0);
   let bassHistory = [];
   let lastBeatAt = 0;
@@ -730,6 +742,7 @@
       beatDimFlickerEnabled: false,
       beatTorchInverted: false,
       beatScreenFlashEnabled: false,
+      beatVibrateEnabled: false,
       beatSyncDelayMs: 0
     };
   }
@@ -1101,7 +1114,7 @@
   }
 
   function fireBeatEffects(strength) {
-    if (vibrateSupported) {
+    if (beatVibrateEnabled && vibrateSupported) {
       try { navigator.vibrate(35); } catch (e) { /* ignore */ }
     }
     if (torchSupported && torchTrack && !beatTorchBusy) {
@@ -1212,6 +1225,9 @@
   function saveBeatScreenFlashPref() {
     try { localStorage.setItem(BEAT_SCREEN_FLASH_KEY, beatScreenFlashEnabled ? "1" : "0"); } catch (e) {}
   }
+  function saveBeatVibratePref() {
+    try { localStorage.setItem(BEAT_VIBRATE_KEY, beatVibrateEnabled ? "1" : "0"); } catch (e) {}
+  }
   function saveBeatSyncDelayPref() {
     try { localStorage.setItem(BEAT_SYNC_DELAY_KEY, String(beatSyncDelayMs)); } catch (e) {}
   }
@@ -1241,12 +1257,12 @@
   }
 
   function updateBeatFlashUi() {
-    beatFlashBtn.textContent = beatFlashEnabled ? "Flash + vibrate on beat: On" : "Flash + vibrate on beat: Off";
+    beatFlashBtn.textContent = beatFlashEnabled ? "Flash on beat: On" : "Flash on beat: Off";
     beatFlashBtn.classList.toggle("active", beatFlashEnabled);
     beatFlashBtn.setAttribute("aria-pressed", String(beatFlashEnabled));
     [
       beatSensitivityWrap, beatFlashSpeedWrap, beatDimFlickerWrap, beatTorchInvertedWrap,
-      beatScreenFlashWrap, beatTestFlashBtn, beatSyncDelayWrap
+      beatScreenFlashWrap, beatVibrateWrap, beatTestFlashBtn, beatSyncDelayWrap
     ].forEach((el) => el.classList.toggle("hide", !beatFlashEnabled));
   }
 
@@ -3471,6 +3487,7 @@
       beatDimFlickerEnabled,
       beatTorchInverted,
       beatScreenFlashEnabled,
+      beatVibrateEnabled,
       beatSyncDelayMs
     };
   }
@@ -3748,6 +3765,11 @@
       beatScreenFlashEnabled = s.beatScreenFlashEnabled;
       beatScreenFlashCheckbox.checked = beatScreenFlashEnabled;
       saveBeatScreenFlashPref();
+    }
+    if (typeof s.beatVibrateEnabled === "boolean") {
+      beatVibrateEnabled = s.beatVibrateEnabled;
+      beatVibrateCheckbox.checked = beatVibrateEnabled;
+      saveBeatVibratePref();
     }
     if (Number.isFinite(s.beatSyncDelayMs)) {
       beatSyncDelaySlider.value = String(s.beatSyncDelayMs);
@@ -4163,6 +4185,11 @@
     saveBeatScreenFlashPref();
   });
   beatScreenFlashCheckbox.checked = beatScreenFlashEnabled;
+  beatVibrateCheckbox.addEventListener("change", () => {
+    beatVibrateEnabled = beatVibrateCheckbox.checked;
+    saveBeatVibratePref();
+  });
+  beatVibrateCheckbox.checked = beatVibrateEnabled;
   beatTestFlashBtn.addEventListener("click", () => {
     fireBeatEffects(0.7);
   });
