@@ -391,7 +391,7 @@
 <div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
   <div id="choosePanelInner">
     <h2 id="choosePanelTitle">Choose a colour to calibrate</h2>
-    <p class="hint">Aim at a real colour with the camera, pick one exactly, or start from a colour commonly confused in colour vision deficiency.</p>
+    <p class="hint">Aim at a real colour with the camera, pick one exactly, dial in a pure tone (brightness with no hue), or start from a colour commonly confused in colour vision deficiency.</p>
 
     <div class="choose-actions">
       <button id="chooseAimBtn" class="hud-btn">Aim with camera</button>
@@ -400,6 +400,12 @@
         <input id="colourPickerInput" type="color" value="#ff0000" aria-label="Pick an exact colour to calibrate">
       </label>
     </div>
+
+    <label id="toneWrap" class="hud-slider" title="A pure grey has no hue of its own — matching against one isolates everything at roughly that same brightness (red, green, anything) rather than one specific colour. Use this instead of hunting for exact grey on the colour picker above.">
+      Tone (grey level): <span id="toneLabel">50%</span>
+      <input id="toneSlider" type="range" min="0" max="100" value="50">
+    </label>
+    <button id="useToneBtn" class="hud-btn reticle-btn-secondary">Use this tone</button>
 
     <h3 id="presetGridTitle">Common CVD confusion colours</h3>
     <div id="presetGrid" aria-labelledby="presetGridTitle"></div>

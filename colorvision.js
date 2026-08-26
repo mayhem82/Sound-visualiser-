@@ -380,6 +380,9 @@
   const choosePanel = document.getElementById("choosePanel");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
   const colourPickerInput = document.getElementById("colourPickerInput");
+  const toneSlider = document.getElementById("toneSlider");
+  const toneLabel = document.getElementById("toneLabel");
+  const useToneBtn = document.getElementById("useToneBtn");
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
 
@@ -4383,6 +4386,20 @@
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
     openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
+  });
+  toneSlider.addEventListener("input", () => {
+    toneLabel.textContent = `${toneSlider.value}%`;
+  });
+  // A pure grey (R=G=B) has no hue or saturation at all, so matching
+  // against one isolates by lightness alone — anything roughly that
+  // bright, regardless of colour, not one specific hue the way every
+  // other option in this panel does. A slider is a direct way to dial
+  // in a tone; hunting for exact R=G=B on the colour wheel above isn't.
+  useToneBtn.addEventListener("click", () => {
+    const v = Number(toneSlider.value) / 100;
+    choosePanel.classList.add("hide");
+    choosePanelReturnFocusEl = null;
+    openTuneForNewPoint([v, v, v]);
   });
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
