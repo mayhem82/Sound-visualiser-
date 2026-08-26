@@ -278,11 +278,10 @@
     Freeze match distance: <span id="freezeSpreadLabel">15</span>
     <input id="freezeSpreadSlider" type="range" min="1" max="40" value="15">
   </label>
-  <label id="freezeToneWrap" class="hud-slider hide" title="A pure grey has no hue of its own — matching against one isolates everything at roughly that same brightness (red, green, anything) rather than one specific colour. Use this instead of hunting for exact grey on a colour picker.">
-    Tone (grey level): <span id="freezeToneLabel">50%</span>
-    <input id="freezeToneSlider" type="range" min="0" max="100" value="50">
+  <label id="freezeToneWrap" class="hud-slider hide" title="0% matches your saved colours normally (hue and lightness both count). 100% ignores hue entirely and matches purely by brightness — a pure grey has no hue of its own, so this is what recreates that same-brightness-any-colour effect, live, on whatever you've already saved.">
+    Tone: <span id="freezeToneLabel">0%</span>
+    <input id="freezeToneSlider" type="range" min="0" max="100" value="0">
   </label>
-  <button id="freezeUseToneBtn" class="hud-btn reticle-btn-secondary hide">Use this tone</button>
   <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the camera view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
   <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
     Cartoon levels: <span id="cartoonLevelsLabel">6</span>

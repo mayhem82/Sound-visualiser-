@@ -23,8 +23,10 @@
   const FREEZE_ENABLED_KEY = "freezeIsolateEnabled_colorVision_v1";
   const FREEZE_BLEND_KEY = "freezeBlend_colorVision_v1";
   const FREEZE_SPREAD_KEY = "freezeSpread_colorVision_v1";
+  const FREEZE_TONE_KEY = "freezeTone_colorVision_v1";
   const FREEZE_DEFAULT_BLEND = 1;
   const FREEZE_DEFAULT_SPREAD = 15;
+  const FREEZE_DEFAULT_TONE = 0;
   const CARTOON_ENABLED_KEY = "cartoonEnabled_colorVision_v1";
   const CARTOON_LEVELS_KEY = "cartoonLevels_colorVision_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
@@ -275,7 +277,6 @@
   const freezeToneWrap = document.getElementById("freezeToneWrap");
   const freezeToneSlider = document.getElementById("freezeToneSlider");
   const freezeToneLabel = document.getElementById("freezeToneLabel");
-  const freezeUseToneBtn = document.getElementById("freezeUseToneBtn");
   const cartoonBtn = document.getElementById("cartoonBtn");
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
   const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
@@ -448,6 +449,12 @@
   })();
   let freezeBlend = loadOutlineNumberPref(FREEZE_BLEND_KEY, FREEZE_DEFAULT_BLEND);
   let freezeSpread = loadOutlineNumberPref(FREEZE_SPREAD_KEY, FREEZE_DEFAULT_SPREAD);
+  // 0-100: how much every match, live, ignores hue/chroma and goes by
+  // lightness alone -- a pure grey has no hue of its own, so this is what
+  // actually recreates that "matches anything at this brightness" effect,
+  // as a direct global slider like Freeze blend/match distance rather than
+  // something requiring a saved calibration point of its own.
+  let freezeTone = loadOutlineNumberPref(FREEZE_TONE_KEY, FREEZE_DEFAULT_TONE);
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -725,6 +732,7 @@
       freezeIsolateEnabled: false,
       freezeBlend: FREEZE_DEFAULT_BLEND,
       freezeSpread: FREEZE_DEFAULT_SPREAD,
+      freezeTone: FREEZE_DEFAULT_TONE,
       cartoonEnabled: false,
       cartoonLevels: CARTOON_DEFAULT_LEVELS,
       cartoonEdgeThickness: CARTOON_DEFAULT_EDGE_THICKNESS,
@@ -881,6 +889,9 @@
   }
   function saveFreezeSpreadPref() {
     try { localStorage.setItem(FREEZE_SPREAD_KEY, String(freezeSpread)); } catch (e) {}
+  }
+  function saveFreezeTonePref() {
+    try { localStorage.setItem(FREEZE_TONE_KEY, String(freezeTone)); } catch (e) {}
   }
   function saveOutlineThicknessPref() {
     try { localStorage.setItem(OUTLINE_THICKNESS_KEY, String(outlineThickness)); } catch (e) {}
@@ -1316,7 +1327,7 @@
     freezeIsolateBtn.textContent = freezeIsolateEnabled ? "Freeze isolate: On" : "Freeze isolate: Off";
     freezeIsolateBtn.classList.toggle("active", freezeIsolateEnabled);
     freezeIsolateBtn.setAttribute("aria-pressed", String(freezeIsolateEnabled));
-    [freezeBlendWrap, freezeSpreadWrap, freezeToneWrap, freezeUseToneBtn].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
+    [freezeBlendWrap, freezeSpreadWrap, freezeToneWrap].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
   }
 
   function toggleFreezeIsolateMode() {
@@ -1485,6 +1496,7 @@
     uniform float uFreezeEnabled;
     uniform float uFreezeBlend;
     uniform float uFreezeSpread;
+    uniform float uFreezeTone;
 
     float srgbToLinear(float c) {
       return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -1744,23 +1756,19 @@
           // directions: two genuinely different hues that happen to share
           // a similar brightness end up "close enough" (a saturated colour
           // needs hue/chroma to matter far more than incidental lighting),
-          // while a real tone/grey point (see the Tone slider above) has
-          // no hue at all, so it *should* match anything at that
-          // brightness regardless of colour. Scaling each point's own
-          // weighting by how saturated it actually is — near-zero chroma
-          // (a tone) leans on lightness only; real chroma (a colour) leans
-          // on hue/chroma and barely cares about lightness — makes the
-          // match behave like whichever of those two things was actually
-          // picked, instead of one fixed formula fighting both cases.
+          // while a pure grey has no hue at all, so it *should* match
+          // anything at that brightness regardless of colour. Each saved
+          // point's own chroma sets its baseline weighting — near-zero
+          // chroma leans on lightness only, real chroma leans on hue/chroma
+          // and barely cares about lightness. uFreezeTone (the live Tone
+          // slider) then scales hue/chroma weight down further for EVERY
+          // point at once, live, the same way Freeze blend/match distance
+          // already work — no separate calibration step, no saved "tone"
+          // point of its own: drag it to 100% and every match, whatever
+          // colour it was calibrated from, goes purely by brightness.
           float chroma = length(uSourceLab[i].yz);
-          float hueWeight = clamp(chroma / 20.0, 0.0, 1.0);
+          float hueWeight = clamp(chroma / 20.0, 0.0, 1.0) * (1.0 - uFreezeTone);
           float lWeight = mix(1.0, 0.35, hueWeight);
-          // A true tone (chroma 0) must ignore hue/chroma entirely (weight
-          // 0), not just mostly — any non-zero weight here means a strongly
-          // saturated colour at the matching lightness (e.g. pure green vs
-          // a mid-grey, Lab chroma ~75) can still fail the distance check
-          // even though lightness alone is exactly what a tone is meant to
-          // match on.
           float abWeight = mix(0.0, 2.0, hueWeight);
           float d = sqrt(diff.x * diff.x * lWeight + (diff.y * diff.y + diff.z * diff.z) * abWeight);
           minDist = min(minDist, d);
@@ -1865,7 +1873,8 @@
       uCvdStrength: glCtx.getUniformLocation(prog, "uCvdStrength"),
       uFreezeEnabled: glCtx.getUniformLocation(prog, "uFreezeEnabled"),
       uFreezeBlend: glCtx.getUniformLocation(prog, "uFreezeBlend"),
-      uFreezeSpread: glCtx.getUniformLocation(prog, "uFreezeSpread")
+      uFreezeSpread: glCtx.getUniformLocation(prog, "uFreezeSpread"),
+      uFreezeTone: glCtx.getUniformLocation(prog, "uFreezeTone")
     };
     return { gl: glCtx, program: prog, uniforms: uni, quadBuffer: qBuf, videoTexture: tex };
   }
@@ -2014,6 +2023,7 @@
       gl.uniform1f(uniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uFreezeBlend, freezeBlend);
       gl.uniform1f(uniforms.uFreezeSpread, freezeSpread);
+      gl.uniform1f(uniforms.uFreezeTone, freezeTone / 100);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       if (originalCtx) {
@@ -2080,6 +2090,7 @@
         fixedGl.uniform1f(fixedUniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uFreezeBlend, freezeBlend);
         fixedGl.uniform1f(fixedUniforms.uFreezeSpread, freezeSpread);
+        fixedGl.uniform1f(fixedUniforms.uFreezeTone, freezeTone / 100);
         fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
     }
@@ -3464,6 +3475,7 @@
       freezeIsolateEnabled,
       freezeBlend,
       freezeSpread,
+      freezeTone,
       cartoonEnabled,
       cartoonLevels,
       cartoonEdgeThickness,
@@ -3611,6 +3623,12 @@
       freezeSpreadSlider.value = String(freezeSpread);
       freezeSpreadLabel.textContent = String(freezeSpread);
       saveFreezeSpreadPref();
+    }
+    if (Number.isFinite(s.freezeTone)) {
+      freezeTone = s.freezeTone;
+      freezeToneSlider.value = String(freezeTone);
+      freezeToneLabel.textContent = `${freezeTone}%`;
+      saveFreezeTonePref();
     }
     if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
     if (Number.isFinite(s.cartoonLevels)) {
@@ -4049,10 +4067,17 @@
     freezeSpreadLabel.textContent = String(freezeSpread);
     saveFreezeSpreadPref();
   });
+  freezeToneSlider.addEventListener("input", () => {
+    freezeTone = parseFloat(freezeToneSlider.value);
+    freezeToneLabel.textContent = `${freezeToneSlider.value}%`;
+    saveFreezeTonePref();
+  });
   freezeBlendSlider.value = String(Math.round(freezeBlend * 100));
   freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
   freezeSpreadSlider.value = String(freezeSpread);
   freezeSpreadLabel.textContent = String(freezeSpread);
+  freezeToneSlider.value = String(freezeTone);
+  freezeToneLabel.textContent = `${freezeTone}%`;
   updateFreezeIsolateUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
@@ -4433,16 +4458,6 @@
     openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
   });
   closeChooseBtn.addEventListener("click", closeChoosePanel);
-
-  // Same tone control as the choose panel's, but inline in the Freeze
-  // isolate group itself — no panel to open first.
-  freezeToneSlider.addEventListener("input", () => {
-    freezeToneLabel.textContent = `${freezeToneSlider.value}%`;
-  });
-  freezeUseToneBtn.addEventListener("click", () => {
-    const v = Number(freezeToneSlider.value) / 100;
-    openTuneForNewPoint([v, v, v], freezeUseToneBtn);
-  });
 
   cancelAimBtn.addEventListener("click", stopAiming);
 
