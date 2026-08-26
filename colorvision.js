@@ -272,6 +272,10 @@
   const freezeSpreadWrap = document.getElementById("freezeSpreadWrap");
   const freezeSpreadSlider = document.getElementById("freezeSpreadSlider");
   const freezeSpreadLabel = document.getElementById("freezeSpreadLabel");
+  const freezeToneWrap = document.getElementById("freezeToneWrap");
+  const freezeToneSlider = document.getElementById("freezeToneSlider");
+  const freezeToneLabel = document.getElementById("freezeToneLabel");
+  const freezeUseToneBtn = document.getElementById("freezeUseToneBtn");
   const freezeCalibrateBtn = document.getElementById("freezeCalibrateBtn");
   const cartoonBtn = document.getElementById("cartoonBtn");
   const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
@@ -1317,7 +1321,7 @@
     freezeIsolateBtn.textContent = freezeIsolateEnabled ? "Freeze isolate: On" : "Freeze isolate: Off";
     freezeIsolateBtn.classList.toggle("active", freezeIsolateEnabled);
     freezeIsolateBtn.setAttribute("aria-pressed", String(freezeIsolateEnabled));
-    [freezeBlendWrap, freezeSpreadWrap, freezeCalibrateBtn].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
+    [freezeBlendWrap, freezeSpreadWrap, freezeToneWrap, freezeUseToneBtn, freezeCalibrateBtn].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
   }
 
   function toggleFreezeIsolateMode() {
@@ -3231,7 +3235,7 @@
     viewerPanel.classList.add("hide");
   }
 
-  function openTuneForNewPoint(sourceColor) {
+  function openTuneForNewPoint(sourceColor, returnFocusEl = calibrateBtn) {
     hideOverlayPanels();
     editingPointId = null;
     frozenColor = sourceColor;
@@ -3240,7 +3244,7 @@
     labelInput.value = "";
     deletePointBtn.classList.add("hide");
     refreshTunePreview();
-    tuneReturnFocusEl = calibrateBtn;
+    tuneReturnFocusEl = returnFocusEl;
     tunePanel.classList.remove("hide");
     hueSlider.focus();
   }
@@ -4453,6 +4457,16 @@
     openTuneForNewPoint([v, v, v]);
   });
   closeChooseBtn.addEventListener("click", closeChoosePanel);
+
+  // Same tone control as the choose panel's, but inline in the Freeze
+  // isolate group itself — no panel to open first.
+  freezeToneSlider.addEventListener("input", () => {
+    freezeToneLabel.textContent = `${freezeToneSlider.value}%`;
+  });
+  freezeUseToneBtn.addEventListener("click", () => {
+    const v = Number(freezeToneSlider.value) / 100;
+    openTuneForNewPoint([v, v, v], freezeUseToneBtn);
+  });
 
   cancelAimBtn.addEventListener("click", stopAiming);
 
