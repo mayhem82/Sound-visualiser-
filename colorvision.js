@@ -1620,7 +1620,6 @@
       vec3 correction = vec3(0.0);
       vec2 correction2 = vec2(0.0);
 
-      float freezeMinDist = 1.0e6;
       if (uPointCount > 0) {
         vec3 labP = rgb2lab(original);
         float totalWeight = 0.0;
@@ -1633,7 +1632,6 @@
           weightedSum += uCorrection[i] * w;
           weightedSum2 += uCorrection2[i] * w;
           totalWeight += w;
-          freezeMinDist = min(freezeMinDist, d);
         }
         // A "null" anchor standing in for "no correction", weighted as if
         // a point were a fixed reference distance away. Without this, a
@@ -1697,13 +1695,33 @@
 
       // Freeze isolate: a final mask over everything above, so it works
       // the same regardless of what else (Cartoon, Outlines, audio tint)
-      // is on. freezeMinDist already comes from the same per-point
-      // distance the correction loop above computes — no saved colours
-      // means it stays at its huge initial value, so the mask is 0
+      // is on. Matched against a small 5-tap neighbourhood average, not
+      // the single raw texel "original" the correction loop above uses —
+      // real camera video (and even the fake test device used to verify
+      // this) has enough per-pixel noise that a single-texel Lab distance
+      // put the calibrated colour itself right at the edge of its own
+      // match zone, flickering in and out — the same noise that also let
+      // plainly different colours drift into a loose "sort of matches"
+      // zone instead of committing to black. Averaging first is the same
+      // fix calibration itself already uses (sampleCenterColor averages a
+      // 12x12 patch rather than reading one pixel). No saved colours
+      // means minDist stays at its huge initial value, so the mask is 0
       // (fully black) everywhere, same as "only frozen colours, and
       // there are none".
       if (uFreezeEnabled > 0.5) {
-        float mask = 1.0 - smoothstep(uFreezeSpread * 0.5, uFreezeSpread, freezeMinDist);
+        vec3 smoothed = texture2D(uTex, vUv).rgb;
+        smoothed += texture2D(uTex, vUv + vec2(uTexelSize.x, 0.0)).rgb;
+        smoothed += texture2D(uTex, vUv - vec2(uTexelSize.x, 0.0)).rgb;
+        smoothed += texture2D(uTex, vUv + vec2(0.0, uTexelSize.y)).rgb;
+        smoothed += texture2D(uTex, vUv - vec2(0.0, uTexelSize.y)).rgb;
+        smoothed *= 0.2;
+        vec3 labSmoothed = rgb2lab(smoothed);
+        float minDist = 1.0e6;
+        for (int i = 0; i < ${MAX_POINTS}; i++) {
+          if (i >= uPointCount) break;
+          minDist = min(minDist, distance(labSmoothed, uSourceLab[i]));
+        }
+        float mask = 1.0 - smoothstep(uFreezeSpread * 0.5, uFreezeSpread, minDist);
         finalColor = mix(finalColor, finalColor * mask, uFreezeBlend);
       }
 
