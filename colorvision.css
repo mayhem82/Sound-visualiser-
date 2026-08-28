@@ -7,6 +7,18 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+/* Audio-reactive particle swarm, layered directly over the corrected view
+   (#stage) but under the HUD -- its own 2D canvas rather than drawn into
+   the WebGL shader, so it never touches the actual correction pipeline. */
+#particleCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1;
+}
+
 #cvdTypeWrap select {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);

@@ -54,6 +54,10 @@
   const CARTOON_THEME_DEFAULT_HI = "#f2f2f2";
   const SHUTTER_MODE_KEY = "shutterMode_colorVision_v1";
   const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
+  const PARTICLES_ENABLED_KEY = "particlesEnabled_colorVision_v1";
+  const PARTICLE_OPACITY_KEY = "particleOpacity_colorVision_v1";
+  const PARTICLE_DEFAULT_OPACITY = 70;
+  const PARTICLES_PER_BAND = 30;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -180,6 +184,12 @@
   const spreadLabel = document.getElementById("spreadLabel");
   const audioTintBtn = document.getElementById("audioTintBtn");
   const audioTintResetBtn = document.getElementById("audioTintResetBtn");
+  const particlesBtn = document.getElementById("particlesBtn");
+  const particleOpacityWrap = document.getElementById("particleOpacityWrap");
+  const particleOpacitySlider = document.getElementById("particleOpacitySlider");
+  const particleOpacityLabel = document.getElementById("particleOpacityLabel");
+  const particleCanvas = document.getElementById("particleCanvas");
+  const particleCtx = particleCanvas.getContext("2d");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
   const audioTintStrengthSlider = document.getElementById("audioTintStrengthSlider");
   const audioTintStrengthLabel = document.getElementById("audioTintStrengthLabel");
@@ -315,7 +325,8 @@
   const evWrap = document.getElementById("evWrap");
   const evSlider = document.getElementById("evSlider");
   const evLabel = document.getElementById("evLabel");
-  const switchCameraBtn = document.getElementById("switchCameraBtn");
+  const cameraSelectWrap = document.getElementById("cameraSelectWrap");
+  const cameraSelect = document.getElementById("cameraSelect");
   const photoBtn = document.getElementById("photoBtn");
   const recordFpsSelect = document.getElementById("recordFpsSelect");
   const recordBtn = document.getElementById("recordBtn");
@@ -455,6 +466,11 @@
   // as a direct global slider like Freeze blend/match distance rather than
   // something requiring a saved calibration point of its own.
   let freezeTone = loadOutlineNumberPref(FREEZE_TONE_KEY, FREEZE_DEFAULT_TONE);
+  let particlesEnabled = (() => {
+    try { return localStorage.getItem(PARTICLES_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let particleOpacity = loadOutlineNumberPref(PARTICLE_OPACITY_KEY, PARTICLE_DEFAULT_OPACITY);
+  let particles = [];
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -742,6 +758,8 @@
       cartoonThemeEnabled: false,
       cartoonThemeLo: CARTOON_THEME_DEFAULT_LO,
       cartoonThemeHi: CARTOON_THEME_DEFAULT_HI,
+      particlesEnabled: false,
+      particleOpacity: PARTICLE_DEFAULT_OPACITY,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1032,7 +1050,102 @@
   }
 
   function audioAnalysisNeeded() {
-    return audioTintEnabled || beatFlashEnabled;
+    return audioTintEnabled || beatFlashEnabled || particlesEnabled;
+  }
+
+  // ---- Particle effects (ported from Sound Nebula's particle swarm) ----
+  // A glowing particle swarm layered over the corrected view, on its own 2D
+  // canvas rather than drawn into the WebGL shader (see renderLoop) -- one
+  // swarm per one of the three primary AUDIO_TINT_BANDS (Bass/Mid/Treble),
+  // reusing whichever hue each band is already set to and its live
+  // rawEnergy (computed every tick in computeAudioTintHue() regardless of
+  // that band's own enabled flag, which only gates the separate hue-tint
+  // feature) -- no second microphone stream, same shared audioAnalysisTick
+  // driving this alongside audio tint and beat flash.
+  function makeParticle(bandIndex) {
+    const minDim = Math.min(window.innerWidth, window.innerHeight);
+    return {
+      bandIndex,
+      angle: Math.random() * Math.PI * 2,
+      angularSpeed: (Math.random() - 0.5) * 0.02,
+      baseRadius: minDim * (0.16 + Math.random() * 0.22),
+      radiusJitter: Math.random() * 40 + 10,
+      jitterPhase: Math.random() * Math.PI * 2,
+      jitterSpeed: 0.5 + Math.random() * 1.2,
+      size: 1.2 + Math.random() * 2.4
+    };
+  }
+
+  function seedParticles() {
+    particles = [];
+    for (let bandIndex = 0; bandIndex < 3; bandIndex++) {
+      for (let i = 0; i < PARTICLES_PER_BAND; i++) particles.push(makeParticle(bandIndex));
+    }
+  }
+
+  function resizeParticleCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    particleCanvas.width = Math.round(window.innerWidth * dpr);
+    particleCanvas.height = Math.round(window.innerHeight * dpr);
+  }
+
+  function updateAndDrawParticles(timeMs) {
+    const w = particleCanvas.width, h = particleCanvas.height;
+    const cx = w / 2, cy = h / 2;
+    const dpr = w / window.innerWidth || 1;
+    const opacity = particleOpacity / 100;
+    particleCtx.clearRect(0, 0, w, h);
+    particleCtx.globalCompositeOperation = "lighter";
+    for (const p of particles) {
+      const band = AUDIO_TINT_BANDS[p.bandIndex];
+      const energy = band.rawEnergy;
+      p.angle += p.angularSpeed * (0.4 + energy * 1.5);
+      const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
+      const radius = (p.baseRadius + jitter) * dpr;
+      const x = cx + Math.cos(p.angle) * radius;
+      const y = cy + Math.sin(p.angle) * radius;
+      const size = (p.size + energy * 4) * dpr;
+      const alpha = Math.min(1, 0.15 + energy * 0.85) * opacity;
+      if (alpha <= 0.01 || size <= 0) continue;
+      const grad = particleCtx.createRadialGradient(x, y, 0, x, y, size * 3);
+      grad.addColorStop(0, `hsla(${band.hue}, 90%, 65%, ${alpha})`);
+      grad.addColorStop(1, `hsla(${band.hue}, 90%, 65%, 0)`);
+      particleCtx.fillStyle = grad;
+      particleCtx.beginPath();
+      particleCtx.arc(x, y, size * 3, 0, Math.PI * 2);
+      particleCtx.fill();
+    }
+    particleCtx.globalCompositeOperation = "source-over";
+  }
+
+  function saveParticlesEnabledPref() {
+    try { localStorage.setItem(PARTICLES_ENABLED_KEY, particlesEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveParticleOpacityPref() {
+    try { localStorage.setItem(PARTICLE_OPACITY_KEY, String(particleOpacity)); } catch (e) {}
+  }
+
+  function updateParticlesUi() {
+    particlesBtn.textContent = particlesEnabled ? "Particle effects: On" : "Particle effects: Off";
+    particlesBtn.classList.toggle("active", particlesEnabled);
+    particlesBtn.setAttribute("aria-pressed", String(particlesEnabled));
+    particleOpacityWrap.classList.toggle("hide", !particlesEnabled);
+  }
+
+  async function toggleParticles() {
+    if (particlesEnabled) {
+      particlesEnabled = false;
+      saveParticlesEnabledPref();
+      updateParticlesUi();
+      maybeStopAudioAnalysis();
+      return;
+    }
+    const started = audioTintCtx ? true : await startAudioTint();
+    if (!started) return;
+    if (!particles.length) seedParticles();
+    particlesEnabled = true;
+    saveParticlesEnabledPref();
+    updateParticlesUi();
   }
 
   async function startAudioTint() {
@@ -1902,6 +2015,7 @@
       fixedCorrectionCanvas.height = stage.height;
       fixedGl.viewport(0, 0, fixedCorrectionCanvas.width, fixedCorrectionCanvas.height);
     }
+    resizeParticleCanvas();
   }
 
   function ensureOriginalCanvas() {
@@ -2093,6 +2207,8 @@
         fixedGl.uniform1f(fixedUniforms.uFreezeTone, freezeTone / 100);
         fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
+
+      if (particlesEnabled) updateAndDrawParticles(performance.now());
     }
     rafId = requestAnimationFrame(renderLoop);
   }
@@ -2175,43 +2291,62 @@
     cameraStatus.textContent = "";
   }
 
-  // ---- Camera switching ----
-  // Phones commonly expose more than the simple front/back pair (extra
-  // wide, telephoto, multiple back lenses), so devices are enumerated and
-  // cycled by deviceId rather than just flipping a front/back facingMode.
-
+  // ---- Camera selection ----
+  // Was: cycle-by-index through an unlabeled "next camera" button, built
+  // for phones with a small front/back/telephoto lens set where cycling
+  // is fine because there's only ever a couple of options. That stops
+  // being usable the moment real camera hardware is involved — a USB
+  // webcam or an HDMI/SDI-to-USB capture card feeding this device shows
+  // up as just one more entry in the same list, and with several such
+  // devices attached, blind cycling means guessing which click lands on
+  // which capture card. Discovery from the Blue Light Filter page (which
+  // has the identical problem — getUserMedia doesn't distinguish "phone
+  // lens" from "camera hardware", so both need the same fix): enumerate
+  // and expose devices by their actual OS/driver-reported label in a
+  // select, so a capture card shows its own product name and can be
+  // picked directly instead of cycled to.
   async function refreshVideoDevices() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoDevices = devices.filter((d) => d.kind === "videoinput");
-      switchCameraBtn.classList.toggle("hide", videoDevices.length <= 1);
+      cameraSelectWrap.classList.toggle("hide", videoDevices.length <= 1);
       const track = currentStream && currentStream.getVideoTracks()[0];
       const activeId = track && track.getSettings ? track.getSettings().deviceId : null;
+      cameraSelect.innerHTML = "";
+      videoDevices.forEach((d, i) => {
+        const option = document.createElement("option");
+        option.value = d.deviceId;
+        option.textContent = d.label || `Camera ${i + 1}`;
+        cameraSelect.appendChild(option);
+      });
+      if (activeId) cameraSelect.value = activeId;
       currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
       if (currentDeviceIndex === -1) currentDeviceIndex = 0;
+      // Keep any connected remote viewer's picker in sync with this
+      // device's real camera list (harmless no-op if not broadcasting —
+      // publishSignal itself no-ops without an active room).
+      if (typeof publishDeviceList === "function") publishDeviceList();
     } catch (err) {
-      switchCameraBtn.classList.add("hide");
+      cameraSelectWrap.classList.add("hide");
     }
   }
 
-  async function switchCamera() {
-    if (videoDevices.length <= 1 || switchingCamera) return;
+  async function switchToDevice(deviceId) {
+    if (switchingCamera) return;
     switchingCamera = true;
-    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
-    const nextDevice = videoDevices[nextIndex];
     // Release the current camera before requesting the next one. Many
     // phones — especially Android — refuse or silently fail a second
-    // concurrent camera open, so grabbing the new stream while the old
-    // one is still held (the previous ordering here) could fail on real
-    // hardware even though it works fine against a single mocked device.
+    // concurrent camera open, and the same holds for capture card
+    // drivers, so grabbing the new stream while the old one is still
+    // held could fail on real hardware even though it works fine
+    // against a single mocked device.
     stopCurrentStream();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: nextDevice.deviceId } },
+        video: { deviceId: { exact: deviceId } },
         audio: false
       });
       await attachStream(stream);
-      currentDeviceIndex = nextIndex;
       hideCameraStatus();
       await refreshVideoDevices();
     } catch (err) {
@@ -2232,6 +2367,24 @@
       switchingCamera = false;
     }
   }
+
+  // Kept for the remote/receiver control path (see applyReceiverModeUi and
+  // switchRemoteCamera below), where the receiving device has no local
+  // device list of its own to pick from and can only ask the camera device
+  // to advance to its own next camera.
+  async function switchCamera() {
+    if (videoDevices.length <= 1 || switchingCamera) return;
+    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    await switchToDevice(videoDevices[nextIndex].deviceId);
+  }
+
+  cameraSelect.addEventListener("change", () => {
+    if (isReceiverMode && receiverConnection) {
+      receiverConnection.switchRemoteToDevice(cameraSelect.value);
+    } else {
+      switchToDevice(cameraSelect.value);
+    }
+  });
 
   // ---- Flashlight (torch) ----
   // The torch constraint is only exposed on some Android/Chrome-based
@@ -2766,13 +2919,30 @@
     let msg;
     try { msg = JSON.parse(raw); } catch (e) { return; }
     if (!msg || msg.from === broadcastShare.deviceId) return;
-    if (msg.type === "viewer-here") { ensureBroadcastPeerFor(msg.from); return; }
+    if (msg.type === "viewer-here") {
+      ensureBroadcastPeerFor(msg.from);
+      publishDeviceList(msg.from);
+      return;
+    }
     if (msg.type === "answer" && msg.to === broadcastShare.deviceId) handleBroadcastAnswer(msg);
-    // Lets a connected viewer remote-control the camera-switch button —
-    // useful when the phone is mounted or otherwise out of easy reach.
-    // switchCamera() already no-ops if there's only one camera or a
-    // switch is already in progress.
+    // Lets a connected viewer remote-control the camera picker — either a
+    // specific device by id (from the labeled list this host publishes,
+    // see publishDeviceList below), or the older blind "next" no-op-safe
+    // fallback kept for any receiver that hasn't seen a device-list yet.
+    if (msg.type === "switch-device" && msg.to === broadcastShare.deviceId) switchToDevice(msg.deviceId);
     if (msg.type === "switch-camera" && msg.to === broadcastShare.deviceId) switchCamera();
+  }
+
+  // Sends this device's real, labeled camera list to a specific viewer (or
+  // broadcasts to all if no viewerId given) so a remote receiver's picker
+  // shows actual hardware names instead of only being able to blindly
+  // advance to "next camera".
+  function publishDeviceList(viewerId) {
+    publishSignal({
+      type: "device-list",
+      to: viewerId || null,
+      devices: videoDevices.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }))
+    });
   }
 
   // Mirrors broadcast status into both the normal "Connect tablet" panel
@@ -3029,6 +3199,15 @@
       try { msg = JSON.parse(raw); } catch (e) { return; }
       if (!msg || msg.from === deviceId) return;
       if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
+      // Camera device's real, labeled camera list — lets this receiver's
+      // picker show actual hardware names instead of a blind "next"
+      // toggle. Only accepted once we know which device is the host
+      // (targeted or broadcast-to-all both work; anything from a stray
+      // second camera device in the same room is ignored).
+      if (msg.type === "device-list" && (!hostId || msg.from === hostId) && (!msg.to || msg.to === deviceId)) {
+        if (!hostId) hostId = msg.from;
+        applyRemoteDeviceList(msg.devices || []);
+      }
     }
 
     setReceiverStatus("Connecting to relay…");
@@ -3068,12 +3247,22 @@
 
     return {
       ready,
-      // Remote-controls the camera device's own switch-camera button
+      // Remote-controls the camera device's own switch-camera cycling
       // (already listened for there — see handleBroadcastSignal above) —
-      // useful when it's mounted or otherwise out of easy reach. No-ops on
+      // used only as a fallback for the brief window before the camera
+      // device's device-list has arrived (see handleMessage above) and
+      // this receiver's picker has real options to send by id. No-ops on
       // the other end if it only has one camera.
       switchRemoteCamera() {
         publish({ type: "switch-camera", to: hostId });
+      },
+      // Preferred path once a device-list has been received: tells the
+      // camera device to switch to this specific deviceId directly,
+      // rather than blindly cycling — same "actual hardware, actual
+      // labels" fix as the local (non-remote) picker above.
+      switchRemoteToDevice(remoteDeviceId) {
+        if (!hostId) { this.switchRemoteCamera(); return; }
+        publish({ type: "switch-device", to: hostId, deviceId: remoteDeviceId });
       },
       teardown() {
         torn = true;
@@ -3083,6 +3272,22 @@
         clients = [];
       }
     };
+  }
+
+  // Populates this receiver's own camera picker from the labeled list the
+  // camera device published (see connectAsReceiver's handleMessage and
+  // publishDeviceList on the host side) — same select element the local
+  // (non-remote) picker uses, just fed remote entries instead of this
+  // device's own enumerateDevices() result.
+  function applyRemoteDeviceList(devices) {
+    cameraSelect.innerHTML = "";
+    devices.forEach((d) => {
+      const option = document.createElement("option");
+      option.value = d.deviceId;
+      option.textContent = d.label || d.deviceId;
+      cameraSelect.appendChild(option);
+    });
+    cameraSelectWrap.classList.toggle("hide", devices.length <= 1);
   }
 
   function finishReceiverStart() {
@@ -3112,9 +3317,12 @@
     // a two-device setup to exactly two devices.
     connectTabletBtn.classList.add("hide");
     // Repurposed below to remote-control the camera device's lens instead
-    // of switching this device's own (nonexistent) camera.
-    switchCameraBtn.classList.remove("hide");
-    switchCameraBtn.title = "Remotely switch the camera device's lens (no-op if it only has one).";
+    // of switching this device's own (nonexistent) camera — populated from
+    // the device-list the camera device publishes (see connectAsReceiver /
+    // handleBroadcastSignal), so this shows its real labels too, not just
+    // a blind "next" toggle.
+    cameraSelectWrap.classList.remove("hide");
+    cameraSelectWrap.title = "Remotely switch the camera device's lens or camera (no-op if it only has one).";
   }
 
   function startReceiving() {
@@ -3487,6 +3695,8 @@
       // the same silent-resume path already used for a page reload (works
       // if mic/camera permission is already granted; otherwise it prompts,
       // same as clicking the button by hand would).
+      particlesEnabled,
+      particleOpacity,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -3677,6 +3887,12 @@
       cartoonThemeHiInput.value = cartoonThemeHi;
       saveCartoonThemeHiPref();
     }
+    if (Number.isFinite(s.particleOpacity)) {
+      particleOpacity = s.particleOpacity;
+      particleOpacitySlider.value = String(particleOpacity);
+      particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
+      saveParticleOpacityPref();
+    }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
       audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
@@ -3806,6 +4022,9 @@
     }
     if (typeof s.beatFlashEnabled === "boolean" && s.beatFlashEnabled !== beatFlashEnabled) {
       toggleBeatFlash();
+    }
+    if (typeof s.particlesEnabled === "boolean" && s.particlesEnabled !== particlesEnabled) {
+      toggleParticles();
     }
   }
 
@@ -4079,6 +4298,16 @@
   freezeToneSlider.value = String(freezeTone);
   freezeToneLabel.textContent = `${freezeTone}%`;
   updateFreezeIsolateUi();
+
+  particlesBtn.addEventListener("click", toggleParticles);
+  particleOpacitySlider.addEventListener("input", () => {
+    particleOpacity = parseFloat(particleOpacitySlider.value);
+    particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
+    saveParticleOpacityPref();
+  });
+  particleOpacitySlider.value = String(particleOpacity);
+  particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
+  updateParticlesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);
@@ -4391,10 +4620,6 @@
   shutterSlider.addEventListener("input", applyShutter);
   isoSlider.addEventListener("input", applyIso);
   evSlider.addEventListener("input", applyExposureCompensation);
-  switchCameraBtn.addEventListener("click", () => {
-    if (isReceiverMode && receiverConnection) receiverConnection.switchRemoteCamera();
-    else switchCamera();
-  });
   photoBtn.addEventListener("click", takePhoto);
   recordFpsSelect.value = String(recordFps);
   recordFpsSelect.addEventListener("change", () => {

@@ -10,6 +10,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+<canvas id="particleCanvas" aria-hidden="true"></canvas>
 <video id="cameraFeed" playsinline muted hidden></video>
 <canvas id="sampleCanvas" hidden></canvas>
 <div id="screenFlash" aria-hidden="true"></div>
@@ -75,6 +76,11 @@
   </label>
   <button id="audioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone as a second, artistic source of colour: live bass/mid/treble energy (same violet/cyan/pink mapping as Sound Nebula) nudges the corrected view's hue toward whatever's playing, instead of relying only on the camera.">Audio colour tint: Off</button>
   <button id="audioTintResetBtn" class="hud-btn reticle-btn-secondary hide" title="Resets every audio colour tint slider below back to its shipped default (strength, saturation/lightness push, smoothing, resolution, update rate, and all 6 bands). Doesn't turn audio colour tint off.">Reset audio tint</button>
+  <button id="particlesBtn" class="hud-btn" aria-pressed="false" title="A swarm of glowing particles over the corrected view, driven by the microphone's live bass/mid/treble energy -- same idea as Sound Nebula's particle swarm, layered on top of your colour correction instead of a plain background.">Particle effects: Off</button>
+  <label id="particleOpacityWrap" class="hud-slider hide" title="How visible the particle swarm is over the corrected view.">
+    Particle opacity: <span id="particleOpacityLabel">70%</span>
+    <input id="particleOpacitySlider" type="range" min="0" max="100" value="70">
+  </label>
   <label id="audioTintStrengthWrap" class="hud-slider hide" title="How strongly the live audio hue pulls the corrected view's colour, from a subtle nudge to a full wash.">
     Audio tint strength: <span id="audioTintStrengthLabel">40%</span>
     <input id="audioTintStrengthSlider" type="range" min="0" max="100" value="40">
@@ -340,7 +346,9 @@
     EV: <span id="evLabel"></span>
     <input id="evSlider" type="range">
   </label>
-  <button id="switchCameraBtn" class="hud-btn hide" title="Switch to the next available camera (e.g. front/back, or another lens).">Switch camera</button>
+  <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see — a phone's own lenses, or a USB webcam / HDMI-to-USB capture card feeding a dedicated camera into this device — appear here the same way, labelled straight from the OS/driver. The browser doesn't distinguish 'phone lens' from 'camera hardware'.">
+    Camera: <select id="cameraSelect"></select>
+  </label>
   <button id="photoBtn" class="hud-btn" title="Take a photo of the corrected view. On some Android browsers, the phone's volume-down button works as a shutter too.">&#128247; Photo</button>
   <label id="recordFpsWrap" class="hud-slider" title="Frame rate for recorded video. Lower is a smaller file; higher is smoother motion. Locked once recording starts.">
     Recording FPS:
