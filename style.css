@@ -104,6 +104,18 @@ html, body {
   display: none;
 }
 
+/* A small explanatory note inside the HUD itself (not #panel) -- e.g. for
+   a capability that turned out unsupported on this device/browser, shown
+   in place of the control it would otherwise replace. */
+#hud p.hint {
+  margin: 0;
+  padding: 4px 10px;
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(242, 242, 247, 0.55);
+}
+
 /* Camera-only broadcast mode: a small, non-blocking corner card — the
    whole point is that the live camera view underneath stays visible
    (not hidden behind a full-screen status panel), so the phone still

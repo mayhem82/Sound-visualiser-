@@ -34,6 +34,11 @@
     Cutoff reach: <span id="warmthLabel">50%</span>
     <input id="warmthSlider" type="range" min="0" max="100" value="50">
   </label>
+  <label id="sensorTempWrap" class="hud-slider hide" title="Sets the camera sensor's own white-balance colour temperature directly, in Kelvin -- applied by the camera hardware/ISP itself before the image is even captured, not a software effect afterward. Lower is warmer (less blue at the source). Only appears when your browser and camera actually expose this control.">
+    Sensor colour temp: <span id="sensorTempLabel">6500K</span>
+    <input id="sensorTempSlider" type="range" min="2000" max="10000" step="50" value="6500">
+  </label>
+  <p id="sensorTempHint" class="hint hide">This browser/camera doesn't expose sensor-level colour temperature control (most don't) — the sliders above are the only blue-light reduction available here, applied after the sensor captures the frame.</p>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>

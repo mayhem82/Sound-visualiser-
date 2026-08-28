@@ -194,6 +194,10 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
+  const sensorTempWrap = document.getElementById("sensorTempWrap");
+  const sensorTempSlider = document.getElementById("sensorTempSlider");
+  const sensorTempLabel = document.getElementById("sensorTempLabel");
+  const sensorTempHint = document.getElementById("sensorTempHint");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
@@ -202,6 +206,7 @@
   let torchTrack = null;
   let torchSupported = false;
   let torchOn = false;
+  let sensorTempTrack = null;
   let gl = null;
   let uniforms = null;
   let videoTexture = null;
@@ -374,6 +379,46 @@
     }
   }
 
+  // ---- Sensor colour temperature ----
+  // The spectral filter above is a post-process on whatever the camera's
+  // own image pipeline already produced. This instead reaches for the
+  // camera hardware/ISP itself, before that -- MediaTrackConstraints
+  // exposes colorTemperature + whiteBalanceMode on the few browser/device
+  // combinations that support it (mostly Chrome on some Android devices;
+  // there is no web API for genuinely reshaping a CMOS/CCD sensor's
+  // per-wavelength response, only this coarse single-Kelvin-value lever
+  // some camera drivers happen to expose). Feature-detected: shown only
+  // when the track's own capabilities actually list it, otherwise a hint
+  // explains why it's missing rather than showing a dead control.
+  function setupSensorTemp(track) {
+    sensorTempTrack = track;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const range = caps && caps.colorTemperature;
+    const supported = !!(range && Number.isFinite(range.min) && Number.isFinite(range.max));
+    sensorTempWrap.classList.toggle("hide", !supported);
+    sensorTempHint.classList.toggle("hide", supported);
+    if (!supported) return;
+    sensorTempSlider.min = String(range.min);
+    sensorTempSlider.max = String(range.max);
+    if (range.step) sensorTempSlider.step = String(range.step);
+    const settings = track.getSettings ? track.getSettings() : {};
+    const initial = Number.isFinite(settings.colorTemperature) ? settings.colorTemperature : Math.round((range.min + range.max) / 2);
+    sensorTempSlider.value = String(initial);
+    sensorTempLabel.textContent = `${initial}K`;
+  }
+
+  async function applySensorTemp(kelvin) {
+    if (!sensorTempTrack) return;
+    try {
+      await sensorTempTrack.applyConstraints({ advanced: [{ whiteBalanceMode: "manual", colorTemperature: kelvin }] });
+    } catch (err) {
+      // Some devices report the capability but reject the constraint in
+      // practice -- stop offering it rather than leave a dead control.
+      sensorTempWrap.classList.add("hide");
+      sensorTempHint.classList.remove("hide");
+    }
+  }
+
   async function startCamera() {
     setStatus("Requesting camera…");
     try {
@@ -385,6 +430,7 @@
       video.srcObject = stream;
       await video.play();
       setupTorch(stream.getVideoTracks()[0]);
+      setupSensorTemp(stream.getVideoTracks()[0]);
       resizeStage();
       initGL();
       renderLoop();
@@ -433,6 +479,16 @@
   rotateBtn.setAttribute("aria-pressed", String(rotate180));
 
   torchBtn.addEventListener("click", toggleTorch);
+
+  let sensorTempDebounce = null;
+  sensorTempSlider.addEventListener("input", () => {
+    const kelvin = parseInt(sensorTempSlider.value, 10);
+    sensorTempLabel.textContent = `${kelvin}K`;
+    // applyConstraints is a real (sometimes slow) device call -- debounce
+    // so dragging the slider doesn't fire dozens of overlapping requests.
+    clearTimeout(sensorTempDebounce);
+    sensorTempDebounce = setTimeout(() => applySensorTemp(kelvin), 120);
+  });
 
   // ---- Fullscreen ----
   // A single button, pinned outside both #hud and the normal flow, so it
