@@ -16,6 +16,8 @@
   }
 
   const video = document.getElementById("cameraFeed");
+  const cameraSelectWrap = document.getElementById("cameraSelectWrap");
+  const cameraSelect = document.getElementById("cameraSelect");
   const overlay = document.getElementById("overlay");
   const startBtn = document.getElementById("startBtn");
   const status = document.getElementById("status");
@@ -29,6 +31,8 @@
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
+  let videoDevices = [];
+  let switchingCamera = false;
   let paused = false;
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
   let torchTrack = null;
@@ -370,6 +374,74 @@
     ambientBrightnessLabel.textContent = `Estimated ambient brightness (from the camera view): ${pct}%`;
   }
 
+  // ---- Camera device selection ----
+  // getUserMedia's facingMode ("environment"/"user") is a phone concept --
+  // it means nothing to a USB webcam or an HDMI/SDI-to-USB capture card
+  // feeding a real camera into a desktop, which the OS (and so the
+  // browser) just sees as one more plain video input device, no different
+  // from a phone's own lens. This lists every one of them by name and
+  // lets a specific one be picked directly, the same enumerate/switch
+  // pattern already used for phone lens-switching in colorvision.js,
+  // generalized here to any camera hardware at all.
+  async function attachStream(stream) {
+    currentStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    setupTorch(stream.getVideoTracks()[0]);
+    buildSensorControls(stream.getVideoTracks()[0]);
+  }
+
+  function stopCurrentStream() {
+    if (!currentStream) return;
+    currentStream.getTracks().forEach((t) => t.stop());
+    currentStream = null;
+  }
+
+  async function refreshVideoDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      cameraSelectWrap.classList.toggle("hide", videoDevices.length <= 1);
+      const track = currentStream && currentStream.getVideoTracks()[0];
+      const activeId = track && track.getSettings ? track.getSettings().deviceId : null;
+      cameraSelect.innerHTML = "";
+      videoDevices.forEach((d, i) => {
+        const option = document.createElement("option");
+        option.value = d.deviceId;
+        option.textContent = d.label || `Camera ${i + 1}`;
+        cameraSelect.appendChild(option);
+      });
+      if (activeId) cameraSelect.value = activeId;
+    } catch (err) {
+      cameraSelectWrap.classList.add("hide");
+    }
+  }
+
+  async function switchToDevice(deviceId) {
+    if (switchingCamera) return;
+    switchingCamera = true;
+    // Release the current camera before requesting the next one -- some
+    // camera drivers/capture cards refuse or silently fail a second
+    // concurrent open, same reasoning as the existing lens-switch code in
+    // colorvision.js.
+    stopCurrentStream();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
+      });
+      await attachStream(stream);
+      setStatus("");
+      await refreshVideoDevices();
+    } catch (err) {
+      setStatus("Couldn't switch camera: " + (err.message || err.name || "unknown error"));
+    } finally {
+      switchingCamera = false;
+    }
+  }
+
+  cameraSelect.addEventListener("change", () => switchToDevice(cameraSelect.value));
+
   async function startCamera() {
     setStatus("Requesting camera…");
     try {
@@ -377,17 +449,14 @@
         video: { facingMode: { ideal: "environment" } },
         audio: false
       });
-      currentStream = stream;
-      video.srcObject = stream;
-      await video.play();
-      setupTorch(stream.getVideoTracks()[0]);
-      buildSensorControls(stream.getVideoTracks()[0]);
+      await attachStream(stream);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
       requestWakeLock();
       ambientBrightnessLabel.classList.remove("hide");
       clearInterval(brightnessTimer);
       brightnessTimer = setInterval(sampleAmbientBrightness, 500);
+      await refreshVideoDevices();
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }

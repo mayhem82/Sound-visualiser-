@@ -55,6 +55,9 @@
 </div>
 
 <div id="hud" class="hide">
+  <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see — a phone's own lenses, or a USB webcam / HDMI-HDMI capture card feeding a dedicated camera into this computer, appear here the same way. The browser doesn't distinguish 'phone camera' from 'camera hardware'; anything the OS recognises as a video input shows up in this list.">
+    Camera: <select id="cameraSelect"></select>
+  </label>
   <div id="sensorControls"></div>
   <p id="sensorHint" class="hint hide">This browser/camera doesn't expose any sensor-level controls (most don't) — colour temperature, exposure, ISO, saturation, or anything else here. There's no fallback — the view stays true rather than showing a fake software tint in their place.</p>
   <p id="ambientBrightnessLabel" class="hint hide" title="There's no usable Ambient Light Sensor API in any current browser (Chromium withdrew the one it shipped over fingerprinting concerns) -- this is the average brightness of what the camera is actually looking at right now, sampled from the live feed, not a dedicated light-sensor reading."></p>
