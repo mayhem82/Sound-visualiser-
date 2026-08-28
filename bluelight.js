@@ -23,10 +23,8 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
-  const sensorTempWrap = document.getElementById("sensorTempWrap");
-  const sensorTempSlider = document.getElementById("sensorTempSlider");
-  const sensorTempLabel = document.getElementById("sensorTempLabel");
-  const sensorTempHint = document.getElementById("sensorTempHint");
+  const sensorControls = document.getElementById("sensorControls");
+  const sensorHint = document.getElementById("sensorHint");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
@@ -35,7 +33,6 @@
   let torchTrack = null;
   let torchSupported = false;
   let torchOn = false;
-  let sensorTempTrack = null;
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -73,41 +70,129 @@
     }
   }
 
-  // ---- Sensor colour temperature ----
-  // The ONLY blue-light reduction this page offers: MediaTrackConstraints'
-  // colorTemperature + whiteBalanceMode, applied by the camera hardware/ISP
-  // itself before a frame is ever captured -- a genuine reduction in what
-  // the sensor takes in, not a software recolour of the picture afterward.
-  // The view stays true at all times; there's no visual-filter fallback
-  // when a device/browser doesn't expose this (most don't) -- feature-
-  // detected via the track's own capabilities, hidden entirely (with an
-  // explanatory hint in its place) rather than faked.
-  function setupSensorTemp(track) {
-    sensorTempTrack = track;
+  // ---- Sensor controls ----
+  // The ONLY adjustment this page offers: real MediaTrackConstraints
+  // applied by the camera hardware/ISP itself before a frame is ever
+  // captured -- a genuine change in what the sensor takes in, never a
+  // software recolour of the picture afterward. The view stays true at all
+  // times; there's no visual-filter fallback for a control a device/
+  // browser doesn't expose (most expose few, if any, of these) -- each one
+  // is feature-detected individually via the track's own capabilities and
+  // only appears when genuinely present, with a shared hint explaining the
+  // lack of a fallback when NONE of them are.
+  //
+  // Some properties only take effect alongside their own mode switched to
+  // "manual" (colorTemperature needs whiteBalanceMode, exposureTime/iso
+  // need exposureMode) -- the mode is set in the same applyConstraints
+  // call as the value, every time, since a device isn't guaranteed to
+  // remember it from an earlier call.
+  const SENSOR_CONTROLS = [
+    {
+      key: "colorTemperature", label: "Sensor colour temp", unit: "K",
+      mode: { key: "whiteBalanceMode", value: "manual" },
+      title: "The camera sensor's own white-balance colour temperature, in Kelvin. Lower is warmer (less blue at the source)."
+    },
+    {
+      key: "exposureCompensation", label: "Exposure compensation", unit: " EV",
+      mode: null,
+      title: "Overall exposure at the sensor/ISP level. Lower reduces total light captured (blue included, along with everything else); higher increases it."
+    },
+    {
+      key: "iso", label: "ISO", unit: "",
+      mode: { key: "exposureMode", value: "manual" },
+      title: "Sensor sensitivity. Lower is less sensitive (needs more light, less noise); higher is more sensitive (works in dimmer light, more noise)."
+    },
+    {
+      key: "exposureTime", label: "Shutter speed", unit: "",
+      mode: { key: "exposureMode", value: "manual" },
+      title: "Sensor exposure time, in 100-microsecond units. Lower is a faster shutter (less light, less motion blur); higher is slower (more light, more blur)."
+    },
+    {
+      key: "saturation", label: "Sensor saturation", unit: "",
+      mode: null,
+      title: "Colour intensity applied by the camera hardware itself, at capture. Lower reduces vividness across every colour, blue included; this is a genuine sensor/ISP setting, not a software desaturation."
+    },
+    {
+      key: "brightness", label: "Sensor brightness", unit: "",
+      mode: null,
+      title: "Overall brightness applied by the camera hardware at capture."
+    },
+    {
+      key: "contrast", label: "Sensor contrast", unit: "",
+      mode: null,
+      title: "Contrast applied by the camera hardware at capture."
+    },
+    {
+      key: "sharpness", label: "Sensor sharpness", unit: "",
+      mode: null,
+      title: "Sharpening applied by the camera hardware at capture."
+    },
+    {
+      key: "zoom", label: "Zoom", unit: "x",
+      mode: null,
+      title: "Camera zoom, applied by the camera hardware itself."
+    }
+  ];
+
+  let sensorTrack = null;
+
+  function buildSensorControls(track) {
+    sensorTrack = track;
+    sensorControls.innerHTML = "";
     const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const range = caps && caps.colorTemperature;
-    const supported = !!(range && Number.isFinite(range.min) && Number.isFinite(range.max));
-    sensorTempWrap.classList.toggle("hide", !supported);
-    sensorTempHint.classList.toggle("hide", supported);
-    if (!supported) return;
-    sensorTempSlider.min = String(range.min);
-    sensorTempSlider.max = String(range.max);
-    if (range.step) sensorTempSlider.step = String(range.step);
     const settings = track.getSettings ? track.getSettings() : {};
-    const initial = Number.isFinite(settings.colorTemperature) ? settings.colorTemperature : Math.round((range.min + range.max) / 2);
-    sensorTempSlider.value = String(initial);
-    sensorTempLabel.textContent = `${initial}K`;
+    let anySupported = false;
+
+    SENSOR_CONTROLS.forEach((spec) => {
+      const range = caps && caps[spec.key];
+      if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max)) return;
+      anySupported = true;
+
+      const wrap = document.createElement("label");
+      wrap.className = "hud-slider";
+      wrap.title = spec.title;
+      const labelSpan = document.createElement("span");
+      const initial = Number.isFinite(settings[spec.key]) ? settings[spec.key] : (range.min + range.max) / 2;
+      labelSpan.textContent = `${spec.label}: ${formatSensorValue(initial)}${spec.unit}`;
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(range.min);
+      input.max = String(range.max);
+      input.step = String(range.step || (spec.key === "exposureTime" || spec.key === "iso" ? 1 : (range.max - range.min) / 100 || 1));
+      input.value = String(initial);
+
+      let debounceTimer = null;
+      input.addEventListener("input", () => {
+        const value = parseFloat(input.value);
+        labelSpan.textContent = `${spec.label}: ${formatSensorValue(value)}${spec.unit}`;
+        clearTimeout(debounceTimer);
+        // applyConstraints is a real (sometimes slow) device call -- debounce
+        // so dragging doesn't fire dozens of overlapping requests.
+        debounceTimer = setTimeout(() => applySensorConstraint(spec, value, wrap), 120);
+      });
+
+      wrap.appendChild(labelSpan);
+      wrap.appendChild(input);
+      sensorControls.appendChild(wrap);
+    });
+
+    sensorHint.classList.toggle("hide", anySupported);
   }
 
-  async function applySensorTemp(kelvin) {
-    if (!sensorTempTrack) return;
+  function formatSensorValue(v) {
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+
+  async function applySensorConstraint(spec, value, wrapEl) {
+    if (!sensorTrack) return;
+    const advanced = spec.mode ? { [spec.mode.key]: spec.mode.value, [spec.key]: value } : { [spec.key]: value };
     try {
-      await sensorTempTrack.applyConstraints({ advanced: [{ whiteBalanceMode: "manual", colorTemperature: kelvin }] });
+      await sensorTrack.applyConstraints({ advanced: [advanced] });
     } catch (err) {
       // Some devices report the capability but reject the constraint in
-      // practice -- stop offering it rather than leave a dead control.
-      sensorTempWrap.classList.add("hide");
-      sensorTempHint.classList.remove("hide");
+      // practice -- remove just this control rather than leave a dead one.
+      wrapEl.remove();
+      if (!sensorControls.children.length) sensorHint.classList.remove("hide");
     }
   }
 
@@ -122,7 +207,7 @@
       video.srcObject = stream;
       await video.play();
       setupTorch(stream.getVideoTracks()[0]);
-      setupSensorTemp(stream.getVideoTracks()[0]);
+      buildSensorControls(stream.getVideoTracks()[0]);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
     } catch (err) {
@@ -152,16 +237,6 @@
   rotateBtn.setAttribute("aria-pressed", String(rotate180));
 
   torchBtn.addEventListener("click", toggleTorch);
-
-  let sensorTempDebounce = null;
-  sensorTempSlider.addEventListener("input", () => {
-    const kelvin = parseInt(sensorTempSlider.value, 10);
-    sensorTempLabel.textContent = `${kelvin}K`;
-    // applyConstraints is a real (sometimes slow) device call -- debounce
-    // so dragging the slider doesn't fire dozens of overlapping requests.
-    clearTimeout(sensorTempDebounce);
-    sensorTempDebounce = setTimeout(() => applySensorTemp(kelvin), 120);
-  });
 
   // ---- Fullscreen ----
   // A single button, pinned outside both #hud and the normal flow, so it
