@@ -57,6 +57,8 @@
   const PARTICLES_ENABLED_KEY = "particlesEnabled_colorVision_v1";
   const PARTICLE_OPACITY_KEY = "particleOpacity_colorVision_v1";
   const PARTICLE_DEFAULT_OPACITY = 70;
+  const PARTICLE_SOURCE_KEY = "particleSource_colorVision_v1";
+  const PARTICLE_DEFAULT_SOURCE = "audio";
   const PARTICLES_PER_BAND = 30;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
@@ -188,6 +190,8 @@
   const particleOpacityWrap = document.getElementById("particleOpacityWrap");
   const particleOpacitySlider = document.getElementById("particleOpacitySlider");
   const particleOpacityLabel = document.getElementById("particleOpacityLabel");
+  const particleSourceWrap = document.getElementById("particleSourceWrap");
+  const particleSourceSelect = document.getElementById("particleSourceSelect");
   const particleCanvas = document.getElementById("particleCanvas");
   const particleCtx = particleCanvas.getContext("2d");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
@@ -470,6 +474,12 @@
     try { return localStorage.getItem(PARTICLES_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let particleOpacity = loadOutlineNumberPref(PARTICLE_OPACITY_KEY, PARTICLE_DEFAULT_OPACITY);
+  let particleSource = (() => {
+    try {
+      const raw = localStorage.getItem(PARTICLE_SOURCE_KEY);
+      return raw === "audio" || raw === "tone" ? raw : PARTICLE_DEFAULT_SOURCE;
+    } catch (e) { return PARTICLE_DEFAULT_SOURCE; }
+  })();
   let particles = [];
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
@@ -760,6 +770,7 @@
       cartoonThemeHi: CARTOON_THEME_DEFAULT_HI,
       particlesEnabled: false,
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
+      particleSource: PARTICLE_DEFAULT_SOURCE,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1050,18 +1061,28 @@
   }
 
   function audioAnalysisNeeded() {
-    return audioTintEnabled || beatFlashEnabled || particlesEnabled;
+    return (audioTintEnabled || beatFlashEnabled || (particlesEnabled && particleSource === "audio"));
   }
 
   // ---- Particle effects (ported from Sound Nebula's particle swarm) ----
   // A glowing particle swarm layered over the corrected view, on its own 2D
-  // canvas rather than drawn into the WebGL shader (see renderLoop) -- one
-  // swarm per one of the three primary AUDIO_TINT_BANDS (Bass/Mid/Treble),
-  // reusing whichever hue each band is already set to and its live
-  // rawEnergy (computed every tick in computeAudioTintHue() regardless of
-  // that band's own enabled flag, which only gates the separate hue-tint
-  // feature) -- no second microphone stream, same shared audioAnalysisTick
-  // driving this alongside audio tint and beat flash.
+  // canvas rather than drawn into the WebGL shader (see renderLoop).
+  // Two sources, selectable and built to extend with more later:
+  //   "audio" -- one swarm per one of the three primary AUDIO_TINT_BANDS
+  //     (Bass/Mid/Treble), reusing whichever hue each band is already set
+  //     to and its live rawEnergy (computed every tick in
+  //     computeAudioTintHue() regardless of that band's own enabled flag,
+  //     which only gates the separate hue-tint feature) -- no second
+  //     microphone stream, same shared audioAnalysisTick driving this
+  //     alongside audio tint and beat flash.
+  //   "tone" -- a single hue-less (white/grey) swarm driven by Freeze
+  //     isolate's own Tone slider (freezeTone) instead of sound. Tone
+  //     already means "brightness only, no hue" everywhere else on this
+  //     page, so particles here are deliberately colourless too, and
+  //     needing no microphone at all is the point -- this is the option
+  //     for using particle effects without a mic permission prompt.
+  const PARTICLE_SOURCES = ["audio", "tone"];
+
   function makeParticle(bandIndex) {
     const minDim = Math.min(window.innerWidth, window.innerHeight);
     return {
@@ -1078,6 +1099,12 @@
 
   function seedParticles() {
     particles = [];
+    if (particleSource === "tone") {
+      // One flat pool, no band split -- overall density matches the 3
+      // audio bands combined so switching source doesn't look sparser.
+      for (let i = 0; i < PARTICLES_PER_BAND * 3; i++) particles.push(makeParticle(0));
+      return;
+    }
     for (let bandIndex = 0; bandIndex < 3; bandIndex++) {
       for (let i = 0; i < PARTICLES_PER_BAND; i++) particles.push(makeParticle(bandIndex));
     }
@@ -1089,6 +1116,17 @@
     particleCanvas.height = Math.round(window.innerHeight * dpr);
   }
 
+  // Abstracts "what makes this particle move/glow" away from the audio
+  // bands specifically -- energy is always a 0-1 scalar; hue is a real hue
+  // in Audio mode, or null in Tone mode (hue-less white/grey glow instead).
+  function getParticleEnergyAndHue(p) {
+    if (particleSource === "tone") {
+      return { energy: freezeTone / 100, hue: null };
+    }
+    const band = AUDIO_TINT_BANDS[p.bandIndex];
+    return { energy: band.rawEnergy, hue: band.hue };
+  }
+
   function updateAndDrawParticles(timeMs) {
     const w = particleCanvas.width, h = particleCanvas.height;
     const cx = w / 2, cy = h / 2;
@@ -1097,8 +1135,7 @@
     particleCtx.clearRect(0, 0, w, h);
     particleCtx.globalCompositeOperation = "lighter";
     for (const p of particles) {
-      const band = AUDIO_TINT_BANDS[p.bandIndex];
-      const energy = band.rawEnergy;
+      const { energy, hue } = getParticleEnergyAndHue(p);
       p.angle += p.angularSpeed * (0.4 + energy * 1.5);
       const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
       const radius = (p.baseRadius + jitter) * dpr;
@@ -1107,9 +1144,10 @@
       const size = (p.size + energy * 4) * dpr;
       const alpha = Math.min(1, 0.15 + energy * 0.85) * opacity;
       if (alpha <= 0.01 || size <= 0) continue;
+      const colorStop = hue == null ? (a) => `hsla(0, 0%, 95%, ${a})` : (a) => `hsla(${hue}, 90%, 65%, ${a})`;
       const grad = particleCtx.createRadialGradient(x, y, 0, x, y, size * 3);
-      grad.addColorStop(0, `hsla(${band.hue}, 90%, 65%, ${alpha})`);
-      grad.addColorStop(1, `hsla(${band.hue}, 90%, 65%, 0)`);
+      grad.addColorStop(0, colorStop(alpha));
+      grad.addColorStop(1, colorStop(0));
       particleCtx.fillStyle = grad;
       particleCtx.beginPath();
       particleCtx.arc(x, y, size * 3, 0, Math.PI * 2);
@@ -1124,12 +1162,16 @@
   function saveParticleOpacityPref() {
     try { localStorage.setItem(PARTICLE_OPACITY_KEY, String(particleOpacity)); } catch (e) {}
   }
+  function saveParticleSourcePref() {
+    try { localStorage.setItem(PARTICLE_SOURCE_KEY, particleSource); } catch (e) {}
+  }
 
   function updateParticlesUi() {
     particlesBtn.textContent = particlesEnabled ? "Particle effects: On" : "Particle effects: Off";
     particlesBtn.classList.toggle("active", particlesEnabled);
     particlesBtn.setAttribute("aria-pressed", String(particlesEnabled));
     particleOpacityWrap.classList.toggle("hide", !particlesEnabled);
+    particleSourceWrap.classList.toggle("hide", !particlesEnabled);
   }
 
   async function toggleParticles() {
@@ -1140,12 +1182,32 @@
       maybeStopAudioAnalysis();
       return;
     }
-    const started = audioTintCtx ? true : await startAudioTint();
-    if (!started) return;
-    if (!particles.length) seedParticles();
+    if (particleSource === "audio") {
+      const started = audioTintCtx ? true : await startAudioTint();
+      if (!started) return;
+    }
+    seedParticles();
     particlesEnabled = true;
     saveParticlesEnabledPref();
     updateParticlesUi();
+  }
+
+  async function setParticleSource(next) {
+    if (!PARTICLE_SOURCES.includes(next) || next === particleSource) return;
+    const switchingToAudioWhileEnabled = particlesEnabled && next === "audio";
+    if (switchingToAudioWhileEnabled && !audioTintCtx) {
+      const started = await startAudioTint();
+      if (!started) { particleSourceSelect.value = particleSource; return; }
+    }
+    particleSource = next;
+    saveParticleSourcePref();
+    if (particlesEnabled) {
+      seedParticles();
+      // Switching TO tone while already enabled may leave an audio session
+      // running for no reason if nothing else needs it, same cleanup
+      // toggleAudioTint/toggleBeatFlash already do on their own way out.
+      maybeStopAudioAnalysis();
+    }
   }
 
   async function startAudioTint() {
@@ -3697,6 +3759,7 @@
       // same as clicking the button by hand would).
       particlesEnabled,
       particleOpacity,
+      particleSource,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -3892,6 +3955,15 @@
       particleOpacitySlider.value = String(particleOpacity);
       particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
       saveParticleOpacityPref();
+    }
+    if (s.particleSource === "audio" || s.particleSource === "tone") {
+      // Set directly (not via setParticleSource, which is for interactive
+      // switching and requests the mic on the spot) -- the later on/off
+      // restore below reads particleSource when it decides whether
+      // toggleParticles() needs to start the mic.
+      particleSource = s.particleSource;
+      particleSourceSelect.value = particleSource;
+      saveParticleSourcePref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -4307,6 +4379,8 @@
   });
   particleOpacitySlider.value = String(particleOpacity);
   particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
+  particleSourceSelect.addEventListener("change", () => setParticleSource(particleSourceSelect.value));
+  particleSourceSelect.value = particleSource;
   updateParticlesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
