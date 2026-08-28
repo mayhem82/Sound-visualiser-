@@ -25,6 +25,7 @@
   const torchBtn = document.getElementById("torchBtn");
   const sensorControls = document.getElementById("sensorControls");
   const sensorHint = document.getElementById("sensorHint");
+  const ambientBrightnessLabel = document.getElementById("ambientBrightnessLabel");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
@@ -131,6 +132,21 @@
       key: "zoom", label: "Zoom", unit: "x",
       mode: null,
       title: "Camera zoom, applied by the camera hardware itself."
+    },
+    {
+      key: "focusDistance", label: "Focus distance", unit: "",
+      mode: { key: "focusMode", value: "manual" },
+      title: "Manual focus distance, in the units this camera reports it. Not blue-light related, but a real sensor/lens control -- included since a plain visual guess isn't the goal here, exposing whatever's genuinely there is."
+    },
+    {
+      key: "pan", label: "Pan", unit: "°",
+      mode: null,
+      title: "Camera pan, on hardware that physically or digitally supports it."
+    },
+    {
+      key: "tilt", label: "Tilt", unit: "°",
+      mode: null,
+      title: "Camera tilt, on hardware that physically or digitally supports it."
     }
   ];
 
@@ -196,6 +212,50 @@
     }
   }
 
+  // ---- Screen Wake Lock ----
+  // The whole point of this page is extended low-light viewing -- exactly
+  // the situation where a phone's own screen timeout is most likely to
+  // kick in and undo it. Real API (Wake Lock), feature-detected the same
+  // way as everything else here; the browser releases the lock whenever
+  // the tab is backgrounded regardless, so it's re-requested on
+  // visibilitychange rather than assumed to persist.
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } catch (e) { /* not fatal -- the screen just times out normally */ }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && currentStream && !wakeLock) requestWakeLock();
+  });
+
+  // ---- Estimated ambient brightness ----
+  // There's no usable Ambient Light Sensor API left in any shipping
+  // browser (Chromium shipped one, then withdrew it from stable over
+  // fingerprinting concerns) -- so this isn't a real lux reading, and is
+  // labelled as such. It IS a genuine measurement of something real,
+  // though: the average luminance of what the camera is actually looking
+  // at right now, sampled from the live feed itself, not faked.
+  const brightnessCanvas = document.createElement("canvas");
+  brightnessCanvas.width = 16;
+  brightnessCanvas.height = 16;
+  const brightnessCtx = brightnessCanvas.getContext("2d", { willReadFrequently: true });
+  let brightnessTimer = null;
+
+  function sampleAmbientBrightness() {
+    if (!currentStream || video.readyState < video.HAVE_CURRENT_DATA) return;
+    brightnessCtx.drawImage(video, 0, 0, 16, 16);
+    const data = brightnessCtx.getImageData(0, 0, 16, 16).data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+    const pct = Math.round((sum / (data.length / 4) / 255) * 100);
+    ambientBrightnessLabel.textContent = `Estimated ambient brightness (from the camera view): ${pct}%`;
+  }
+
   async function startCamera() {
     setStatus("Requesting camera…");
     try {
@@ -210,6 +270,10 @@
       buildSensorControls(stream.getVideoTracks()[0]);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
+      requestWakeLock();
+      ambientBrightnessLabel.classList.remove("hide");
+      clearInterval(brightnessTimer);
+      brightnessTimer = setInterval(sampleAmbientBrightness, 500);
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
