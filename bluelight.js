@@ -150,6 +150,22 @@
     }
   ];
 
+  // The three properties above that force their own mode to "manual" as a
+  // side effect of being dragged (colorTemperature/iso+exposureTime/
+  // focusDistance) have no way, until now, to see what mode is actually
+  // active or switch back to the camera's own auto behaviour. These are
+  // real, spec-defined enum properties (getCapabilities() reports them as
+  // an array of supported strings, not a {min,max} range, which is why the
+  // range-building loop below never picked them up on its own).
+  const SENSOR_MODE_CONTROLS = [
+    { key: "whiteBalanceMode", label: "White balance mode", relatedKeys: ["colorTemperature"] },
+    { key: "exposureMode", label: "Exposure mode", relatedKeys: ["iso", "exposureTime", "exposureCompensation"] },
+    { key: "focusMode", label: "Focus mode", relatedKeys: ["focusDistance"] }
+  ];
+  const MODE_VALUE_LABELS = {
+    continuous: "Auto (continuous)", manual: "Manual", "single-shot": "Single-shot", none: "Off"
+  };
+
   let sensorTrack = null;
 
   function buildSensorControls(track) {
@@ -158,6 +174,55 @@
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     const settings = track.getSettings ? track.getSettings() : {};
     let anySupported = false;
+    const valueInputsByKey = {};
+
+    SENSOR_MODE_CONTROLS.forEach((spec) => {
+      const values = caps && caps[spec.key];
+      if (!Array.isArray(values) || !values.length) return;
+      anySupported = true;
+
+      const wrap = document.createElement("label");
+      wrap.className = "hud-slider";
+      wrap.title = `Which of this camera's own focus/exposure/white-balance modes is active. Related sliders below only take effect while this is set to Manual.`;
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = spec.label;
+      const select = document.createElement("select");
+      values.forEach((v) => {
+        const option = document.createElement("option");
+        option.value = v;
+        option.textContent = MODE_VALUE_LABELS[v] || v;
+        select.appendChild(option);
+      });
+      const initial = typeof settings[spec.key] === "string" ? settings[spec.key] : values[0];
+      select.value = initial;
+
+      function syncRelatedDisabled(modeValue) {
+        spec.relatedKeys.forEach((k) => {
+          const input = valueInputsByKey[k];
+          if (input) input.disabled = modeValue !== "manual";
+        });
+      }
+      // Not called here yet -- the related range sliders haven't been
+      // built at this point (mode selects are built first, in the loop
+      // above this one). The re-sync pass after both loops complete
+      // handles the correct initial disabled state instead.
+
+      select.addEventListener("change", async () => {
+        syncRelatedDisabled(select.value);
+        try {
+          await track.applyConstraints({ advanced: [{ [spec.key]: select.value }] });
+        } catch (err) {
+          // Reported as supported but rejected in practice -- remove this
+          // one control rather than leave a dead dropdown.
+          wrap.remove();
+          if (!sensorControls.children.length) sensorHint.classList.remove("hide");
+        }
+      });
+
+      wrap.appendChild(labelSpan);
+      wrap.appendChild(select);
+      sensorControls.appendChild(wrap);
+    });
 
     SENSOR_CONTROLS.forEach((spec) => {
       const range = caps && caps[spec.key];
@@ -176,6 +241,10 @@
       input.max = String(range.max);
       input.step = String(range.step || (spec.key === "exposureTime" || spec.key === "iso" ? 1 : (range.max - range.min) / 100 || 1));
       input.value = String(initial);
+      valueInputsByKey[spec.key] = input;
+      // Initial disabled state (for a value gated by a mode) is set in the
+      // re-sync pass below, once every control -- mode selects and range
+      // sliders alike -- has actually been built.
 
       let debounceTimer = null;
       input.addEventListener("input", () => {
@@ -190,6 +259,21 @@
       wrap.appendChild(labelSpan);
       wrap.appendChild(input);
       sensorControls.appendChild(wrap);
+    });
+
+    // Range sliders are built AFTER mode selects in DOM order, but
+    // syncRelatedDisabled() runs while building each mode select -- before
+    // its related range input(s) exist yet in valueInputsByKey. Re-apply
+    // now that every control (mode and range alike) has been built, so
+    // initial disabled state is correct regardless of build order.
+    SENSOR_MODE_CONTROLS.forEach((spec) => {
+      const values = caps && caps[spec.key];
+      if (!Array.isArray(values) || !values.length) return;
+      const settingsValue = typeof settings[spec.key] === "string" ? settings[spec.key] : values[0];
+      spec.relatedKeys.forEach((k) => {
+        const input = valueInputsByKey[k];
+        if (input) input.disabled = settingsValue !== "manual";
+      });
     });
 
     sensorHint.classList.toggle("hide", anySupported);
@@ -211,6 +295,36 @@
       if (!sensorControls.children.length) sensorHint.classList.remove("hide");
     }
   }
+
+  // ---- Tap to focus/expose ----
+  // pointsOfInterest is real (part of the same Image Capture spec as
+  // everything else in this file), but getCapabilities() doesn't reliably
+  // report a specific shape for it the way it does for a range or an enum
+  // -- so, consistent with the "attempt and remove/ignore on rejection"
+  // approach used everywhere else here, this doesn't gate on a capability
+  // check up front. It just tries, on every tap on the video itself, and
+  // shows the crosshair only once the device has actually accepted it --
+  // silent (not a fake "it worked" flash) wherever it doesn't.
+  const focusCrosshair = document.getElementById("focusCrosshair");
+  video.addEventListener("pointerdown", async (e) => {
+    if (!sensorTrack) return;
+    const rect = video.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    try {
+      await sensorTrack.applyConstraints({ advanced: [{ pointsOfInterest: [{ x, y }] }] });
+      focusCrosshair.style.left = `${e.clientX}px`;
+      focusCrosshair.style.top = `${e.clientY}px`;
+      focusCrosshair.classList.remove("show");
+      // Force reflow so re-adding the class restarts the fade animation on
+      // a second tap, rather than the browser coalescing it as a no-op.
+      void focusCrosshair.offsetWidth;
+      focusCrosshair.classList.add("show");
+    } catch (err) {
+      // Not supported on this device/browser -- no visual, no error.
+    }
+  });
 
   // ---- Screen Wake Lock ----
   // The whole point of this page is extended low-light viewing -- exactly
