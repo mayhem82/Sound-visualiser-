@@ -30,6 +30,10 @@ share a dark visual style and a lot of underlying plumbing:
   (bat) colony emergence/return counts at sunset/sunrise: edge-outline
   highlighting of likely blobs, plus a manual tally. Work in progress, not
   a validated automated counter.
+- **`bluelight.html`** ("Blue Light Filter") — live camera view with blue
+  light reduced and an extra warm shift, softer/warmer for evening use or
+  prolonged viewing. True/filtered blend, Intensity, and Warmth sliders,
+  all live with no calibration step.
 - **`tutorials.html`** — a placeholder grid for short how-to video clips.
 
 No build step, no dependencies — open any `.html` file directly in a

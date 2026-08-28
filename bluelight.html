@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blue Light Filter</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌙</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+<video id="cameraFeed" playsinline muted hidden></video>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Blue Light Filter</h1>
+    <p>Live camera view with blue light reduced — warmer and softer, for evening use or just easier on the eyes during prolonged viewing. This only changes what's drawn on screen here; it doesn't change your device's own display or its other apps.</p>
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
+    <p class="hint"><a href="colorvision.html">Colour Vision Extreme &rarr;</a></p>
+    <p class="hint"><a href="colorassist.html">Colour Assist &rarr;</a></p>
+    <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
+    <p class="hint"><a href="batcount.html">Flying Fox Count &rarr;</a></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <label id="blendWrap" class="hud-slider" title="0% shows the true camera image. 100% shows the fully filtered image.">
+    True &harr; Filtered: <span id="blendLabel">100%</span>
+    <input id="blendSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="intensityWrap" class="hud-slider" title="How much blue light is cut. Higher reduces more blue, shifting the image warmer/yellower.">
+    Intensity: <span id="intensityLabel">50%</span>
+    <input id="intensitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="warmthWrap" class="hud-slider" title="An extra warm push on top of the blue reduction — nudges reds/greens up further, for a stronger evening/night-mode look.">
+    Warmth: <span id="warmthLabel">20%</span>
+    <input id="warmthSlider" type="range" min="0" max="100" value="20">
+  </label>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>
+</div>
+
+<!-- Always on screen, in both HUD and fullscreen states, so there's one
+     large, unmissable, fixed target to get in and back out of fullscreen. -->
+<button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
+
+<script src="bluelight.js"></script>
+</body>
+</html>
