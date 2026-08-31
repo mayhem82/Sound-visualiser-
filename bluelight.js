@@ -28,7 +28,11 @@
   const sensorControls = document.getElementById("sensorControls");
   const sensorHint = document.getElementById("sensorHint");
   const ambientBrightnessLabel = document.getElementById("ambientBrightnessLabel");
+  const ambientRedLabel = document.getElementById("ambientRedLabel");
+  const ambientGreenLabel = document.getElementById("ambientGreenLabel");
   const ambientBlueLabel = document.getElementById("ambientBlueLabel");
+  const ambientBlueGreenRatioLabel = document.getElementById("ambientBlueGreenRatioLabel");
+  const ambientColorTempLabel = document.getElementById("ambientColorTempLabel");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
@@ -351,27 +355,78 @@
   const brightnessCtx = brightnessCanvas.getContext("2d", { willReadFrequently: true });
   let brightnessTimer = null;
 
+  // A plain RGB camera sensor cannot resolve individual wavelengths -- its
+  // "blue" channel is one broad response curve spanning roughly 400-500nm,
+  // not a narrowband reading at any single nanometre figure (450nm, 480nm,
+  // or otherwise). What follows is every quantity that genuinely CAN be
+  // computed from that broadband RGB data, each labelled for exactly what
+  // it is -- channel shares are exact given the sampled pixels; the colour
+  // temperature is a standard, real approximation formula (McCamy 1992,
+  // the same kind of estimate white-balance algorithms use), not a
+  // fabricated reading, but still an approximation that assumes a
+  // blackbody-like light source and is displayed as such.
+  function srgbToLinear(c) {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+
+  // McCamy's approximation (1992): converts CIE 1931 xy chromaticity to a
+  // correlated colour temperature in Kelvin. Accurate mainly in the
+  // 2856K-6504K daylight/tungsten range this suite otherwise deals in;
+  // well outside that range (strongly tinted or narrowband light) it
+  // becomes unreliable, same as any CCT estimate from a handful of RGB
+  // samples rather than a real spectrometer.
+  function estimateColorTempKelvin(x, y) {
+    const n = (x - 0.3320) / (0.1858 - y);
+    return Math.round(449 * n * n * n + 3525 * n * n + 6823.3 * n + 5520.33);
+  }
+
   function sampleAmbientLight() {
     if (!currentStream || video.readyState < video.HAVE_CURRENT_DATA) return;
     brightnessCtx.drawImage(video, 0, 0, 16, 16);
     const data = brightnessCtx.getImageData(0, 0, 16, 16).data;
+    const n = data.length / 4;
     let lumSum = 0;
-    let blueSum = 0;
-    let rgbSum = 0;
+    let rSum = 0, gSum = 0, bSum = 0;
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       lumSum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      blueSum += b;
-      rgbSum += r + g + b;
+      rSum += r; gSum += g; bSum += b;
     }
-    const brightnessPct = Math.round((lumSum / (data.length / 4) / 255) * 100);
+    const brightnessPct = Math.round((lumSum / n / 255) * 100);
     ambientBrightnessLabel.textContent = `Estimated ambient brightness (from the camera view): ${brightnessPct}%`;
-    // rgbSum is 0 only when the sampled frame is pure black -- nothing to
-    // report a share of in that case, so leave the previous reading up
-    // rather than show a misleading 0%.
-    if (rgbSum > 0) {
-      const bluePct = Math.round((blueSum / rgbSum) * 100);
-      ambientBlueLabel.textContent = `Estimated blue light share (from the camera view): ${bluePct}%`;
+
+    const rgbSum = rSum + gSum + bSum;
+    // rgbSum is 0 only when the sampled frame is pure black -- nothing
+    // meaningful to report a share/ratio/temperature of in that case, so
+    // leave the previous readings up rather than show misleading numbers.
+    if (rgbSum <= 0) return;
+
+    const redPct = Math.round((rSum / rgbSum) * 100);
+    const greenPct = Math.round((gSum / rgbSum) * 100);
+    const bluePct = Math.round((bSum / rgbSum) * 100);
+    ambientRedLabel.textContent = `Red channel share: ${redPct}%`;
+    ambientGreenLabel.textContent = `Green channel share: ${greenPct}%`;
+    ambientBlueLabel.textContent = `Blue channel share (whole ~400-500nm band, from the camera view): ${bluePct}%`;
+
+    // Blue-to-green ratio: a rough, real proxy for "shorter blue, nearer
+    // the ~450nm end" vs "longer blue-cyan, nearer the ~480nm end" -- the
+    // green channel's own sensitivity extends further into that longer
+    // range than blue's does, so a lower ratio leans toward the shorter
+    // end and a higher one toward the longer end. Not a substitute for an
+    // actual spectral measurement, just the closest thing an RGB sensor
+    // can offer toward that distinction.
+    const blueGreenRatio = gSum > 0 ? bSum / gSum : 0;
+    ambientBlueGreenRatioLabel.textContent = `Blue/green ratio (rough shorter-vs-longer-blue proxy): ${blueGreenRatio.toFixed(2)}`;
+
+    const rLin = srgbToLinear(rSum / n), gLin = srgbToLinear(gSum / n), bLin = srgbToLinear(bSum / n);
+    const X = 0.4124564 * rLin + 0.3575761 * gLin + 0.1804375 * bLin;
+    const Y = 0.2126729 * rLin + 0.7151522 * gLin + 0.0721750 * bLin;
+    const Z = 0.0193339 * rLin + 0.1191920 * gLin + 0.9503041 * bLin;
+    const xyzSum = X + Y + Z;
+    if (xyzSum > 0) {
+      const kelvin = estimateColorTempKelvin(X / xyzSum, Y / xyzSum);
+      ambientColorTempLabel.textContent = `Estimated colour temperature: ${kelvin}K (approximation, not a spectrometer reading)`;
     }
   }
 
@@ -455,7 +510,11 @@
       hud.classList.remove("hide");
       requestWakeLock();
       ambientBrightnessLabel.classList.remove("hide");
+      ambientRedLabel.classList.remove("hide");
+      ambientGreenLabel.classList.remove("hide");
       ambientBlueLabel.classList.remove("hide");
+      ambientBlueGreenRatioLabel.classList.remove("hide");
+      ambientColorTempLabel.classList.remove("hide");
       clearInterval(brightnessTimer);
       brightnessTimer = setInterval(sampleAmbientLight, 500);
       await refreshVideoDevices();
