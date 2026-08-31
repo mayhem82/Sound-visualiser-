@@ -61,6 +61,10 @@
   const PARTICLE_DEFAULT_SOURCE = "audio";
   const PARTICLE_BEHAVIOR_KEY = "particleBehavior_colorVision_v1";
   const PARTICLE_DEFAULT_BEHAVIOR = "orbit";
+  const PARTICLE_CUSTOM_HUE_KEY = "particleCustomHue_colorVision_v1";
+  const PARTICLE_DEFAULT_CUSTOM_HUE = 280;
+  const PARTICLE_TRAIL_KEY = "particleTrail_colorVision_v1";
+  const PARTICLE_DEFAULT_TRAIL = 0;
   const PARTICLES_PER_BAND = 30;
   const SCENE_GRID_W = 24;
   const SCENE_GRID_H = 14;
@@ -198,6 +202,12 @@
   const particleSourceSelect = document.getElementById("particleSourceSelect");
   const particleBehaviorWrap = document.getElementById("particleBehaviorWrap");
   const particleBehaviorSelect = document.getElementById("particleBehaviorSelect");
+  const particleCustomHueWrap = document.getElementById("particleCustomHueWrap");
+  const particleCustomHueSlider = document.getElementById("particleCustomHueSlider");
+  const particleCustomHueSwatch = document.getElementById("particleCustomHueSwatch");
+  const particleTrailWrap = document.getElementById("particleTrailWrap");
+  const particleTrailSlider = document.getElementById("particleTrailSlider");
+  const particleTrailLabel = document.getElementById("particleTrailLabel");
   const particleCanvas = document.getElementById("particleCanvas");
   const particleCtx = particleCanvas.getContext("2d");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
@@ -487,9 +497,11 @@
   let particleSource = (() => {
     try {
       const raw = localStorage.getItem(PARTICLE_SOURCE_KEY);
-      return raw === "audio" || raw === "tone" ? raw : PARTICLE_DEFAULT_SOURCE;
+      return raw === "audio" || raw === "tone" || raw === "custom" ? raw : PARTICLE_DEFAULT_SOURCE;
     } catch (e) { return PARTICLE_DEFAULT_SOURCE; }
   })();
+  let particleCustomHue = loadOutlineNumberPref(PARTICLE_CUSTOM_HUE_KEY, PARTICLE_DEFAULT_CUSTOM_HUE);
+  let particleTrail = loadOutlineNumberPref(PARTICLE_TRAIL_KEY, PARTICLE_DEFAULT_TRAIL);
   let particleBehavior = (() => {
     try {
       const raw = localStorage.getItem(PARTICLE_BEHAVIOR_KEY);
@@ -796,6 +808,8 @@
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
       particleSource: PARTICLE_DEFAULT_SOURCE,
       particleBehavior: PARTICLE_DEFAULT_BEHAVIOR,
+      particleCustomHue: PARTICLE_DEFAULT_CUSTOM_HUE,
+      particleTrail: PARTICLE_DEFAULT_TRAIL,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1106,19 +1120,28 @@
   //     page, so particles here are deliberately colourless too, and
   //     needing no microphone at all is the point -- this is the option
   //     for using particle effects without a mic permission prompt.
-  const PARTICLE_SOURCES = ["audio", "tone"];
+  //   "custom" -- same no-mic Tone-slider energy, but with a fixed hue you
+  //     pick yourself (particleCustomHue) instead of forced white/grey --
+  //     for when you want a specific colour rather than audio-reactive or
+  //     colourless.
+  const PARTICLE_SOURCES = ["audio", "tone", "custom"];
 
   // Behavior is orthogonal to source above -- source decides colour/energy,
   // behavior decides where a particle wants to be and how it gets there:
   //   "orbit" -- the classic swarm, above: a fixed circular path around
   //     screen-center with a jitter wobble. Never reacts to anything on
   //     screen, just an energy-driven wobble.
-  //   "intelligent" -- particles steer toward the brightest regions of the
-  //     live camera view instead of orbiting a fixed point, using real
-  //     steering (seek + light separation), not a scripted path. This is
-  //     scene-brightness-driven movement, a genuine reaction to the actual
-  //     frame -- not object recognition or true image understanding, and
-  //     the UI copy says so plainly rather than oversell it.
+  //   "intelligent" -- each particle independently steers toward whichever
+  //     distinct bright region of the live camera view is nearest to IT
+  //     (see sampleSceneAttractors/stepIntelligentParticle), not one
+  //     shared destination every particle is instructed toward -- a scene
+  //     with two separate bright spots gets two separate groups of
+  //     particles pursuing them independently, not a single hive-mind
+  //     consensus target. Real steering (seek + separation), not a
+  //     scripted path. This is scene-brightness-driven movement, a genuine
+  //     reaction to the actual frame -- not object recognition or true
+  //     image understanding, and the UI copy says so plainly rather than
+  //     oversell it.
   const PARTICLE_BEHAVIORS = ["orbit", "intelligent"];
 
   // Coarse spatial brightness sample of the live video, independent of the
@@ -1146,32 +1169,50 @@
       if (lum > maxLum) maxLum = lum;
       if (lum < minLum) minLum = lum;
     }
-    // Not enough contrast in the frame to have a meaningful "brightest
-    // spot" -- leave the previous attractor in place rather than chase
-    // noise around a nearly-flat scene.
+    // Not enough contrast in the frame to have any meaningful bright
+    // region(s) -- leave the previous attractors in place rather than
+    // chase noise around a nearly-flat scene.
     if (maxLum - minLum < 20) return;
-    // A luminance-weighted centroid of everything in the brightest 30% of
-    // this frame's range -- not the single highest cell or a fixed top-N
-    // by score, both of which just return whichever cells happen to sort
-    // first among ties (e.g. a large uniformly bright area has hundreds of
-    // cells tied at the same max value; picking "the top few" then finds
-    // whichever of those the sort visits first, not the region's centre).
-    // A weighted centroid is immune to ties entirely and lands on the
-    // actual geometric center of the bright area.
-    const threshold = minLum + (maxLum - minLum) * 0.7;
-    let sumU = 0, sumV = 0, sumW = 0;
-    for (let cy = 0; cy < SCENE_GRID_H; cy++) {
-      for (let cx = 0; cx < SCENE_GRID_W; cx++) {
-        const lum = lums[cy * SCENE_GRID_W + cx];
-        if (lum < threshold) continue;
-        const weight = lum - threshold;
+    // Find every DISTINCT bright region in the frame (4-connected flood
+    // fill over cells above threshold), not one single global average --
+    // a single shared centroid means every particle is chasing the exact
+    // same point regardless of where it actually is (a hive mind, not
+    // intelligence). Each connected region gets its own weighted centroid
+    // (immune to internal ties, same reasoning as before -- a large
+    // uniformly bright area has many cells tied at the max value, and a
+    // weighted centroid lands on its true geometric center regardless).
+    // Different particles then independently pick whichever region is
+    // nearest to THEM (see stepIntelligentParticle), so particles on
+    // opposite sides of the frame can end up pursuing entirely different
+    // targets -- decentralized, not a single instructed destination.
+    const threshold = minLum + (maxLum - minLum) * 0.6;
+    const visited = new Uint8Array(cellCount);
+    const clusters = [];
+    for (let startIdx = 0; startIdx < cellCount; startIdx++) {
+      if (visited[startIdx] || lums[startIdx] < threshold) continue;
+      const stack = [startIdx];
+      visited[startIdx] = 1;
+      let sumU = 0, sumV = 0, sumW = 0;
+      while (stack.length) {
+        const idx = stack.pop();
+        const cx = idx % SCENE_GRID_W, cy = (idx / SCENE_GRID_W) | 0;
+        const weight = lums[idx] - threshold;
         sumU += ((cx + 0.5) / SCENE_GRID_W) * weight;
         sumV += ((cy + 0.5) / SCENE_GRID_H) * weight;
         sumW += weight;
+        if (cx > 0 && !visited[idx - 1] && lums[idx - 1] >= threshold) { visited[idx - 1] = 1; stack.push(idx - 1); }
+        if (cx < SCENE_GRID_W - 1 && !visited[idx + 1] && lums[idx + 1] >= threshold) { visited[idx + 1] = 1; stack.push(idx + 1); }
+        if (cy > 0 && !visited[idx - SCENE_GRID_W] && lums[idx - SCENE_GRID_W] >= threshold) { visited[idx - SCENE_GRID_W] = 1; stack.push(idx - SCENE_GRID_W); }
+        if (cy < SCENE_GRID_H - 1 && !visited[idx + SCENE_GRID_W] && lums[idx + SCENE_GRID_W] >= threshold) { visited[idx + SCENE_GRID_W] = 1; stack.push(idx + SCENE_GRID_W); }
       }
+      if (sumW > 0) clusters.push({ u: sumU / sumW, v: sumV / sumW, weight: sumW });
     }
-    if (sumW <= 0) return;
-    sceneAttractors = [{ u: sumU / sumW, v: sumV / sumW }];
+    if (!clusters.length) return;
+    // Cap how many distinct regions get tracked -- plenty for genuinely
+    // decentralized behaviour without unbounded cost on a very noisy or
+    // high-contrast frame with many small bright specks.
+    clusters.sort((a, b) => b.weight - a.weight);
+    sceneAttractors = clusters.slice(0, 8);
   }
 
   // Only samples while something actually needs it (particles on AND set
@@ -1211,7 +1252,7 @@
 
   function seedParticles() {
     particles = [];
-    if (particleSource === "tone") {
+    if (particleSource === "tone" || particleSource === "custom") {
       // One flat pool, no band split -- overall density matches the 3
       // audio bands combined so switching source doesn't look sparser.
       for (let i = 0; i < PARTICLES_PER_BAND * 3; i++) particles.push(makeParticle(0));
@@ -1234,6 +1275,9 @@
   function getParticleEnergyAndHue(p) {
     if (particleSource === "tone") {
       return { energy: freezeTone / 100, hue: null };
+    }
+    if (particleSource === "custom") {
+      return { energy: freezeTone / 100, hue: particleCustomHue };
     }
     const band = AUDIO_TINT_BANDS[p.bandIndex];
     return { energy: band.rawEnergy, hue: band.hue };
@@ -1265,17 +1309,28 @@
       }
       targetX = nearest.x; targetY = nearest.y;
     }
-    let ax = (targetX - p.x) * 0.0006;
-    let ay = (targetY - p.y) * 0.0006;
-    const minSeparation = 18 * dpr;
+    // Every particle was seeking the exact same point here, which under
+    // additive ("lighter") blending collapsed the whole swarm into one
+    // indistinguishable glowing blob instead of a visible group of
+    // separate particles. Each particle now keeps its own small personal
+    // orbit radius/angle around whatever it's steering toward -- reusing
+    // the same angle/angularSpeed/radiusJitter fields Orbit mode already
+    // has for its own circling -- so the swarm visibly spreads out around
+    // the point of interest instead of piling onto it.
+    p.angle += p.angularSpeed * (0.4 + energy * 1.5);
+    const personalX = targetX + Math.cos(p.angle) * p.radiusJitter * dpr;
+    const personalY = targetY + Math.sin(p.angle) * p.radiusJitter * dpr;
+    let ax = (personalX - p.x) * 0.0025;
+    let ay = (personalY - p.y) * 0.0025;
+    const minSeparation = 14 * dpr;
     for (const other of particles) {
       if (other === p) continue;
       const dx = p.x - other.x, dy = p.y - other.y;
       const d2 = dx * dx + dy * dy;
       if (d2 > 0.01 && d2 < minSeparation * minSeparation) {
         const d = Math.sqrt(d2);
-        ax += (dx / d) * 0.02;
-        ay += (dy / d) * 0.02;
+        ax += (dx / d) * 0.05;
+        ay += (dy / d) * 0.05;
       }
     }
     p.vx = (p.vx + ax) * 0.94;
@@ -1300,7 +1355,18 @@
     const cx = w / 2, cy = h / 2;
     const dpr = w / window.innerWidth || 1;
     const opacity = particleOpacity / 100;
-    particleCtx.clearRect(0, 0, w, h);
+    if (particleTrail > 0) {
+      // Fades the previous frame's glow toward transparent instead of
+      // wiping it -- "destination-out" only consumes the fill's alpha
+      // channel, not its colour, so this thins out existing alpha evenly
+      // without painting a black wash over the video underneath (a plain
+      // black fillRect would darken the corrected view as trails built up).
+      particleCtx.globalCompositeOperation = "destination-out";
+      particleCtx.fillStyle = `rgba(0, 0, 0, ${1 - (particleTrail / 100) * 0.97})`;
+      particleCtx.fillRect(0, 0, w, h);
+    } else {
+      particleCtx.clearRect(0, 0, w, h);
+    }
     particleCtx.globalCompositeOperation = "lighter";
     const intelligent = particleBehavior === "intelligent";
     const attractors = intelligent ? sceneAttractorScreenPositions(w, h) : null;
@@ -1344,6 +1410,16 @@
   function saveParticleBehaviorPref() {
     try { localStorage.setItem(PARTICLE_BEHAVIOR_KEY, particleBehavior); } catch (e) {}
   }
+  function saveParticleCustomHuePref() {
+    try { localStorage.setItem(PARTICLE_CUSTOM_HUE_KEY, String(particleCustomHue)); } catch (e) {}
+  }
+  function saveParticleTrailPref() {
+    try { localStorage.setItem(PARTICLE_TRAIL_KEY, String(particleTrail)); } catch (e) {}
+  }
+
+  function updateParticleCustomHueSwatch() {
+    particleCustomHueSwatch.style.background = `hsl(${particleCustomHue}, 90%, 65%)`;
+  }
 
   function updateParticlesUi() {
     particlesBtn.textContent = particlesEnabled ? "Particle effects: On" : "Particle effects: Off";
@@ -1352,6 +1428,8 @@
     particleOpacityWrap.classList.toggle("hide", !particlesEnabled);
     particleSourceWrap.classList.toggle("hide", !particlesEnabled);
     particleBehaviorWrap.classList.toggle("hide", !particlesEnabled);
+    particleTrailWrap.classList.toggle("hide", !particlesEnabled);
+    particleCustomHueWrap.classList.toggle("hide", !particlesEnabled || particleSource !== "custom");
   }
 
   async function toggleParticles() {
@@ -1383,13 +1461,25 @@
     }
     particleSource = next;
     saveParticleSourcePref();
+    updateParticlesUi();
     if (particlesEnabled) {
       seedParticles();
-      // Switching TO tone while already enabled may leave an audio session
-      // running for no reason if nothing else needs it, same cleanup
-      // toggleAudioTint/toggleBeatFlash already do on their own way out.
+      // Switching TO tone/custom while already enabled may leave an audio
+      // session running for no reason if nothing else needs it, same
+      // cleanup toggleAudioTint/toggleBeatFlash already do on their own way out.
       maybeStopAudioAnalysis();
     }
+  }
+
+  function setParticleCustomHue(next) {
+    particleCustomHue = Math.max(0, Math.min(360, next));
+    saveParticleCustomHuePref();
+    updateParticleCustomHueSwatch();
+  }
+
+  function setParticleTrail(next) {
+    particleTrail = Math.max(0, Math.min(100, next));
+    saveParticleTrailPref();
   }
 
   function setParticleBehavior(next) {
@@ -3997,6 +4087,8 @@
       particleOpacity,
       particleSource,
       particleBehavior,
+      particleCustomHue,
+      particleTrail,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4206,6 +4298,18 @@
       particleBehavior = s.particleBehavior;
       particleBehaviorSelect.value = particleBehavior;
       saveParticleBehaviorPref();
+    }
+    if (Number.isFinite(s.particleCustomHue)) {
+      particleCustomHue = Math.max(0, Math.min(360, s.particleCustomHue));
+      particleCustomHueSlider.value = String(particleCustomHue);
+      updateParticleCustomHueSwatch();
+      saveParticleCustomHuePref();
+    }
+    if (Number.isFinite(s.particleTrail)) {
+      particleTrail = Math.max(0, Math.min(100, s.particleTrail));
+      particleTrailSlider.value = String(particleTrail);
+      particleTrailLabel.textContent = `${particleTrail}%`;
+      saveParticleTrailPref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -4625,6 +4729,15 @@
   particleSourceSelect.value = particleSource;
   particleBehaviorSelect.addEventListener("change", () => setParticleBehavior(particleBehaviorSelect.value));
   particleBehaviorSelect.value = particleBehavior;
+  particleCustomHueSlider.addEventListener("input", () => setParticleCustomHue(parseFloat(particleCustomHueSlider.value)));
+  particleCustomHueSlider.value = String(particleCustomHue);
+  updateParticleCustomHueSwatch();
+  particleTrailSlider.addEventListener("input", () => {
+    setParticleTrail(parseFloat(particleTrailSlider.value));
+    particleTrailLabel.textContent = `${particleTrailSlider.value}%`;
+  });
+  particleTrailSlider.value = String(particleTrail);
+  particleTrailLabel.textContent = `${particleTrail}%`;
   updateParticlesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
