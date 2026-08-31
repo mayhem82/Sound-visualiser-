@@ -534,6 +534,40 @@ html, body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
+/* Bottom-center, clear of #fullscreenBtn (bottom-left) and
+   #floatingCaptureBar (bottom-right) — visible at all times, same as
+   #fullscreenBtn, including in fullscreen. Hidden entirely unless the
+   camera actually reports zoom support (see setupZoom() in colorvision.js). */
+#zoomControl {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#zoomControl.hide {
+  display: none;
+}
+
+#zoomControl .hud-btn {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  padding: 8px 16px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#zoomLabel {
+  color: var(--fg);
+  font-size: 13px;
+  min-width: 3em;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
 .profiles-section {
   margin-top: 16px;
   padding-top: 16px;

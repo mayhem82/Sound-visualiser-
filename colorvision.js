@@ -318,6 +318,10 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
+  const zoomControl = document.getElementById("zoomControl");
+  const zoomOutBtn = document.getElementById("zoomOutBtn");
+  const zoomLabel = document.getElementById("zoomLabel");
+  const zoomInBtn = document.getElementById("zoomInBtn");
   const torchBtn = document.getElementById("torchBtn");
   const exposureModeBtn = document.getElementById("exposureModeBtn");
   const shutterWrap = document.getElementById("shutterWrap");
@@ -571,6 +575,12 @@
   let exposureTrack = null;
   let currentExposureMode = "continuous";
   let exposureModeSupported = false;
+  let zoomTrack = null;
+  let zoomSupported = false;
+  let zoomMin = 1;
+  let zoomMax = 1;
+  let zoomStep = 0.1;
+  let zoomValue = 1;
   let currentStream = null;
   let videoDevices = [];
   let currentDeviceIndex = -1;
@@ -2335,6 +2345,7 @@
     const track = stream.getVideoTracks()[0];
     setupTorch(track);
     setupExposure(track);
+    setupZoom(track);
   }
 
   function stopCurrentStream() {
@@ -2611,6 +2622,51 @@
     try {
       await exposureTrack.applyConstraints({ advanced: [{ exposureCompensation: parseFloat(evSlider.value) }] });
     } catch (err) {}
+  }
+
+  // ---- Zoom ----
+  // A real camera-hardware zoom (Image Capture API's `zoom` constraint),
+  // never a digital crop-and-scale fake — same capability-gated pattern as
+  // torch/exposure above. Fixed outside #hud (see #zoomControl in the
+  // markup) so it survives both plain tap-to-hide and fullscreen, right
+  // alongside #fullscreenBtn.
+
+  function updateZoomLabel() {
+    zoomLabel.textContent = `${zoomValue.toFixed(1)}x`;
+  }
+
+  function setupZoom(track) {
+    zoomTrack = track;
+    zoomSupported = false;
+    zoomControl.classList.add("hide");
+
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const settings = track.getSettings ? track.getSettings() : {};
+    const range = caps && caps.zoom;
+    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) return;
+
+    zoomSupported = true;
+    zoomMin = range.min;
+    zoomMax = range.max;
+    zoomStep = Number.isFinite(range.step) && range.step > 0 ? range.step : (zoomMax - zoomMin) / 10 || 0.1;
+    zoomValue = Number.isFinite(settings.zoom) ? settings.zoom : zoomMin;
+    updateZoomLabel();
+    zoomControl.classList.remove("hide");
+  }
+
+  async function applyZoom(next) {
+    if (!zoomTrack || !zoomSupported) return;
+    const clamped = Math.min(zoomMax, Math.max(zoomMin, next));
+    try {
+      await zoomTrack.applyConstraints({ advanced: [{ zoom: clamped }] });
+      zoomValue = clamped;
+      updateZoomLabel();
+    } catch (err) {
+      // Reported as supported but rejected in practice — stop offering it
+      // rather than leave a dead control.
+      zoomSupported = false;
+      zoomControl.classList.add("hide");
+    }
   }
 
   // ---- Photo & video capture ----
@@ -4680,6 +4736,9 @@
   }
   fullscreenBtn.addEventListener("click", toggleFullscreenMode);
 
+  zoomOutBtn.addEventListener("click", () => applyZoom(zoomValue - zoomStep));
+  zoomInBtn.addEventListener("click", () => applyZoom(zoomValue + zoomStep));
+
   // The browser's own fullscreen-exit gesture (Esc key, swipe-down on
   // mobile, back gesture) doesn't go through exitFullscreenMode() above, so
   // this catches that path too and keeps the button/HUD state in sync.
@@ -4845,7 +4904,7 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar, #fullscreenBtn"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar, #fullscreenBtn, #zoomControl"
     ));
   }
 

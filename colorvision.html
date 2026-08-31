@@ -395,6 +395,16 @@
      back out of fullscreen without hunting for a tiny gap of bare video. -->
 <button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
 
+<!-- Fixed outside #hud like #fullscreenBtn above, so it stays reachable at
+     the bottom of the screen in fullscreen too. Real camera-hardware zoom
+     (Image Capture API), hidden entirely unless the camera actually
+     reports support. -->
+<div id="zoomControl" class="hide" role="group" aria-label="Zoom">
+  <button id="zoomOutBtn" class="hud-btn" title="Zoom out">&#8722;</button>
+  <span id="zoomLabel">1.0x</span>
+  <button id="zoomInBtn" class="hud-btn" title="Zoom in">&#43;</button>
+</div>
+
 <div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
   <div id="viewerPanelInner">
     <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
