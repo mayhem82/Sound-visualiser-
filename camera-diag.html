@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera Diagnostic</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 16px; max-width: 760px; margin: 0 auto; }
+  #panel { position: static; max-width: none; }
+  .device-list { list-style: none; padding: 0; margin: 12px 0; }
+  .device-list li {
+    border: 1px solid rgba(242, 242, 247, 0.2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .device-list .label { font-weight: 600; display: block; margin-bottom: 4px; }
+  .device-list .meta { opacity: 0.7; word-break: break-all; }
+  .preview-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .preview-box { flex: 1 1 260px; }
+  .preview-box video {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    object-fit: cover;
+    border-radius: 10px;
+  }
+  .preview-box h3 { margin: 0 0 6px; font-size: 13px; }
+  select { max-width: 100%; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Camera Diagnostic</h1>
+  <p>Checks what your browser actually sees, before building anything that depends on it. No correction, no recording, no saved data — just facts about the hardware/browser combination on this device.</p>
+
+  <h2>1. What cameras does this browser see?</h2>
+  <button id="checkBtn">Check cameras</button>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <ul id="deviceList" class="device-list"></ul>
+
+  <h2>2. Can two rear cameras be open at the same time?</h2>
+  <p>Pick two of the devices found above and try opening both at once, without closing the first. This is the real test — many phones only allow one camera stream open at a time, even across two different rear lenses.</p>
+  <label>Camera A: <select id="selectA"></select></label><br><br>
+  <label>Camera B: <select id="selectB"></select></label><br><br>
+  <button id="tryBothBtn">Try opening both at once</button>
+  <p id="concurrencyStatus" class="status" role="status" aria-live="polite"></p>
+
+  <div class="preview-row">
+    <div class="preview-box">
+      <h3>Camera A</h3>
+      <video id="videoA" playsinline muted></video>
+    </div>
+    <div class="preview-box">
+      <h3>Camera B</h3>
+      <video id="videoB" playsinline muted></video>
+    </div>
+  </div>
+
+  <p class="hint"><a href="colorvision.html">&larr; Back to Colour Vision Extreme</a></p>
+</div>
+<script src="camera-diag.js"></script>
+</body>
+</html>
