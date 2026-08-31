@@ -172,14 +172,19 @@
   };
 
   let sensorTrack = null;
+  // Maps a mode key (e.g. "whiteBalanceMode") to its live <select> element,
+  // so applySensorConstraint() can reflect a slider-triggered mode switch
+  // back onto the dropdown -- see the mode-select loop below and the sync
+  // in applySensorConstraint().
+  let modeSelectsByKey = {};
 
   function buildSensorControls(track) {
     sensorTrack = track;
     sensorControls.innerHTML = "";
+    modeSelectsByKey = {};
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     const settings = track.getSettings ? track.getSettings() : {};
     let anySupported = false;
-    const valueInputsByKey = {};
 
     SENSOR_MODE_CONTROLS.forEach((spec) => {
       const values = caps && caps[spec.key];
@@ -188,7 +193,7 @@
 
       const wrap = document.createElement("label");
       wrap.className = "hud-slider";
-      wrap.title = `Which of this camera's own focus/exposure/white-balance modes is active. Related sliders below only take effect while this is set to Manual.`;
+      wrap.title = `Which of this camera's own focus/exposure/white-balance modes is active. Dragging a related slider below switches this to Manual on its own -- use this to switch back to the camera's own automatic behaviour.`;
       const labelSpan = document.createElement("span");
       labelSpan.textContent = spec.label;
       const select = document.createElement("select");
@@ -200,26 +205,16 @@
       });
       const initial = typeof settings[spec.key] === "string" ? settings[spec.key] : values[0];
       select.value = initial;
-
-      function syncRelatedDisabled(modeValue) {
-        spec.relatedKeys.forEach((k) => {
-          const input = valueInputsByKey[k];
-          if (input) input.disabled = modeValue !== "manual";
-        });
-      }
-      // Not called here yet -- the related range sliders haven't been
-      // built at this point (mode selects are built first, in the loop
-      // above this one). The re-sync pass after both loops complete
-      // handles the correct initial disabled state instead.
+      modeSelectsByKey[spec.key] = select;
 
       select.addEventListener("change", async () => {
-        syncRelatedDisabled(select.value);
         try {
           await track.applyConstraints({ advanced: [{ [spec.key]: select.value }] });
         } catch (err) {
           // Reported as supported but rejected in practice -- remove this
           // one control rather than leave a dead dropdown.
           wrap.remove();
+          delete modeSelectsByKey[spec.key];
           if (!sensorControls.children.length) sensorHint.classList.remove("hide");
         }
       });
@@ -246,10 +241,6 @@
       input.max = String(range.max);
       input.step = String(range.step || (spec.key === "exposureTime" || spec.key === "iso" ? 1 : (range.max - range.min) / 100 || 1));
       input.value = String(initial);
-      valueInputsByKey[spec.key] = input;
-      // Initial disabled state (for a value gated by a mode) is set in the
-      // re-sync pass below, once every control -- mode selects and range
-      // sliders alike -- has actually been built.
 
       let debounceTimer = null;
       input.addEventListener("input", () => {
@@ -266,21 +257,6 @@
       sensorControls.appendChild(wrap);
     });
 
-    // Range sliders are built AFTER mode selects in DOM order, but
-    // syncRelatedDisabled() runs while building each mode select -- before
-    // its related range input(s) exist yet in valueInputsByKey. Re-apply
-    // now that every control (mode and range alike) has been built, so
-    // initial disabled state is correct regardless of build order.
-    SENSOR_MODE_CONTROLS.forEach((spec) => {
-      const values = caps && caps[spec.key];
-      if (!Array.isArray(values) || !values.length) return;
-      const settingsValue = typeof settings[spec.key] === "string" ? settings[spec.key] : values[0];
-      spec.relatedKeys.forEach((k) => {
-        const input = valueInputsByKey[k];
-        if (input) input.disabled = settingsValue !== "manual";
-      });
-    });
-
     sensorHint.classList.toggle("hide", anySupported);
   }
 
@@ -293,6 +269,14 @@
     const advanced = spec.mode ? { [spec.mode.key]: spec.mode.value, [spec.key]: value } : { [spec.key]: value };
     try {
       await sensorTrack.applyConstraints({ advanced: [advanced] });
+      // Dragging a mode-gated slider (e.g. colour temp) switches its mode
+      // to Manual as a side effect, in the same call above -- reflect that
+      // back onto the mode dropdown so the two controls don't visually
+      // disagree (the dropdown would otherwise still show "Auto").
+      if (spec.mode) {
+        const modeSelect = modeSelectsByKey[spec.mode.key];
+        if (modeSelect) modeSelect.value = spec.mode.value;
+      }
     } catch (err) {
       // Some devices report the capability but reject the constraint in
       // practice -- remove just this control rather than leave a dead one.
