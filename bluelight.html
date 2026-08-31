@@ -61,6 +61,7 @@
   <div id="sensorControls"></div>
   <p id="sensorHint" class="hint hide">This browser/camera doesn't expose any sensor-level controls (most don't) — colour temperature, exposure, ISO, saturation, or anything else here. There's no fallback — the view stays true rather than showing a fake software tint in their place.</p>
   <p id="ambientBrightnessLabel" class="hint hide" title="There's no usable Ambient Light Sensor API in any current browser (Chromium withdrew the one it shipped over fingerprinting concerns) -- this is the average brightness of what the camera is actually looking at right now, sampled from the live feed, not a dedicated light-sensor reading."></p>
+  <p id="ambientBlueLabel" class="hint hide" title="Not a real spectrometer reading -- this is how much of the light in the camera's current view is blue, relative to the whole visible scene (the blue channel's share of red+green+blue), sampled from the live feed itself. A screen or overcast sky reads high; warm indoor bulb light reads low."></p>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>

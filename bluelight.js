@@ -28,6 +28,7 @@
   const sensorControls = document.getElementById("sensorControls");
   const sensorHint = document.getElementById("sensorHint");
   const ambientBrightnessLabel = document.getElementById("ambientBrightnessLabel");
+  const ambientBlueLabel = document.getElementById("ambientBlueLabel");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   let currentStream = null;
@@ -349,29 +350,45 @@
     if (document.visibilityState === "visible" && currentStream && !wakeLock) requestWakeLock();
   });
 
-  // ---- Estimated ambient brightness ----
+  // ---- Estimated ambient brightness & blue light share ----
   // There's no usable Ambient Light Sensor API left in any shipping
   // browser (Chromium shipped one, then withdrew it from stable over
-  // fingerprinting concerns) -- so this isn't a real lux reading, and is
-  // labelled as such. It IS a genuine measurement of something real,
-  // though: the average luminance of what the camera is actually looking
-  // at right now, sampled from the live feed itself, not faked.
+  // fingerprinting concerns), and no real spectrometer either -- so
+  // neither of these is a lux or nanometre reading, and both are labelled
+  // as such. They ARE genuine measurements of something real, though:
+  // sampled directly from the live camera feed itself, not faked.
+  // Brightness is the average luminance of what the camera sees;
+  // blue-light share is how much of that light is blue relative to the
+  // whole visible scene (blue channel's share of R+G+B) -- a screen or an
+  // overcast sky reads high, warm indoor bulb light reads low.
   const brightnessCanvas = document.createElement("canvas");
   brightnessCanvas.width = 16;
   brightnessCanvas.height = 16;
   const brightnessCtx = brightnessCanvas.getContext("2d", { willReadFrequently: true });
   let brightnessTimer = null;
 
-  function sampleAmbientBrightness() {
+  function sampleAmbientLight() {
     if (!currentStream || video.readyState < video.HAVE_CURRENT_DATA) return;
     brightnessCtx.drawImage(video, 0, 0, 16, 16);
     const data = brightnessCtx.getImageData(0, 0, 16, 16).data;
-    let sum = 0;
+    let lumSum = 0;
+    let blueSum = 0;
+    let rgbSum = 0;
     for (let i = 0; i < data.length; i += 4) {
-      sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      lumSum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      blueSum += b;
+      rgbSum += r + g + b;
     }
-    const pct = Math.round((sum / (data.length / 4) / 255) * 100);
-    ambientBrightnessLabel.textContent = `Estimated ambient brightness (from the camera view): ${pct}%`;
+    const brightnessPct = Math.round((lumSum / (data.length / 4) / 255) * 100);
+    ambientBrightnessLabel.textContent = `Estimated ambient brightness (from the camera view): ${brightnessPct}%`;
+    // rgbSum is 0 only when the sampled frame is pure black -- nothing to
+    // report a share of in that case, so leave the previous reading up
+    // rather than show a misleading 0%.
+    if (rgbSum > 0) {
+      const bluePct = Math.round((blueSum / rgbSum) * 100);
+      ambientBlueLabel.textContent = `Estimated blue light share (from the camera view): ${bluePct}%`;
+    }
   }
 
   // ---- Camera device selection ----
@@ -454,8 +471,9 @@
       hud.classList.remove("hide");
       requestWakeLock();
       ambientBrightnessLabel.classList.remove("hide");
+      ambientBlueLabel.classList.remove("hide");
       clearInterval(brightnessTimer);
-      brightnessTimer = setInterval(sampleAmbientBrightness, 500);
+      brightnessTimer = setInterval(sampleAmbientLight, 500);
       await refreshVideoDevices();
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
