@@ -85,6 +85,13 @@
       <option value="tone">Tone (no mic)</option>
     </select>
   </label>
+  <label id="particleBehaviorWrap" class="hud-slider hide" title="Orbit: the classic swarm, always circling screen-center. Intelligent: particles steer toward the brightest parts of the live camera view instead -- a real reaction to the actual scene (brightness-seeking movement), not object recognition or true image understanding.">
+    Behavior:
+    <select id="particleBehaviorSelect">
+      <option value="orbit">Orbit (classic)</option>
+      <option value="intelligent">Intelligent (scene-aware)</option>
+    </select>
+  </label>
   <label id="particleOpacityWrap" class="hud-slider hide" title="How visible the particle swarm is over the corrected view.">
     Particle opacity: <span id="particleOpacityLabel">70%</span>
     <input id="particleOpacitySlider" type="range" min="0" max="100" value="70">

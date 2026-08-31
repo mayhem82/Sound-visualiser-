@@ -59,7 +59,11 @@
   const PARTICLE_DEFAULT_OPACITY = 70;
   const PARTICLE_SOURCE_KEY = "particleSource_colorVision_v1";
   const PARTICLE_DEFAULT_SOURCE = "audio";
+  const PARTICLE_BEHAVIOR_KEY = "particleBehavior_colorVision_v1";
+  const PARTICLE_DEFAULT_BEHAVIOR = "orbit";
   const PARTICLES_PER_BAND = 30;
+  const SCENE_GRID_W = 24;
+  const SCENE_GRID_H = 14;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -192,6 +196,8 @@
   const particleOpacityLabel = document.getElementById("particleOpacityLabel");
   const particleSourceWrap = document.getElementById("particleSourceWrap");
   const particleSourceSelect = document.getElementById("particleSourceSelect");
+  const particleBehaviorWrap = document.getElementById("particleBehaviorWrap");
+  const particleBehaviorSelect = document.getElementById("particleBehaviorSelect");
   const particleCanvas = document.getElementById("particleCanvas");
   const particleCtx = particleCanvas.getContext("2d");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
@@ -484,7 +490,15 @@
       return raw === "audio" || raw === "tone" ? raw : PARTICLE_DEFAULT_SOURCE;
     } catch (e) { return PARTICLE_DEFAULT_SOURCE; }
   })();
+  let particleBehavior = (() => {
+    try {
+      const raw = localStorage.getItem(PARTICLE_BEHAVIOR_KEY);
+      return raw === "orbit" || raw === "intelligent" ? raw : PARTICLE_DEFAULT_BEHAVIOR;
+    } catch (e) { return PARTICLE_DEFAULT_BEHAVIOR; }
+  })();
   let particles = [];
+  let sceneAttractors = [];
+  let sceneSampleTimer = null;
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -781,6 +795,7 @@
       particlesEnabled: false,
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
       particleSource: PARTICLE_DEFAULT_SOURCE,
+      particleBehavior: PARTICLE_DEFAULT_BEHAVIOR,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1093,6 +1108,85 @@
   //     for using particle effects without a mic permission prompt.
   const PARTICLE_SOURCES = ["audio", "tone"];
 
+  // Behavior is orthogonal to source above -- source decides colour/energy,
+  // behavior decides where a particle wants to be and how it gets there:
+  //   "orbit" -- the classic swarm, above: a fixed circular path around
+  //     screen-center with a jitter wobble. Never reacts to anything on
+  //     screen, just an energy-driven wobble.
+  //   "intelligent" -- particles steer toward the brightest regions of the
+  //     live camera view instead of orbiting a fixed point, using real
+  //     steering (seek + light separation), not a scripted path. This is
+  //     scene-brightness-driven movement, a genuine reaction to the actual
+  //     frame -- not object recognition or true image understanding, and
+  //     the UI copy says so plainly rather than oversell it.
+  const PARTICLE_BEHAVIORS = ["orbit", "intelligent"];
+
+  // Coarse spatial brightness sample of the live video, independent of the
+  // (much smaller, single-average) ambient-brightness sampling elsewhere in
+  // this suite -- this one keeps per-cell values so "intelligent" particles
+  // have somewhere spatial to steer toward. Sampled on its own low-rate
+  // timer (see updateSceneSamplingTimer), not every render frame -- a
+  // steering target doesn't need to update at 60fps to look responsive.
+  const sceneSampleCanvas = document.createElement("canvas");
+  sceneSampleCanvas.width = SCENE_GRID_W;
+  sceneSampleCanvas.height = SCENE_GRID_H;
+  const sceneSampleCtx = sceneSampleCanvas.getContext("2d", { willReadFrequently: true });
+
+  function sampleSceneAttractors() {
+    if (!currentStream || video.readyState < video.HAVE_CURRENT_DATA) return;
+    sceneSampleCtx.drawImage(video, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    const cellCount = SCENE_GRID_W * SCENE_GRID_H;
+    const lums = new Float32Array(cellCount);
+    let maxLum = 0, minLum = 255;
+    for (let idx = 0; idx < cellCount; idx++) {
+      const i = idx * 4;
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      lums[idx] = lum;
+      if (lum > maxLum) maxLum = lum;
+      if (lum < minLum) minLum = lum;
+    }
+    // Not enough contrast in the frame to have a meaningful "brightest
+    // spot" -- leave the previous attractor in place rather than chase
+    // noise around a nearly-flat scene.
+    if (maxLum - minLum < 20) return;
+    // A luminance-weighted centroid of everything in the brightest 30% of
+    // this frame's range -- not the single highest cell or a fixed top-N
+    // by score, both of which just return whichever cells happen to sort
+    // first among ties (e.g. a large uniformly bright area has hundreds of
+    // cells tied at the same max value; picking "the top few" then finds
+    // whichever of those the sort visits first, not the region's centre).
+    // A weighted centroid is immune to ties entirely and lands on the
+    // actual geometric center of the bright area.
+    const threshold = minLum + (maxLum - minLum) * 0.7;
+    let sumU = 0, sumV = 0, sumW = 0;
+    for (let cy = 0; cy < SCENE_GRID_H; cy++) {
+      for (let cx = 0; cx < SCENE_GRID_W; cx++) {
+        const lum = lums[cy * SCENE_GRID_W + cx];
+        if (lum < threshold) continue;
+        const weight = lum - threshold;
+        sumU += ((cx + 0.5) / SCENE_GRID_W) * weight;
+        sumV += ((cy + 0.5) / SCENE_GRID_H) * weight;
+        sumW += weight;
+      }
+    }
+    if (sumW <= 0) return;
+    sceneAttractors = [{ u: sumU / sumW, v: sumV / sumW }];
+  }
+
+  // Only samples while something actually needs it (particles on AND set
+  // to "intelligent") -- same on-demand-timer pattern as the mic-driven
+  // audio analysis elsewhere in this file.
+  function updateSceneSamplingTimer() {
+    const needed = particlesEnabled && particleBehavior === "intelligent";
+    if (needed && !sceneSampleTimer) {
+      sceneSampleTimer = setInterval(sampleSceneAttractors, 100);
+    } else if (!needed && sceneSampleTimer) {
+      clearInterval(sceneSampleTimer);
+      sceneSampleTimer = null;
+    }
+  }
+
   function makeParticle(bandIndex) {
     const minDim = Math.min(window.innerWidth, window.innerHeight);
     return {
@@ -1103,7 +1197,15 @@
       radiusJitter: Math.random() * 40 + 10,
       jitterPhase: Math.random() * Math.PI * 2,
       jitterSpeed: 0.5 + Math.random() * 1.2,
-      size: 1.2 + Math.random() * 2.4
+      size: 1.2 + Math.random() * 2.4,
+      // "intelligent" behavior state -- unused in "orbit" mode, but seeded
+      // here regardless so switching behavior mid-session (which re-seeds
+      // via seedParticles()) never needs a separate code path just to
+      // backfill these fields.
+      x: Math.random() * (particleCanvas.width || window.innerWidth),
+      y: Math.random() * (particleCanvas.height || window.innerHeight),
+      vx: 0,
+      vy: 0
     };
   }
 
@@ -1137,6 +1239,62 @@
     return { energy: band.rawEnergy, hue: band.hue };
   }
 
+  // Screen-space positions of the current scene attractors (see
+  // sampleSceneAttractors), recomputed once per draw rather than per
+  // particle -- cheap, and every particle steers against the same set.
+  function sceneAttractorScreenPositions(w, h) {
+    if (!sceneAttractors.length || !video.videoWidth) return [];
+    const cover = computeCoverUv(video.videoWidth, video.videoHeight, w, h);
+    return sceneAttractors.map((a) => ({
+      x: ((a.u - cover.ox) / cover.sx) * w,
+      y: ((a.v - cover.oy) / cover.sy) * h
+    }));
+  }
+
+  // Real steering (seek the nearest scene attractor + light separation from
+  // nearby particles), not a scripted path -- this is the "moves with
+  // purpose" half of Intelligent behavior. Mutates p.x/p.y/p.vx/p.vy in
+  // place; returns nothing, caller reads the updated p.x/p.y after.
+  function stepIntelligentParticle(p, energy, attractors, w, h, dpr) {
+    let targetX = w / 2, targetY = h / 2;
+    if (attractors.length) {
+      let nearest = attractors[0], nearestD = Infinity;
+      for (const a of attractors) {
+        const d = (a.x - p.x) * (a.x - p.x) + (a.y - p.y) * (a.y - p.y);
+        if (d < nearestD) { nearestD = d; nearest = a; }
+      }
+      targetX = nearest.x; targetY = nearest.y;
+    }
+    let ax = (targetX - p.x) * 0.0006;
+    let ay = (targetY - p.y) * 0.0006;
+    const minSeparation = 18 * dpr;
+    for (const other of particles) {
+      if (other === p) continue;
+      const dx = p.x - other.x, dy = p.y - other.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 0.01 && d2 < minSeparation * minSeparation) {
+        const d = Math.sqrt(d2);
+        ax += (dx / d) * 0.02;
+        ay += (dy / d) * 0.02;
+      }
+    }
+    p.vx = (p.vx + ax) * 0.94;
+    p.vy = (p.vy + ay) * 0.94;
+    const maxSpeed = (0.6 + energy * 2.5) * dpr;
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > maxSpeed) {
+      p.vx = (p.vx / speed) * maxSpeed;
+      p.vy = (p.vy / speed) * maxSpeed;
+    }
+    p.x += p.vx;
+    p.y += p.vy;
+    // Soft-wrap rather than clamp/bounce -- a particle that steers off one
+    // edge chasing an attractor near the frame boundary reappears on the
+    // opposite side instead of piling up against the wall.
+    if (p.x < -20) p.x = w + 20; else if (p.x > w + 20) p.x = -20;
+    if (p.y < -20) p.y = h + 20; else if (p.y > h + 20) p.y = -20;
+  }
+
   function updateAndDrawParticles(timeMs) {
     const w = particleCanvas.width, h = particleCanvas.height;
     const cx = w / 2, cy = h / 2;
@@ -1144,13 +1302,21 @@
     const opacity = particleOpacity / 100;
     particleCtx.clearRect(0, 0, w, h);
     particleCtx.globalCompositeOperation = "lighter";
+    const intelligent = particleBehavior === "intelligent";
+    const attractors = intelligent ? sceneAttractorScreenPositions(w, h) : null;
     for (const p of particles) {
       const { energy, hue } = getParticleEnergyAndHue(p);
-      p.angle += p.angularSpeed * (0.4 + energy * 1.5);
-      const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
-      const radius = (p.baseRadius + jitter) * dpr;
-      const x = cx + Math.cos(p.angle) * radius;
-      const y = cy + Math.sin(p.angle) * radius;
+      let x, y;
+      if (intelligent) {
+        stepIntelligentParticle(p, energy, attractors, w, h, dpr);
+        x = p.x; y = p.y;
+      } else {
+        p.angle += p.angularSpeed * (0.4 + energy * 1.5);
+        const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
+        const radius = (p.baseRadius + jitter) * dpr;
+        x = cx + Math.cos(p.angle) * radius;
+        y = cy + Math.sin(p.angle) * radius;
+      }
       const size = (p.size + energy * 4) * dpr;
       const alpha = Math.min(1, 0.15 + energy * 0.85) * opacity;
       if (alpha <= 0.01 || size <= 0) continue;
@@ -1175,6 +1341,9 @@
   function saveParticleSourcePref() {
     try { localStorage.setItem(PARTICLE_SOURCE_KEY, particleSource); } catch (e) {}
   }
+  function saveParticleBehaviorPref() {
+    try { localStorage.setItem(PARTICLE_BEHAVIOR_KEY, particleBehavior); } catch (e) {}
+  }
 
   function updateParticlesUi() {
     particlesBtn.textContent = particlesEnabled ? "Particle effects: On" : "Particle effects: Off";
@@ -1182,6 +1351,7 @@
     particlesBtn.setAttribute("aria-pressed", String(particlesEnabled));
     particleOpacityWrap.classList.toggle("hide", !particlesEnabled);
     particleSourceWrap.classList.toggle("hide", !particlesEnabled);
+    particleBehaviorWrap.classList.toggle("hide", !particlesEnabled);
   }
 
   async function toggleParticles() {
@@ -1190,6 +1360,7 @@
       saveParticlesEnabledPref();
       updateParticlesUi();
       maybeStopAudioAnalysis();
+      updateSceneSamplingTimer();
       return;
     }
     if (particleSource === "audio") {
@@ -1200,6 +1371,7 @@
     particlesEnabled = true;
     saveParticlesEnabledPref();
     updateParticlesUi();
+    updateSceneSamplingTimer();
   }
 
   async function setParticleSource(next) {
@@ -1218,6 +1390,14 @@
       // toggleAudioTint/toggleBeatFlash already do on their own way out.
       maybeStopAudioAnalysis();
     }
+  }
+
+  function setParticleBehavior(next) {
+    if (!PARTICLE_BEHAVIORS.includes(next) || next === particleBehavior) return;
+    particleBehavior = next;
+    saveParticleBehaviorPref();
+    updateSceneSamplingTimer();
+    if (particlesEnabled) seedParticles();
   }
 
   async function startAudioTint() {
@@ -3816,6 +3996,7 @@
       particlesEnabled,
       particleOpacity,
       particleSource,
+      particleBehavior,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4020,6 +4201,11 @@
       particleSource = s.particleSource;
       particleSourceSelect.value = particleSource;
       saveParticleSourcePref();
+    }
+    if (s.particleBehavior === "orbit" || s.particleBehavior === "intelligent") {
+      particleBehavior = s.particleBehavior;
+      particleBehaviorSelect.value = particleBehavior;
+      saveParticleBehaviorPref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -4437,6 +4623,8 @@
   particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
   particleSourceSelect.addEventListener("change", () => setParticleSource(particleSourceSelect.value));
   particleSourceSelect.value = particleSource;
+  particleBehaviorSelect.addEventListener("change", () => setParticleBehavior(particleBehaviorSelect.value));
+  particleBehaviorSelect.value = particleBehavior;
   updateParticlesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
