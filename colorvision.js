@@ -65,7 +65,10 @@
   const PARTICLE_DEFAULT_CUSTOM_HUE = 280;
   const PARTICLE_TRAIL_KEY = "particleTrail_colorVision_v1";
   const PARTICLE_DEFAULT_TRAIL = 0;
-  const PARTICLES_PER_BAND = 30;
+  const PARTICLE_COUNT_KEY = "particleCount_colorVision_v1";
+  const PARTICLE_DEFAULT_COUNT = 30;
+  const PARTICLE_SIZE_KEY = "particleSize_colorVision_v1";
+  const PARTICLE_DEFAULT_SIZE = 100;
   const SCENE_GRID_W = 24;
   const SCENE_GRID_H = 14;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
@@ -208,6 +211,12 @@
   const particleTrailWrap = document.getElementById("particleTrailWrap");
   const particleTrailSlider = document.getElementById("particleTrailSlider");
   const particleTrailLabel = document.getElementById("particleTrailLabel");
+  const particleCountWrap = document.getElementById("particleCountWrap");
+  const particleCountSlider = document.getElementById("particleCountSlider");
+  const particleCountLabel = document.getElementById("particleCountLabel");
+  const particleSizeWrap = document.getElementById("particleSizeWrap");
+  const particleSizeSlider = document.getElementById("particleSizeSlider");
+  const particleSizeLabel = document.getElementById("particleSizeLabel");
   const particleCanvas = document.getElementById("particleCanvas");
   const particleCtx = particleCanvas.getContext("2d");
   const audioTintStrengthWrap = document.getElementById("audioTintStrengthWrap");
@@ -502,6 +511,8 @@
   })();
   let particleCustomHue = loadOutlineNumberPref(PARTICLE_CUSTOM_HUE_KEY, PARTICLE_DEFAULT_CUSTOM_HUE);
   let particleTrail = loadOutlineNumberPref(PARTICLE_TRAIL_KEY, PARTICLE_DEFAULT_TRAIL);
+  let particleCount = loadOutlineNumberPref(PARTICLE_COUNT_KEY, PARTICLE_DEFAULT_COUNT);
+  let particleSizeScale = loadOutlineNumberPref(PARTICLE_SIZE_KEY, PARTICLE_DEFAULT_SIZE);
   let particleBehavior = (() => {
     try {
       const raw = localStorage.getItem(PARTICLE_BEHAVIOR_KEY);
@@ -810,6 +821,8 @@
       particleBehavior: PARTICLE_DEFAULT_BEHAVIOR,
       particleCustomHue: PARTICLE_DEFAULT_CUSTOM_HUE,
       particleTrail: PARTICLE_DEFAULT_TRAIL,
+      particleCount: PARTICLE_DEFAULT_COUNT,
+      particleSizeScale: PARTICLE_DEFAULT_SIZE,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1264,11 +1277,11 @@
     if (particleSource === "tone" || particleSource === "custom") {
       // One flat pool, no band split -- overall density matches the 3
       // audio bands combined so switching source doesn't look sparser.
-      for (let i = 0; i < PARTICLES_PER_BAND * 3; i++) particles.push(makeParticle(0));
+      for (let i = 0; i < particleCount * 3; i++) particles.push(makeParticle(0));
       return;
     }
     for (let bandIndex = 0; bandIndex < 3; bandIndex++) {
-      for (let i = 0; i < PARTICLES_PER_BAND; i++) particles.push(makeParticle(bandIndex));
+      for (let i = 0; i < particleCount; i++) particles.push(makeParticle(bandIndex));
     }
   }
 
@@ -1444,7 +1457,7 @@
         x = cx + Math.cos(p.angle) * radius;
         y = cy + Math.sin(p.angle) * radius;
       }
-      const size = (p.size + energy * 4) * dpr;
+      const size = (p.size * (particleSizeScale / 100) + energy * 4) * dpr;
       const alpha = Math.min(1, 0.15 + energy * 0.85) * opacity;
       if (alpha <= 0.01 || size <= 0) continue;
       const colorStop = hue == null ? (a) => `hsla(0, 0%, 95%, ${a})` : (a) => `hsla(${hue}, 90%, 65%, ${a})`;
@@ -1477,9 +1490,26 @@
   function saveParticleTrailPref() {
     try { localStorage.setItem(PARTICLE_TRAIL_KEY, String(particleTrail)); } catch (e) {}
   }
+  function saveParticleCountPref() {
+    try { localStorage.setItem(PARTICLE_COUNT_KEY, String(particleCount)); } catch (e) {}
+  }
+  function saveParticleSizePref() {
+    try { localStorage.setItem(PARTICLE_SIZE_KEY, String(particleSizeScale)); } catch (e) {}
+  }
 
   function updateParticleCustomHueSwatch() {
     particleCustomHueSwatch.style.background = `hsl(${particleCustomHue}, 90%, 65%)`;
+  }
+
+  function setParticleCount(next) {
+    particleCount = Math.max(5, Math.min(100, Math.round(next)));
+    saveParticleCountPref();
+    if (particlesEnabled) seedParticles();
+  }
+
+  function setParticleSizeScale(next) {
+    particleSizeScale = Math.max(20, Math.min(300, next));
+    saveParticleSizePref();
   }
 
   function updateParticlesUi() {
@@ -1490,6 +1520,8 @@
     particleSourceWrap.classList.toggle("hide", !particlesEnabled);
     particleBehaviorWrap.classList.toggle("hide", !particlesEnabled);
     particleTrailWrap.classList.toggle("hide", !particlesEnabled);
+    particleCountWrap.classList.toggle("hide", !particlesEnabled);
+    particleSizeWrap.classList.toggle("hide", !particlesEnabled);
     particleCustomHueWrap.classList.toggle("hide", !particlesEnabled || particleSource !== "custom");
   }
 
@@ -4150,6 +4182,8 @@
       particleBehavior,
       particleCustomHue,
       particleTrail,
+      particleCount,
+      particleSizeScale,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4371,6 +4405,21 @@
       particleTrailSlider.value = String(particleTrail);
       particleTrailLabel.textContent = `${particleTrail}%`;
       saveParticleTrailPref();
+    }
+    if (Number.isFinite(s.particleCount)) {
+      // Set directly, not via setParticleCount() (which re-seeds on the
+      // spot) -- particles get seeded once anyway when the "restored
+      // last" on/off block below decides whether to turn them on.
+      particleCount = Math.max(5, Math.min(100, Math.round(s.particleCount)));
+      particleCountSlider.value = String(particleCount);
+      particleCountLabel.textContent = String(particleCount);
+      saveParticleCountPref();
+    }
+    if (Number.isFinite(s.particleSizeScale)) {
+      particleSizeScale = Math.max(20, Math.min(300, s.particleSizeScale));
+      particleSizeSlider.value = String(particleSizeScale);
+      particleSizeLabel.textContent = `${particleSizeScale}%`;
+      saveParticleSizePref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -4799,6 +4848,18 @@
   });
   particleTrailSlider.value = String(particleTrail);
   particleTrailLabel.textContent = `${particleTrail}%`;
+  particleCountSlider.addEventListener("input", () => {
+    setParticleCount(parseFloat(particleCountSlider.value));
+    particleCountLabel.textContent = particleCountSlider.value;
+  });
+  particleCountSlider.value = String(particleCount);
+  particleCountLabel.textContent = String(particleCount);
+  particleSizeSlider.addEventListener("input", () => {
+    setParticleSizeScale(parseFloat(particleSizeSlider.value));
+    particleSizeLabel.textContent = `${particleSizeSlider.value}%`;
+  });
+  particleSizeSlider.value = String(particleSizeScale);
+  particleSizeLabel.textContent = `${particleSizeScale}%`;
   updateParticlesUi();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
