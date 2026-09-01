@@ -1407,6 +1407,7 @@
     // only contributes anything when its own toggle is on.
     const socialRadius = 130 * dpr;
     let socAx = 0, socAy = 0, socWeight = 0;
+    let alignVx = 0, alignVy = 0, alignWeight = 0;
     for (const other of particles) {
       if (other === p) continue;
       const dx = other.x - p.x, dy = other.y - p.y;
@@ -1416,8 +1417,7 @@
       if (d < minSeparation) {
         ax -= (dx / d) * 0.05;
         ay -= (dy / d) * 0.05;
-      } else if (d < socialRadius && (particleColourAttract || particleMoveAttract)) {
-        let weight = 0;
+      } else if (d < socialRadius) {
         // Colour attraction: a similarly-hued neighbour (within ~45deg,
         // wrapping around the colour wheel) pulls toward it -- like
         // colours drift together into their own clusters. Skipped
@@ -1426,33 +1426,69 @@
         if (particleColourAttract && hue != null && other._hue != null) {
           const rawDiff = Math.abs(hue - other._hue) % 360;
           const hueDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
-          if (hueDiff < 45) weight += (1 - hueDiff / 45) * 0.7;
+          if (hueDiff < 45) {
+            const weight = (1 - hueDiff / 45) * 0.7;
+            socAx += (dx / d) * weight;
+            socAy += (dy / d) * weight;
+            socWeight += weight;
+          }
         }
-        // Movement attraction: a neighbour that's actively moving pulls
-        // harder than one sitting still -- a particle breaking hard
-        // toward its own target drags nearby stragglers along with it.
+        // Movement attraction: velocity ALIGNMENT, not a pull toward the
+        // neighbour's position -- every particle's speed is clamped to the
+        // same shared per-band/tone maxSpeed (see getParticleEnergyAndHue),
+        // so "who is moving faster" rarely differs enough for a positional
+        // pull to mean anything; nearly everyone is always near the same
+        // top speed. What genuinely varies between particles is HEADING
+        // (each has its own orbit phase/target). Blending a particle's own
+        // velocity toward its nearby movers' weighted-average heading is
+        // what actually drags stragglers along -- they visibly start
+        // moving the same direction as the swarm around them, a real,
+        // continuously-applied effect rather than one capped to a fixed
+        // small magnitude regardless of how much motion is actually near.
         if (particleMoveAttract) {
-          const otherSpeed = Math.hypot(other.vx, other.vy) / dpr;
-          weight += Math.min(1, otherSpeed / PARTICLE_REFERENCE_SPEED) * 0.5;
-        }
-        if (weight > 0) {
-          socAx += (dx / d) * weight;
-          socAy += (dy / d) * weight;
-          socWeight += weight;
+          const otherSpeed = Math.hypot(other.vx, other.vy);
+          if (otherSpeed > 0.001) {
+            const w = Math.min(1, otherSpeed / (PARTICLE_REFERENCE_SPEED * dpr));
+            alignVx += other.vx * w;
+            alignVy += other.vy * w;
+            alignWeight += w;
+          }
         }
       }
-    }
-    if (socWeight > 0) {
-      ax += (socAx / socWeight) * 0.05;
-      ay += (socAy / socWeight) * 0.05;
     }
     p.vx = (p.vx + ax) * 0.94;
     p.vy = (p.vy + ay) * 0.94;
     const maxSpeed = (0.6 + energy * 2.5) * dpr;
-    const speed = Math.hypot(p.vx, p.vy);
+    let speed = Math.hypot(p.vx, p.vy);
     if (speed > maxSpeed) {
       p.vx = (p.vx / speed) * maxSpeed;
       p.vy = (p.vy / speed) * maxSpeed;
+      speed = maxSpeed;
+    }
+    // Colour/movement attraction are applied AFTER the primary steering
+    // velocity is computed and clamped, not folded into it beforehand --
+    // the target-seeking acceleration above is frequently much larger than
+    // the speed cap itself (a particle's personal orbit point can demand
+    // far more tangential speed than maxSpeed allows), so anything blended
+    // in earlier gets renormalized away to nothing once that clamp runs.
+    // Nudging the already-clamped velocity directly, then re-clamping,
+    // means both social forces reliably bend the final heading instead of
+    // being swamped by whatever the primary force happened to need.
+    if (socWeight > 0) {
+      p.vx += (socAx / socWeight) * maxSpeed * 0.5;
+      p.vy += (socAy / socWeight) * maxSpeed * 0.5;
+    }
+    if (alignWeight > 0) {
+      const avgVx = alignVx / alignWeight, avgVy = alignVy / alignWeight;
+      p.vx += (avgVx - p.vx) * 0.25;
+      p.vy += (avgVy - p.vy) * 0.25;
+    }
+    if (socWeight > 0 || alignWeight > 0) {
+      speed = Math.hypot(p.vx, p.vy);
+      if (speed > maxSpeed) {
+        p.vx = (p.vx / speed) * maxSpeed;
+        p.vy = (p.vy / speed) * maxSpeed;
+      }
     }
     p.x += p.vx;
     p.y += p.vy;
