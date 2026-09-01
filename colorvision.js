@@ -373,6 +373,7 @@
   const floatingPointsBtn = document.getElementById("floatingPointsBtn");
 
   const connectTabletBtn = document.getElementById("connectTabletBtn");
+  const castBtn = document.getElementById("castBtn");
   const viewerPanel = document.getElementById("viewerPanel");
   const startShareBtn = document.getElementById("startShareBtn");
   const shareCodeBlock = document.getElementById("shareCodeBlock");
@@ -639,6 +640,8 @@
   // for viewers, decoupled from the operator's own adjustable local view.
   let fixedCorrectionCanvas = null, fixedGl = null, fixedProgram = null,
     fixedUniforms = null, fixedQuadBuffer = null, fixedVideoTexture = null;
+  let castVideo = null;
+  let casting = false;
   let rafId = null;
   let aimIntervalId = null;
 
@@ -2492,6 +2495,75 @@
     fixedVideoTexture = ctxState.videoTexture;
     fixedGl.viewport(0, 0, fixedCorrectionCanvas.width, fixedCorrectionCanvas.height);
     uploadPointUniforms();
+  }
+
+  // ---- Cast to TV ----
+  // Uses the browser's own built-in casting -- the Remote Playback API
+  // (Chrome/Edge/Android) or WebKit's AirPlay picker (Safari) -- rather
+  // than anything custom. Neither needs a registered Cast application (a
+  // real external Google Cast Developer Console setup this suite has no
+  // way to include), but both are genuinely best-effort: casting a live
+  // MediaStream-backed <video> (not a plain file/URL) is inconsistently
+  // supported across devices and Chrome versions, and may simply not find
+  // or connect to every TV. The button is hidden entirely unless one of
+  // the two APIs is actually present -- never a fake control offered on a
+  // browser that can't do this at all.
+  function castApiAvailable() {
+    const probe = document.createElement("video");
+    return "remote" in probe || typeof probe.webkitShowPlaybackTargetPicker === "function";
+  }
+
+  function updateCastUi() {
+    castBtn.textContent = casting ? "\u{1F4FA} Casting…" : "\u{1F4FA} Cast to TV";
+    castBtn.classList.toggle("active", casting);
+    castBtn.setAttribute("aria-pressed", String(casting));
+  }
+
+  function ensureCastVideo() {
+    if (castVideo) return;
+    castVideo = document.createElement("video");
+    castVideo.muted = true;
+    castVideo.playsInline = true;
+    castVideo.setAttribute("x-webkit-airplay", "allow");
+    // Off-screen but in the document, not display:none -- same reasoning
+    // as originalCanvas/fixedCorrectionCanvas: some browsers throttle or
+    // stop updating a captureStream()-fed element that's never painted.
+    castVideo.style.position = "fixed";
+    castVideo.style.left = "-99999px";
+    castVideo.style.top = "0";
+    document.body.appendChild(castVideo);
+
+    if ("remote" in castVideo) {
+      castVideo.remote.addEventListener("connect", () => { casting = true; updateCastUi(); });
+      castVideo.remote.addEventListener("connecting", () => { casting = true; updateCastUi(); });
+      castVideo.remote.addEventListener("disconnect", () => { casting = false; updateCastUi(); });
+    } else {
+      castVideo.addEventListener("webkitcurrentplaybacktargetiswirelesschanged", () => {
+        casting = !!castVideo.webkitCurrentPlaybackTargetIsWireless;
+        updateCastUi();
+      });
+    }
+  }
+
+  async function startCast() {
+    ensureFixedCorrectionCanvas();
+    ensureCastVideo();
+    if (!castVideo.srcObject) {
+      castVideo.srcObject = fixedCorrectionCanvas.captureStream(30);
+      try { await castVideo.play(); } catch (e) { /* autoplay quirks -- remote playback can still work without local playback succeeding */ }
+    }
+    try {
+      if ("remote" in castVideo) {
+        await castVideo.remote.prompt();
+      } else if (typeof castVideo.webkitShowPlaybackTargetPicker === "function") {
+        castVideo.webkitShowPlaybackTargetPicker();
+      }
+    } catch (err) {
+      // NotFoundError (no devices), InvalidStateError (already prompting),
+      // or a user-dismissed prompt all land here -- report plainly rather
+      // than pretending it worked.
+      showCameraStatus("Couldn't start casting: " + (err.message || err.name || "unknown error"));
+    }
   }
 
   function uploadPointUniformsTo(glCtx, prog, uni) {
@@ -5191,6 +5263,9 @@
   connectTabletBtn.addEventListener("click", openViewerPanel);
   startShareBtn.addEventListener("click", toggleTabletShare);
   closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
+
+  castBtn.classList.toggle("hide", !castApiAvailable());
+  castBtn.addEventListener("click", startCast);
 
   cameraOnlyStopBtn.addEventListener("click", exitCameraOnlyMode);
   showReceiveBtn.addEventListener("click", () => {
