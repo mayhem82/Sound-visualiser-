@@ -1156,8 +1156,17 @@
   const sceneSampleCtx = sceneSampleCanvas.getContext("2d", { willReadFrequently: true });
 
   function sampleSceneAttractors() {
-    if (!currentStream || video.readyState < video.HAVE_CURRENT_DATA) return;
-    sceneSampleCtx.drawImage(video, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    // Samples from `stage` -- the actual final corrected/masked output --
+    // not the raw `video` feed. Freeze isolate can mask most of the screen
+    // to black; particles should never be pulled toward a spot that was
+    // bright in the unmasked camera feed but isn't actually visible
+    // anymore. This also means attractor UV lands directly in
+    // particleCanvas's own coordinate space (see
+    // sceneAttractorScreenPositions) -- stage and particleCanvas are
+    // already sized identically, so there's no separate video-aspect
+    // cover-crop to account for here at all.
+    if (!gl || !stage.width || !stage.height) return;
+    sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
     const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
     const cellCount = SCENE_GRID_W * SCENE_GRID_H;
     const lums = new Float32Array(cellCount);
@@ -1287,19 +1296,23 @@
   // sampleSceneAttractors), recomputed once per draw rather than per
   // particle -- cheap, and every particle steers against the same set.
   function sceneAttractorScreenPositions(w, h) {
-    if (!sceneAttractors.length || !video.videoWidth) return [];
-    const cover = computeCoverUv(video.videoWidth, video.videoHeight, w, h);
-    return sceneAttractors.map((a) => ({
-      x: ((a.u - cover.ox) / cover.sx) * w,
-      y: ((a.v - cover.oy) / cover.sy) * h
-    }));
+    // sceneAttractors' u/v are already sampled directly from `stage`
+    // (see sampleSceneAttractors), which shares particleCanvas's exact
+    // pixel dimensions -- no video-aspect cover-crop to reconcile here.
+    if (!sceneAttractors.length) return [];
+    return sceneAttractors.map((a) => ({ x: a.u * w, y: a.v * h }));
   }
 
   // Real steering (seek the nearest scene attractor + light separation from
   // nearby particles), not a scripted path -- this is the "moves with
   // purpose" half of Intelligent behavior. Mutates p.x/p.y/p.vx/p.vy in
   // place; returns nothing, caller reads the updated p.x/p.y after.
-  function stepIntelligentParticle(p, energy, attractors, w, h, dpr) {
+  // Roughly the scale of a lively particle's own speed -- used to
+  // normalize how much a neighbour's motion pulls on others (see the
+  // movement-attraction term below), not a hard cap.
+  const PARTICLE_REFERENCE_SPEED = 3;
+
+  function stepIntelligentParticle(p, energy, hue, attractors, w, h, dpr) {
     let targetX = w / 2, targetY = h / 2;
     if (attractors.length) {
       let nearest = attractors[0], nearestD = Infinity;
@@ -1323,15 +1336,52 @@
     let ax = (personalX - p.x) * 0.0025;
     let ay = (personalY - p.y) * 0.0025;
     const minSeparation = 14 * dpr;
+    // Wider than the separation radius -- close enough to still read as
+    // "part of the same swarm," not the whole screen -- within which
+    // colour/movement can pull particles toward each other, on top of
+    // (not instead of) each one's own pull toward the scene attractor
+    // above. One shared loop over all other particles covers separation,
+    // colour attraction, and movement attraction together in one pass.
+    const socialRadius = 130 * dpr;
+    let socAx = 0, socAy = 0, socWeight = 0;
     for (const other of particles) {
       if (other === p) continue;
-      const dx = p.x - other.x, dy = p.y - other.y;
+      const dx = other.x - p.x, dy = other.y - p.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 > 0.01 && d2 < minSeparation * minSeparation) {
-        const d = Math.sqrt(d2);
-        ax += (dx / d) * 0.05;
-        ay += (dy / d) * 0.05;
+      if (d2 <= 0.01) continue;
+      const d = Math.sqrt(d2);
+      if (d < minSeparation) {
+        ax -= (dx / d) * 0.05;
+        ay -= (dy / d) * 0.05;
+      } else if (d < socialRadius) {
+        let weight = 0;
+        // Colour attraction: a similarly-hued neighbour (within ~45deg,
+        // wrapping around the colour wheel) pulls toward it -- like
+        // colours drift together into their own clusters. Skipped
+        // entirely when either particle has no hue (Tone mode) -- there's
+        // nothing to match on.
+        if (hue != null && other._hue != null) {
+          const rawDiff = Math.abs(hue - other._hue) % 360;
+          const hueDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
+          if (hueDiff < 45) weight += (1 - hueDiff / 45) * 0.7;
+        }
+        // Movement attraction: a neighbour that's actively moving pulls
+        // harder than one sitting still -- a particle breaking hard
+        // toward its own target drags nearby stragglers along with it,
+        // instead of every particle only ever reacting to the fixed
+        // scene attractor on its own.
+        const otherSpeed = Math.hypot(other.vx, other.vy) / dpr;
+        weight += Math.min(1, otherSpeed / PARTICLE_REFERENCE_SPEED) * 0.5;
+        if (weight > 0) {
+          socAx += (dx / d) * weight;
+          socAy += (dy / d) * weight;
+          socWeight += weight;
+        }
       }
+    }
+    if (socWeight > 0) {
+      ax += (socAx / socWeight) * 0.05;
+      ay += (socAy / socWeight) * 0.05;
     }
     p.vx = (p.vx + ax) * 0.94;
     p.vy = (p.vy + ay) * 0.94;
@@ -1370,11 +1420,22 @@
     particleCtx.globalCompositeOperation = "lighter";
     const intelligent = particleBehavior === "intelligent";
     const attractors = intelligent ? sceneAttractorScreenPositions(w, h) : null;
+    if (intelligent) {
+      // Colour/movement attraction (see stepIntelligentParticle) needs
+      // every OTHER particle's hue/energy already known during each
+      // particle's own neighbour loop -- compute and cache them all
+      // first, as scratch fields, before stepping any particle.
+      for (const p of particles) {
+        const eh = getParticleEnergyAndHue(p);
+        p._energy = eh.energy;
+        p._hue = eh.hue;
+      }
+    }
     for (const p of particles) {
-      const { energy, hue } = getParticleEnergyAndHue(p);
+      const { energy, hue } = intelligent ? { energy: p._energy, hue: p._hue } : getParticleEnergyAndHue(p);
       let x, y;
       if (intelligent) {
-        stepIntelligentParticle(p, energy, attractors, w, h, dpr);
+        stepIntelligentParticle(p, energy, hue, attractors, w, h, dpr);
         x = p.x; y = p.y;
       } else {
         p.angle += p.angularSpeed * (0.4 + energy * 1.5);
