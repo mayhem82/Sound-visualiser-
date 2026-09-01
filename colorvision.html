@@ -91,13 +91,21 @@
     <span id="particleCustomHueSwatch" style="display:inline-block; width:1em; height:1em; border-radius:50%; vertical-align:middle; margin:0 4px; border:1px solid rgba(242,242,247,0.4);"></span>
     <input id="particleCustomHueSlider" type="range" min="0" max="360" value="280">
   </label>
-  <label id="particleBehaviorWrap" class="hud-slider hide" title="Orbit: the classic swarm, always circling screen-center. Intelligent: each particle independently steers toward whichever distinct bright region of the live camera view is nearest to it -- a scene with two separate bright spots gets two separate groups of particles, not one shared destination everyone chases. A real reaction to the actual scene (brightness-seeking movement), not object recognition or true image understanding.">
+  <div id="particleBehaviorWrap" class="hud-slider hide" title="Combine any of these -- they are not exclusive, so a swarm can e.g. orbit AND seek brightness AND cluster by colour all at once.">
     Behavior:
-    <select id="particleBehaviorSelect">
-      <option value="orbit">Orbit (classic)</option>
-      <option value="intelligent">Intelligent (scene-aware)</option>
-    </select>
-  </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Each particle keeps circling its target point at its own personal radius, instead of sitting still on top of it.">
+      <input type="checkbox" id="particleOrbitPathCheckbox"> Orbit path
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Each particle independently steers toward whichever distinct bright region of the live camera view is nearest to it -- a scene with two separate bright spots gets two separate groups of particles, not one shared destination everyone chases. A real reaction to the actual scene (brightness-seeking movement), not object recognition or true image understanding.">
+      <input type="checkbox" id="particleSeekBrightnessCheckbox"> Seek brightness
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Particles with a similar hue pull toward each other, clustering same-coloured particles together. No effect in Tone mode (no hue to compare).">
+      <input type="checkbox" id="particleColourAttractCheckbox"> Colour attraction
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px;" title="Faster-moving particles pull nearby slower ones along with them.">
+      <input type="checkbox" id="particleMoveAttractCheckbox"> Movement attraction
+    </label>
+  </div>
   <label id="particleOpacityWrap" class="hud-slider hide" title="How visible the particle swarm is over the corrected view.">
     Particle opacity: <span id="particleOpacityLabel">70%</span>
     <input id="particleOpacitySlider" type="range" min="0" max="100" value="70">

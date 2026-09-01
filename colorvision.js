@@ -59,8 +59,13 @@
   const PARTICLE_DEFAULT_OPACITY = 70;
   const PARTICLE_SOURCE_KEY = "particleSource_colorVision_v1";
   const PARTICLE_DEFAULT_SOURCE = "audio";
+  // Legacy single-choice key (kept only so an old save can be migrated
+  // into the 4 independent toggles below, never written again).
   const PARTICLE_BEHAVIOR_KEY = "particleBehavior_colorVision_v1";
-  const PARTICLE_DEFAULT_BEHAVIOR = "orbit";
+  const PARTICLE_ORBIT_PATH_KEY = "particleOrbitPath_colorVision_v1";
+  const PARTICLE_SEEK_BRIGHTNESS_KEY = "particleSeekBrightness_colorVision_v1";
+  const PARTICLE_COLOUR_ATTRACT_KEY = "particleColourAttract_colorVision_v1";
+  const PARTICLE_MOVE_ATTRACT_KEY = "particleMoveAttract_colorVision_v1";
   const PARTICLE_CUSTOM_HUE_KEY = "particleCustomHue_colorVision_v1";
   const PARTICLE_DEFAULT_CUSTOM_HUE = 280;
   const PARTICLE_TRAIL_KEY = "particleTrail_colorVision_v1";
@@ -204,7 +209,10 @@
   const particleSourceWrap = document.getElementById("particleSourceWrap");
   const particleSourceSelect = document.getElementById("particleSourceSelect");
   const particleBehaviorWrap = document.getElementById("particleBehaviorWrap");
-  const particleBehaviorSelect = document.getElementById("particleBehaviorSelect");
+  const particleOrbitPathCheckbox = document.getElementById("particleOrbitPathCheckbox");
+  const particleSeekBrightnessCheckbox = document.getElementById("particleSeekBrightnessCheckbox");
+  const particleColourAttractCheckbox = document.getElementById("particleColourAttractCheckbox");
+  const particleMoveAttractCheckbox = document.getElementById("particleMoveAttractCheckbox");
   const particleCustomHueWrap = document.getElementById("particleCustomHueWrap");
   const particleCustomHueSlider = document.getElementById("particleCustomHueSlider");
   const particleCustomHueSwatch = document.getElementById("particleCustomHueSwatch");
@@ -514,12 +522,30 @@
   let particleTrail = loadOutlineNumberPref(PARTICLE_TRAIL_KEY, PARTICLE_DEFAULT_TRAIL);
   let particleCount = loadOutlineNumberPref(PARTICLE_COUNT_KEY, PARTICLE_DEFAULT_COUNT);
   let particleSizeScale = loadOutlineNumberPref(PARTICLE_SIZE_KEY, PARTICLE_DEFAULT_SIZE);
-  let particleBehavior = (() => {
+  // Migrates an old single-choice save ("orbit" / "intelligent") into the
+  // 4 independent toggles below, only when none of the new keys have ever
+  // been written yet -- once any of them exists, the old key is ignored
+  // for good. "orbit" maps to today's defaults already (orbit on, the
+  // other three off); "intelligent" was always seek+colour+move bundled
+  // together with orbit off, so that's the one case worth mapping.
+  const legacyParticleBehaviorMigration = (() => {
     try {
+      if (localStorage.getItem(PARTICLE_ORBIT_PATH_KEY) !== null) return null;
       const raw = localStorage.getItem(PARTICLE_BEHAVIOR_KEY);
-      return raw === "orbit" || raw === "intelligent" ? raw : PARTICLE_DEFAULT_BEHAVIOR;
-    } catch (e) { return PARTICLE_DEFAULT_BEHAVIOR; }
+      return raw === "intelligent" ? "intelligent" : null;
+    } catch (e) { return null; }
   })();
+  function loadParticleToggle(key, legacyDefault) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) return raw === "1";
+    } catch (e) { /* fall through to default below */ }
+    return legacyParticleBehaviorMigration === "intelligent" ? legacyDefault : (key === PARTICLE_ORBIT_PATH_KEY);
+  }
+  let particleOrbitPath = loadParticleToggle(PARTICLE_ORBIT_PATH_KEY, false);
+  let particleSeekBrightness = loadParticleToggle(PARTICLE_SEEK_BRIGHTNESS_KEY, true);
+  let particleColourAttract = loadParticleToggle(PARTICLE_COLOUR_ATTRACT_KEY, true);
+  let particleMoveAttract = loadParticleToggle(PARTICLE_MOVE_ATTRACT_KEY, true);
   let particles = [];
   let sceneAttractors = [];
   let sceneSampleTimer = null;
@@ -821,7 +847,10 @@
       particlesEnabled: false,
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
       particleSource: PARTICLE_DEFAULT_SOURCE,
-      particleBehavior: PARTICLE_DEFAULT_BEHAVIOR,
+      particleOrbitPath: true,
+      particleSeekBrightness: false,
+      particleColourAttract: false,
+      particleMoveAttract: false,
       particleCustomHue: PARTICLE_DEFAULT_CUSTOM_HUE,
       particleTrail: PARTICLE_DEFAULT_TRAIL,
       particleCount: PARTICLE_DEFAULT_COUNT,
@@ -1143,22 +1172,32 @@
   const PARTICLE_SOURCES = ["audio", "tone", "custom"];
 
   // Behavior is orthogonal to source above -- source decides colour/energy,
-  // behavior decides where a particle wants to be and how it gets there:
-  //   "orbit" -- the classic swarm, above: a fixed circular path around
-  //     screen-center with a jitter wobble. Never reacts to anything on
-  //     screen, just an energy-driven wobble.
-  //   "intelligent" -- each particle independently steers toward whichever
-  //     distinct bright region of the live camera view is nearest to IT
-  //     (see sampleSceneAttractors/stepIntelligentParticle), not one
+  // behavior decides where a particle wants to be and how it gets there.
+  // Four independently toggleable pieces, any combination at once (not a
+  // single either/or choice) -- each one is a real, separate force/rule,
+  // not a bundled preset you're stuck picking as a whole:
+  //   particleOrbitPath -- the classic full circular sweep + jitter wobble
+  //     around whatever the current base point is (screen-center, or the
+  //     nearest bright region if Seek brightness is also on). Off means a
+  //     much smaller personal offset only (still enough that particles
+  //     sharing a base point don't collapse onto one exact pixel).
+  //   particleSeekBrightness -- each particle independently steers toward
+  //     whichever distinct bright region of the live camera view is
+  //     nearest to IT (see sampleSceneAttractors/stepParticle), not one
   //     shared destination every particle is instructed toward -- a scene
   //     with two separate bright spots gets two separate groups of
   //     particles pursuing them independently, not a single hive-mind
-  //     consensus target. Real steering (seek + separation), not a
-  //     scripted path. This is scene-brightness-driven movement, a genuine
-  //     reaction to the actual frame -- not object recognition or true
-  //     image understanding, and the UI copy says so plainly rather than
-  //     oversell it.
-  const PARTICLE_BEHAVIORS = ["orbit", "intelligent"];
+  //     consensus target. Off means the base point is just screen-center,
+  //     same as the old fixed "Orbit" behavior. This is scene-brightness-
+  //     driven movement, a genuine reaction to the actual frame -- not
+  //     object recognition or true image understanding.
+  //   particleColourAttract -- similarly-hued particles pull toward each
+  //     other (colour clustering). No effect in Tone mode (no hue to
+  //     compare).
+  //   particleMoveAttract -- faster-moving particles pull nearby slower
+  //     ones along with them.
+  // Separation (particles never fully overlapping) always applies
+  // regardless of which of the four are on.
 
   // Coarse spatial brightness sample of the live video, independent of the
   // (much smaller, single-average) ambient-brightness sampling elsewhere in
@@ -1207,7 +1246,7 @@
     // uniformly bright area has many cells tied at the max value, and a
     // weighted centroid lands on its true geometric center regardless).
     // Different particles then independently pick whichever region is
-    // nearest to THEM (see stepIntelligentParticle), so particles on
+    // nearest to THEM (see stepParticle), so particles on
     // opposite sides of the frame can end up pursuing entirely different
     // targets -- decentralized, not a single instructed destination.
     const threshold = minLum + (maxLum - minLum) * 0.6;
@@ -1240,11 +1279,11 @@
     sceneAttractors = clusters.slice(0, 8);
   }
 
-  // Only samples while something actually needs it (particles on AND set
-  // to "intelligent") -- same on-demand-timer pattern as the mic-driven
-  // audio analysis elsewhere in this file.
+  // Only samples while something actually needs it (particles on AND
+  // Seek brightness checked) -- same on-demand-timer pattern as the
+  // mic-driven audio analysis elsewhere in this file.
   function updateSceneSamplingTimer() {
-    const needed = particlesEnabled && particleBehavior === "intelligent";
+    const needed = particlesEnabled && particleSeekBrightness;
     if (needed && !sceneSampleTimer) {
       sceneSampleTimer = setInterval(sampleSceneAttractors, 100);
     } else if (!needed && sceneSampleTimer) {
@@ -1319,45 +1358,53 @@
     return sceneAttractors.map((a) => ({ x: a.u * w, y: a.v * h }));
   }
 
-  // Real steering (seek the nearest scene attractor + light separation from
-  // nearby particles), not a scripted path -- this is the "moves with
-  // purpose" half of Intelligent behavior. Mutates p.x/p.y/p.vx/p.vy in
-  // place; returns nothing, caller reads the updated p.x/p.y after.
-  // Roughly the scale of a lively particle's own speed -- used to
+  // Unified stepping for every particle, regardless of which of the 4
+  // behavior toggles are on -- there's no separate "classic orbit" code
+  // path anymore, since the whole point is that these combine freely
+  // rather than being an either/or choice. Mutates p.x/p.y/p.vx/p.vy/
+  // p.angle in place; returns nothing, caller reads the updated p.x/p.y
+  // after. Roughly the scale of a lively particle's own speed -- used to
   // normalize how much a neighbour's motion pulls on others (see the
   // movement-attraction term below), not a hard cap.
   const PARTICLE_REFERENCE_SPEED = 3;
 
-  function stepIntelligentParticle(p, energy, hue, attractors, w, h, dpr) {
-    let targetX = w / 2, targetY = h / 2;
-    if (attractors.length) {
+  function stepParticle(p, energy, hue, attractors, w, h, dpr, timeMs) {
+    // Base point: screen-center, or the nearest distinct scene attractor
+    // if Seek brightness is on (see sampleSceneAttractors -- particles
+    // pick independently, not one shared destination).
+    let baseX = w / 2, baseY = h / 2;
+    if (particleSeekBrightness && attractors.length) {
       let nearest = attractors[0], nearestD = Infinity;
       for (const a of attractors) {
         const d = (a.x - p.x) * (a.x - p.x) + (a.y - p.y) * (a.y - p.y);
         if (d < nearestD) { nearestD = d; nearest = a; }
       }
-      targetX = nearest.x; targetY = nearest.y;
+      baseX = nearest.x; baseY = nearest.y;
     }
-    // Every particle was seeking the exact same point here, which under
-    // additive ("lighter") blending collapsed the whole swarm into one
-    // indistinguishable glowing blob instead of a visible group of
-    // separate particles. Each particle now keeps its own small personal
-    // orbit radius/angle around whatever it's steering toward -- reusing
-    // the same angle/angularSpeed/radiusJitter fields Orbit mode already
-    // has for its own circling -- so the swarm visibly spreads out around
-    // the point of interest instead of piling onto it.
     p.angle += p.angularSpeed * (0.4 + energy * 1.5);
-    const personalX = targetX + Math.cos(p.angle) * p.radiusJitter * dpr;
-    const personalY = targetY + Math.sin(p.angle) * p.radiusJitter * dpr;
+    // Orbit path on: the full classic sweep radius + jitter wobble around
+    // the base point. Off: a much smaller personal offset only -- still
+    // enough that particles sharing a base point don't collapse onto one
+    // exact pixel under additive ("lighter") blending, without the wide
+    // circular sweep.
+    let offsetRadius;
+    if (particleOrbitPath) {
+      const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
+      offsetRadius = (p.baseRadius + jitter) * dpr;
+    } else {
+      offsetRadius = p.radiusJitter * dpr;
+    }
+    const personalX = baseX + Math.cos(p.angle) * offsetRadius;
+    const personalY = baseY + Math.sin(p.angle) * offsetRadius;
     let ax = (personalX - p.x) * 0.0025;
     let ay = (personalY - p.y) * 0.0025;
     const minSeparation = 14 * dpr;
     // Wider than the separation radius -- close enough to still read as
     // "part of the same swarm," not the whole screen -- within which
     // colour/movement can pull particles toward each other, on top of
-    // (not instead of) each one's own pull toward the scene attractor
-    // above. One shared loop over all other particles covers separation,
-    // colour attraction, and movement attraction together in one pass.
+    // (not instead of) each one's own pull toward its personal point
+    // above. Separation always applies; the colour/movement term inside
+    // only contributes anything when its own toggle is on.
     const socialRadius = 130 * dpr;
     let socAx = 0, socAy = 0, socWeight = 0;
     for (const other of particles) {
@@ -1369,25 +1416,25 @@
       if (d < minSeparation) {
         ax -= (dx / d) * 0.05;
         ay -= (dy / d) * 0.05;
-      } else if (d < socialRadius) {
+      } else if (d < socialRadius && (particleColourAttract || particleMoveAttract)) {
         let weight = 0;
         // Colour attraction: a similarly-hued neighbour (within ~45deg,
         // wrapping around the colour wheel) pulls toward it -- like
         // colours drift together into their own clusters. Skipped
         // entirely when either particle has no hue (Tone mode) -- there's
         // nothing to match on.
-        if (hue != null && other._hue != null) {
+        if (particleColourAttract && hue != null && other._hue != null) {
           const rawDiff = Math.abs(hue - other._hue) % 360;
           const hueDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
           if (hueDiff < 45) weight += (1 - hueDiff / 45) * 0.7;
         }
         // Movement attraction: a neighbour that's actively moving pulls
         // harder than one sitting still -- a particle breaking hard
-        // toward its own target drags nearby stragglers along with it,
-        // instead of every particle only ever reacting to the fixed
-        // scene attractor on its own.
-        const otherSpeed = Math.hypot(other.vx, other.vy) / dpr;
-        weight += Math.min(1, otherSpeed / PARTICLE_REFERENCE_SPEED) * 0.5;
+        // toward its own target drags nearby stragglers along with it.
+        if (particleMoveAttract) {
+          const otherSpeed = Math.hypot(other.vx, other.vy) / dpr;
+          weight += Math.min(1, otherSpeed / PARTICLE_REFERENCE_SPEED) * 0.5;
+        }
         if (weight > 0) {
           socAx += (dx / d) * weight;
           socAy += (dy / d) * weight;
@@ -1410,7 +1457,7 @@
     p.x += p.vx;
     p.y += p.vy;
     // Soft-wrap rather than clamp/bounce -- a particle that steers off one
-    // edge chasing an attractor near the frame boundary reappears on the
+    // edge chasing a point near the frame boundary reappears on the
     // opposite side instead of piling up against the wall.
     if (p.x < -20) p.x = w + 20; else if (p.x > w + 20) p.x = -20;
     if (p.y < -20) p.y = h + 20; else if (p.y > h + 20) p.y = -20;
@@ -1418,7 +1465,6 @@
 
   function updateAndDrawParticles(timeMs) {
     const w = particleCanvas.width, h = particleCanvas.height;
-    const cx = w / 2, cy = h / 2;
     const dpr = w / window.innerWidth || 1;
     const opacity = particleOpacity / 100;
     if (particleTrail > 0) {
@@ -1434,32 +1480,19 @@
       particleCtx.clearRect(0, 0, w, h);
     }
     particleCtx.globalCompositeOperation = "lighter";
-    const intelligent = particleBehavior === "intelligent";
-    const attractors = intelligent ? sceneAttractorScreenPositions(w, h) : null;
-    if (intelligent) {
-      // Colour/movement attraction (see stepIntelligentParticle) needs
-      // every OTHER particle's hue/energy already known during each
-      // particle's own neighbour loop -- compute and cache them all
-      // first, as scratch fields, before stepping any particle.
-      for (const p of particles) {
-        const eh = getParticleEnergyAndHue(p);
-        p._energy = eh.energy;
-        p._hue = eh.hue;
-      }
+    const attractors = particleSeekBrightness ? sceneAttractorScreenPositions(w, h) : [];
+    // Colour/movement attraction need every OTHER particle's hue/energy
+    // already known during each particle's own neighbour loop -- compute
+    // and cache them all first, as scratch fields, before stepping any.
+    for (const p of particles) {
+      const eh = getParticleEnergyAndHue(p);
+      p._energy = eh.energy;
+      p._hue = eh.hue;
     }
     for (const p of particles) {
-      const { energy, hue } = intelligent ? { energy: p._energy, hue: p._hue } : getParticleEnergyAndHue(p);
-      let x, y;
-      if (intelligent) {
-        stepIntelligentParticle(p, energy, hue, attractors, w, h, dpr);
-        x = p.x; y = p.y;
-      } else {
-        p.angle += p.angularSpeed * (0.4 + energy * 1.5);
-        const jitter = Math.sin(timeMs * 0.001 * p.jitterSpeed + p.jitterPhase) * p.radiusJitter * (0.5 + energy);
-        const radius = (p.baseRadius + jitter) * dpr;
-        x = cx + Math.cos(p.angle) * radius;
-        y = cy + Math.sin(p.angle) * radius;
-      }
+      const energy = p._energy, hue = p._hue;
+      stepParticle(p, energy, hue, attractors, w, h, dpr, timeMs);
+      const x = p.x, y = p.y;
       const size = (p.size * (particleSizeScale / 100) + energy * 4) * dpr;
       const alpha = Math.min(1, 0.15 + energy * 0.85) * opacity;
       if (alpha <= 0.01 || size <= 0) continue;
@@ -1484,8 +1517,17 @@
   function saveParticleSourcePref() {
     try { localStorage.setItem(PARTICLE_SOURCE_KEY, particleSource); } catch (e) {}
   }
-  function saveParticleBehaviorPref() {
-    try { localStorage.setItem(PARTICLE_BEHAVIOR_KEY, particleBehavior); } catch (e) {}
+  function saveParticleOrbitPathPref() {
+    try { localStorage.setItem(PARTICLE_ORBIT_PATH_KEY, particleOrbitPath ? "1" : "0"); } catch (e) {}
+  }
+  function saveParticleSeekBrightnessPref() {
+    try { localStorage.setItem(PARTICLE_SEEK_BRIGHTNESS_KEY, particleSeekBrightness ? "1" : "0"); } catch (e) {}
+  }
+  function saveParticleColourAttractPref() {
+    try { localStorage.setItem(PARTICLE_COLOUR_ATTRACT_KEY, particleColourAttract ? "1" : "0"); } catch (e) {}
+  }
+  function saveParticleMoveAttractPref() {
+    try { localStorage.setItem(PARTICLE_MOVE_ATTRACT_KEY, particleMoveAttract ? "1" : "0"); } catch (e) {}
   }
   function saveParticleCustomHuePref() {
     try { localStorage.setItem(PARTICLE_CUSTOM_HUE_KEY, String(particleCustomHue)); } catch (e) {}
@@ -1578,12 +1620,33 @@
     saveParticleTrailPref();
   }
 
-  function setParticleBehavior(next) {
-    if (!PARTICLE_BEHAVIORS.includes(next) || next === particleBehavior) return;
-    particleBehavior = next;
-    saveParticleBehaviorPref();
+  // Each toggle is fully independent -- any combination at once, not a
+  // mutually-exclusive choice. Re-seeding on every change (rather than
+  // just letting the next frame pick up the new flag) keeps each switch
+  // feeling deliberate: e.g. turning Orbit path on/off should visibly
+  // reset the swarm's spread, not just bend the existing paths.
+  function setParticleOrbitPath(next) {
+    if (next === particleOrbitPath) return;
+    particleOrbitPath = next;
+    saveParticleOrbitPathPref();
+    if (particlesEnabled) seedParticles();
+  }
+  function setParticleSeekBrightness(next) {
+    if (next === particleSeekBrightness) return;
+    particleSeekBrightness = next;
+    saveParticleSeekBrightnessPref();
     updateSceneSamplingTimer();
     if (particlesEnabled) seedParticles();
+  }
+  function setParticleColourAttract(next) {
+    if (next === particleColourAttract) return;
+    particleColourAttract = next;
+    saveParticleColourAttractPref();
+  }
+  function setParticleMoveAttract(next) {
+    if (next === particleMoveAttract) return;
+    particleMoveAttract = next;
+    saveParticleMoveAttractPref();
   }
 
   async function startAudioTint() {
@@ -4251,7 +4314,10 @@
       particlesEnabled,
       particleOpacity,
       particleSource,
-      particleBehavior,
+      particleOrbitPath,
+      particleSeekBrightness,
+      particleColourAttract,
+      particleMoveAttract,
       particleCustomHue,
       particleTrail,
       particleCount,
@@ -4452,7 +4518,7 @@
       particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
       saveParticleOpacityPref();
     }
-    if (s.particleSource === "audio" || s.particleSource === "tone") {
+    if (s.particleSource === "audio" || s.particleSource === "tone" || s.particleSource === "custom") {
       // Set directly (not via setParticleSource, which is for interactive
       // switching and requests the mic on the spot) -- the later on/off
       // restore below reads particleSource when it decides whether
@@ -4461,10 +4527,36 @@
       particleSourceSelect.value = particleSource;
       saveParticleSourcePref();
     }
-    if (s.particleBehavior === "orbit" || s.particleBehavior === "intelligent") {
-      particleBehavior = s.particleBehavior;
-      particleBehaviorSelect.value = particleBehavior;
-      saveParticleBehaviorPref();
+    // New-format templates carry the 4 independent toggles directly;
+    // older templates (saved before this became checkboxes) carry the
+    // single legacy particleBehavior string instead -- map that the same
+    // way the one-time localStorage migration does, so an old template
+    // still loads with the same effective behavior it had when saved.
+    if (typeof s.particleOrbitPath === "boolean" || typeof s.particleSeekBrightness === "boolean" ||
+      typeof s.particleColourAttract === "boolean" || typeof s.particleMoveAttract === "boolean") {
+      if (typeof s.particleOrbitPath === "boolean") particleOrbitPath = s.particleOrbitPath;
+      if (typeof s.particleSeekBrightness === "boolean") particleSeekBrightness = s.particleSeekBrightness;
+      if (typeof s.particleColourAttract === "boolean") particleColourAttract = s.particleColourAttract;
+      if (typeof s.particleMoveAttract === "boolean") particleMoveAttract = s.particleMoveAttract;
+    } else if (s.particleBehavior === "orbit" || s.particleBehavior === "intelligent") {
+      const legacyIntelligent = s.particleBehavior === "intelligent";
+      particleOrbitPath = !legacyIntelligent;
+      particleSeekBrightness = legacyIntelligent;
+      particleColourAttract = legacyIntelligent;
+      particleMoveAttract = legacyIntelligent;
+    }
+    if (typeof s.particleOrbitPath === "boolean" || typeof s.particleSeekBrightness === "boolean" ||
+      typeof s.particleColourAttract === "boolean" || typeof s.particleMoveAttract === "boolean" ||
+      s.particleBehavior === "orbit" || s.particleBehavior === "intelligent") {
+      particleOrbitPathCheckbox.checked = particleOrbitPath;
+      particleSeekBrightnessCheckbox.checked = particleSeekBrightness;
+      particleColourAttractCheckbox.checked = particleColourAttract;
+      particleMoveAttractCheckbox.checked = particleMoveAttract;
+      saveParticleOrbitPathPref();
+      saveParticleSeekBrightnessPref();
+      saveParticleColourAttractPref();
+      saveParticleMoveAttractPref();
+      updateSceneSamplingTimer();
     }
     if (Number.isFinite(s.particleCustomHue)) {
       particleCustomHue = Math.max(0, Math.min(360, s.particleCustomHue));
@@ -4909,8 +5001,15 @@
   particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
   particleSourceSelect.addEventListener("change", () => setParticleSource(particleSourceSelect.value));
   particleSourceSelect.value = particleSource;
-  particleBehaviorSelect.addEventListener("change", () => setParticleBehavior(particleBehaviorSelect.value));
-  particleBehaviorSelect.value = particleBehavior;
+  particleOrbitPathCheckbox.addEventListener("change", () => setParticleOrbitPath(particleOrbitPathCheckbox.checked));
+  particleOrbitPathCheckbox.checked = particleOrbitPath;
+  particleSeekBrightnessCheckbox.addEventListener("change", () => setParticleSeekBrightness(particleSeekBrightnessCheckbox.checked));
+  particleSeekBrightnessCheckbox.checked = particleSeekBrightness;
+  particleColourAttractCheckbox.addEventListener("change", () => setParticleColourAttract(particleColourAttractCheckbox.checked));
+  particleColourAttractCheckbox.checked = particleColourAttract;
+  particleMoveAttractCheckbox.addEventListener("change", () => setParticleMoveAttract(particleMoveAttractCheckbox.checked));
+  particleMoveAttractCheckbox.checked = particleMoveAttract;
+  updateSceneSamplingTimer();
   particleCustomHueSlider.addEventListener("input", () => setParticleCustomHue(parseFloat(particleCustomHueSlider.value)));
   particleCustomHueSlider.value = String(particleCustomHue);
   updateParticleCustomHueSwatch();
