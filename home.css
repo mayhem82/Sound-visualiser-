@@ -42,11 +42,11 @@ html, body {
   color: rgba(242, 242, 247, 0.85);
 }
 
-#homeStory {
+#homeStory, #homeNext {
   margin-bottom: 56px;
 }
 
-#homeStory h2, #homeFeatures h2 {
+#homeStory h2, #homeNext h2, #homeFeatures h2 {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -55,19 +55,26 @@ html, body {
   text-align: center;
 }
 
-#homeStory p {
+#homeStory p, #homeNext p {
   font-size: 16px;
   line-height: 1.7;
   color: rgba(242, 242, 247, 0.85);
   margin: 0 0 16px;
 }
 
-#homeStory a {
+#homeStory a, #homeNext a {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid rgba(125, 211, 252, 0.35);
 }
-#homeStory a:hover { border-bottom-color: var(--accent); }
+#homeStory a:hover, #homeNext a:hover { border-bottom-color: var(--accent); }
+
+#homeNext {
+  padding: 20px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  background: rgba(125, 211, 252, 0.04);
+}
 
 #featureGrid {
   display: grid;
