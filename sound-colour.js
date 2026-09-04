@@ -76,6 +76,29 @@
   const PARTICLE_DEFAULT_SIZE = 100;
   const SCENE_GRID_W = 24;
   const SCENE_GRID_H = 14;
+  // Colour proximity chime -- first step of the "Sight <-> Sound" direction
+  // (see index.html's "What's next" section): a soft tone that rises in
+  // pitch as the live camera view nears a saved calibration colour, an
+  // audible second channel alongside the visual correction.
+  const CHIME_ENABLED_KEY = "chimeEnabled_colorVision_v1";
+  const CHIME_VOLUME_KEY = "chimeVolume_colorVision_v1";
+  const CHIME_DEFAULT_VOLUME = 50;
+  // Dominant colour tone -- a second, more ambient sonification: rather
+  // than reacting to a saved calibration colour specifically, a soft
+  // continuous tone tracks the whole scene's average colour every ~150ms --
+  // hue drives pitch, lightness drives volume. A different, more general
+  // "hearing the colour" channel than the chime's proximity-to-a-point one.
+  const DOM_TONE_ENABLED_KEY = "domToneEnabled_colorVision_v1";
+  const DOM_TONE_VOLUME_KEY = "domToneVolume_colorVision_v1";
+  const DOM_TONE_DEFAULT_VOLUME = 40;
+  // Edge texture tone -- a third sonification channel: rather than colour,
+  // this one tracks structural complexity (how much the scene's low-res
+  // luminance grid varies cell-to-cell) as a filtered-noise texture --
+  // busier/edgier scenes sound rougher/brighter, flat colour fields stay
+  // near-silent.
+  const EDGE_TONE_ENABLED_KEY = "edgeToneEnabled_colorVision_v1";
+  const EDGE_TONE_VOLUME_KEY = "edgeToneVolume_colorVision_v1";
+  const EDGE_TONE_DEFAULT_VOLUME = 35;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -98,6 +121,13 @@
   const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
   const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
   const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
+  // Audio -> Correction: the "Sight <-> Sound" direction reaching further
+  // than Audio colour tint's hue-only wash -- bass/mid/treble instead boost
+  // the correction blend / spread / outline strength themselves. Shares
+  // Audio colour tint's microphone/analyser (see audioAnalysisNeeded).
+  const AUDIO_REACT_ENABLED_KEY = "audioReactEnabled_colorVision_v1";
+  const AUDIO_REACT_STRENGTH_KEY = "audioReactStrength_colorVision_v1";
+  const AUDIO_REACT_DEFAULT_STRENGTH = 40;
   // A second, artistic source of colour besides the camera: live mic
   // input, split into bands (and hues) similar to Sound Nebula's particle
   // visualiser, so the "mood" of whatever's playing can nudge the corrected
@@ -202,6 +232,10 @@
   const spreadLabel = document.getElementById("spreadLabel");
   const audioTintBtn = document.getElementById("audioTintBtn");
   const audioTintResetBtn = document.getElementById("audioTintResetBtn");
+  const audioReactBtn = document.getElementById("audioReactBtn");
+  const audioReactStrengthWrap = document.getElementById("audioReactStrengthWrap");
+  const audioReactStrengthSlider = document.getElementById("audioReactStrengthSlider");
+  const audioReactStrengthLabel = document.getElementById("audioReactStrengthLabel");
   const particlesBtn = document.getElementById("particlesBtn");
   const particleOpacityWrap = document.getElementById("particleOpacityWrap");
   const particleOpacitySlider = document.getElementById("particleOpacitySlider");
@@ -347,6 +381,18 @@
   const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
+  const chimeBtn = document.getElementById("chimeBtn");
+  const chimeVolumeWrap = document.getElementById("chimeVolumeWrap");
+  const chimeVolumeSlider = document.getElementById("chimeVolumeSlider");
+  const chimeVolumeLabel = document.getElementById("chimeVolumeLabel");
+  const domToneBtn = document.getElementById("domToneBtn");
+  const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
+  const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
+  const domToneVolumeLabel = document.getElementById("domToneVolumeLabel");
+  const edgeToneBtn = document.getElementById("edgeToneBtn");
+  const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
+  const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
+  const edgeToneVolumeLabel = document.getElementById("edgeToneVolumeLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -552,6 +598,10 @@
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
+  let audioReactEnabled = (() => {
+    try { return localStorage.getItem(AUDIO_REACT_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let audioReactStrength = loadOutlineNumberPref(AUDIO_REACT_STRENGTH_KEY, AUDIO_REACT_DEFAULT_STRENGTH);
   let audioTintStrength = loadOutlineNumberPref(AUDIO_TINT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_STRENGTH);
   let audioTintSatStrength = loadOutlineNumberPref(AUDIO_TINT_SAT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_SAT_STRENGTH);
   let audioTintLightStrength = loadOutlineNumberPref(AUDIO_TINT_LIGHT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_LIGHT_STRENGTH);
@@ -855,6 +905,14 @@
       particleTrail: PARTICLE_DEFAULT_TRAIL,
       particleCount: PARTICLE_DEFAULT_COUNT,
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
+      chimeEnabled: false,
+      chimeVolume: CHIME_DEFAULT_VOLUME,
+      domToneEnabled: false,
+      domToneVolume: DOM_TONE_DEFAULT_VOLUME,
+      edgeToneEnabled: false,
+      edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
+      audioReactEnabled: false,
+      audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1030,6 +1088,12 @@
   function saveAudioTintEnabledPref() {
     try { localStorage.setItem(AUDIO_TINT_ENABLED_KEY, audioTintEnabled ? "1" : "0"); } catch (e) {}
   }
+  function saveAudioReactEnabledPref() {
+    try { localStorage.setItem(AUDIO_REACT_ENABLED_KEY, audioReactEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveAudioReactStrengthPref() {
+    try { localStorage.setItem(AUDIO_REACT_STRENGTH_KEY, String(audioReactStrength)); } catch (e) {}
+  }
   function saveAudioTintStrengthPref() {
     try { localStorage.setItem(AUDIO_TINT_STRENGTH_KEY, String(audioTintStrength)); } catch (e) {}
   }
@@ -1145,7 +1209,35 @@
   }
 
   function audioAnalysisNeeded() {
-    return (audioTintEnabled || beatFlashEnabled || (particlesEnabled && particleSource === "audio"));
+    return (audioTintEnabled || beatFlashEnabled || audioReactEnabled || (particlesEnabled && particleSource === "audio"));
+  }
+
+  function updateAudioReactUi() {
+    audioReactBtn.textContent = `Audio → Correction: ${audioReactEnabled ? "On" : "Off"}`;
+    audioReactBtn.classList.toggle("active", audioReactEnabled);
+    audioReactBtn.setAttribute("aria-pressed", String(audioReactEnabled));
+    audioReactStrengthWrap.classList.toggle("hide", !audioReactEnabled);
+  }
+
+  // Bass boosts the correction blend, mid boosts spread, treble boosts
+  // outline blend -- each on top of (never replacing) that control's own
+  // slider value, easing back down as the energy that drove it fades
+  // (rawEnergy itself already comes back from computeAudioTintHue() smoothed
+  // by the analyser's own smoothingTimeConstant, so no separate decay is
+  // needed here). Silently no-ops back to the plain slider values whenever
+  // the toggle is off or no analyser is running yet (rawEnergy stays 0).
+  function computeReactiveUniforms() {
+    const baseBlend = parseFloat(blendSlider.value) / 100;
+    if (!audioReactEnabled) return { blend: baseBlend, spread, outlineBlend };
+    const bass = AUDIO_TINT_BANDS[0].rawEnergy;
+    const mid = AUDIO_TINT_BANDS[1].rawEnergy;
+    const treble = AUDIO_TINT_BANDS[2].rawEnergy;
+    const k = audioReactStrength / 100;
+    return {
+      blend: Math.min(1, baseBlend + bass * k * 0.6),
+      spread: spread * (1 + mid * k * 4),
+      outlineBlend: Math.min(1, outlineBlend + treble * k * 0.7)
+    };
   }
 
   // ---- Particle effects (ported from Sound Nebula's particle swarm) ----
@@ -1736,6 +1828,21 @@
     audioTintEnabled = true;
     saveAudioTintEnabledPref();
     updateAudioTintUi();
+  }
+
+  async function toggleAudioReact() {
+    if (audioReactEnabled) {
+      audioReactEnabled = false;
+      saveAudioReactEnabledPref();
+      updateAudioReactUi();
+      maybeStopAudioAnalysis();
+      return;
+    }
+    const started = audioTintCtx ? true : await startAudioTint();
+    if (!started) return;
+    audioReactEnabled = true;
+    saveAudioReactEnabledPref();
+    updateAudioReactUi();
   }
 
   // ---- Beat flash (ported from Sound Nebula) ----
@@ -2709,14 +2816,15 @@
   function renderLoop() {
     if (!paused && video.readyState >= video.HAVE_CURRENT_DATA) {
       const cover = computeCoverUv(video.videoWidth, video.videoHeight, stage.width, stage.height);
+      const reactive = computeReactiveUniforms();
 
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.uniform1i(uniforms.uTex, 0);
-      gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
+      gl.uniform1f(uniforms.uBlend, reactive.blend);
       gl.uniform1f(uniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uOutlineThickness, outlineThickness);
-      gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
+      gl.uniform1f(uniforms.uOutlineBlend, reactive.outlineBlend);
       gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
       gl.uniform3f(uniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
       gl.uniform1f(uniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
@@ -2734,7 +2842,7 @@
       gl.uniform3f(uniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
       gl.uniform3f(uniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-      gl.uniform1f(uniforms.uSpread, spread);
+      gl.uniform1f(uniforms.uSpread, reactive.spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
       gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
@@ -2783,7 +2891,7 @@
         fixedGl.uniform1f(fixedUniforms.uBlend, 1);
         fixedGl.uniform1f(fixedUniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uOutlineThickness, outlineThickness);
-        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
+        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, reactive.outlineBlend);
         fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
         fixedGl.uniform3f(fixedUniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
         fixedGl.uniform1f(fixedUniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
@@ -2801,7 +2909,7 @@
         fixedGl.uniform3f(fixedUniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
         fixedGl.uniform3f(fixedUniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
         fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-        fixedGl.uniform1f(fixedUniforms.uSpread, spread);
+        fixedGl.uniform1f(fixedUniforms.uSpread, reactive.spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
         fixedGl.uniform2f(fixedUniforms.uUvScale, cover.sx, cover.sy);
         fixedGl.uniform2f(fixedUniforms.uUvOffset, cover.ox, cover.oy);
@@ -2823,6 +2931,13 @@
 
   async function startCamera() {
     setStatus("Requesting camera…");
+    // A chime enabled from a previous session has its AudioContext created
+    // suspended (no user gesture at page-load time to resume it against) --
+    // this click is a real gesture, so resume it here rather than leaving
+    // the chime silently non-functional for the rest of the session.
+    if (chimeAudioCtx && chimeAudioCtx.state === "suspended") chimeAudioCtx.resume().catch(() => {});
+    if (domToneAudioCtx && domToneAudioCtx.state === "suspended") domToneAudioCtx.resume().catch(() => {});
+    if (edgeToneAudioCtx && edgeToneAudioCtx.state === "suspended") edgeToneAudioCtx.resume().catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
@@ -4047,6 +4162,311 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // ---- Colour proximity chime ----
+  // First step of the "Sight <-> Sound" direction (index.html's "What's
+  // next" section): a soft tone that rises in pitch and volume as the live
+  // camera view (sampled the same way calibration aiming already does, via
+  // sampleCenterColor -- the crosshair position when not actively aiming)
+  // nears whichever saved calibration colour it's closest to in Lab space
+  // -- the same colour-distance space this file's correction spread
+  // already reasons in, not a naive RGB difference. Silent whenever
+  // nothing is close or no colours are saved yet, so it never drones.
+  //
+  // Runs on its own AudioContext with nothing feeding INTO it -- it only
+  // ever plays an oscillator tone out, never reads from the microphone --
+  // so there's no risk of it looping back into Audio colour tint's or
+  // Sound Nebula's analyser input.
+  let chimeEnabled = (() => {
+    try { return localStorage.getItem(CHIME_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let chimeVolume = loadOutlineNumberPref(CHIME_VOLUME_KEY, CHIME_DEFAULT_VOLUME);
+  let chimeAudioCtx = null;
+  let chimeOsc = null;
+  let chimeGainNode = null;
+  let chimeTimerId = null;
+
+  // Lab-space distance at which the chime is essentially "on the exact
+  // colour" (full volume/pitch) vs. fully faded out to silence.
+  const CHIME_CLOSE_LAB_DISTANCE = 6;
+  const CHIME_FAR_LAB_DISTANCE = 32;
+
+  function nearestSavedPointLabDistance(rgb) {
+    if (!points.length) return null;
+    const [L, A, B] = rgb2lab(rgb[0], rgb[1], rgb[2]);
+    let best = Infinity;
+    for (const p of points) {
+      const [pL, pA, pB] = rgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
+      const d = Math.hypot(L - pL, A - pA, B - pB);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function ensureChimeAudio() {
+    if (chimeAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    chimeAudioCtx = new Ctx();
+    chimeOsc = chimeAudioCtx.createOscillator();
+    chimeOsc.type = "sine";
+    chimeOsc.frequency.value = 220;
+    chimeGainNode = chimeAudioCtx.createGain();
+    chimeGainNode.gain.value = 0;
+    chimeOsc.connect(chimeGainNode);
+    chimeGainNode.connect(chimeAudioCtx.destination);
+    chimeOsc.start();
+  }
+
+  function updateProximityChime() {
+    if (!chimeGainNode) return;
+    const now = chimeAudioCtx.currentTime;
+    if (video.readyState < video.HAVE_CURRENT_DATA) {
+      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
+      return;
+    }
+    const dist = nearestSavedPointLabDistance(sampleCenterColor());
+    if (dist == null) {
+      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
+      return;
+    }
+    const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (CHIME_FAR_LAB_DISTANCE - CHIME_CLOSE_LAB_DISTANCE)));
+    const targetGain = closeness > 0.02 ? closeness * (chimeVolume / 100) * 0.3 : 0;
+    const targetFreq = 220 + closeness * 440;
+    chimeGainNode.gain.setTargetAtTime(targetGain, now, 0.08);
+    chimeOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
+  }
+
+  function updateChimeSamplingTimer() {
+    if (chimeEnabled && !chimeTimerId) {
+      ensureChimeAudio();
+      if (chimeAudioCtx && chimeAudioCtx.state === "suspended") chimeAudioCtx.resume().catch(() => {});
+      chimeTimerId = setInterval(updateProximityChime, 150);
+    } else if (!chimeEnabled && chimeTimerId) {
+      clearInterval(chimeTimerId);
+      chimeTimerId = null;
+      if (chimeGainNode) chimeGainNode.gain.setTargetAtTime(0, chimeAudioCtx.currentTime, 0.05);
+    }
+  }
+
+  function saveChimeEnabledPref() {
+    try { localStorage.setItem(CHIME_ENABLED_KEY, chimeEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveChimeVolumePref() {
+    try { localStorage.setItem(CHIME_VOLUME_KEY, String(chimeVolume)); } catch (e) {}
+  }
+
+  function setChimeEnabled(next) {
+    if (next === chimeEnabled) return;
+    chimeEnabled = next;
+    chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
+    chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
+    chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+    saveChimeEnabledPref();
+    updateChimeSamplingTimer();
+  }
+
+  // ---- Dominant colour tone ----
+  // A second, more ambient sonification, alongside the proximity chime
+  // above: a soft continuous tone tracking the whole corrected scene's
+  // average colour, not any one saved point specifically -- hue drives
+  // pitch, lightness drives volume. "Very cheap" per this feature's own
+  // design goal (see index.html's "What's next" section) -- reuses the
+  // existing low-res scene-sampling canvas (already drawn from `stage`,
+  // the corrected output, for particle scene-attraction) and just averages
+  // every cell's colour directly, rather than a real k-means clustering
+  // pass. Own AudioContext, same "only ever plays out, never reads in"
+  // shape as the chime.
+  let domToneEnabled = (() => {
+    try { return localStorage.getItem(DOM_TONE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let domToneVolume = loadOutlineNumberPref(DOM_TONE_VOLUME_KEY, DOM_TONE_DEFAULT_VOLUME);
+  let domToneAudioCtx = null;
+  let domToneOsc = null;
+  let domToneGainNode = null;
+  let domToneTimerId = null;
+
+  function sampleDominantColor() {
+    if (!gl || !stage.width || !stage.height) return null;
+    sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    return [r / n / 255, g / n / 255, b / n / 255];
+  }
+
+  function ensureDomToneAudio() {
+    if (domToneAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    domToneAudioCtx = new Ctx();
+    domToneOsc = domToneAudioCtx.createOscillator();
+    domToneOsc.type = "sine";
+    domToneOsc.frequency.value = 220;
+    domToneGainNode = domToneAudioCtx.createGain();
+    domToneGainNode.gain.value = 0;
+    domToneOsc.connect(domToneGainNode);
+    domToneGainNode.connect(domToneAudioCtx.destination);
+    domToneOsc.start();
+  }
+
+  function updateDominantColorTone() {
+    if (!domToneGainNode) return;
+    const now = domToneAudioCtx.currentTime;
+    const rgb = sampleDominantColor();
+    if (!rgb) {
+      domToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+      return;
+    }
+    const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+    // Hue mapped across one octave (220-440Hz) rather than the chime's
+    // wider proximity range -- this tone is meant to sit in the background
+    // as a continuous drone, not compete for attention.
+    const targetFreq = 220 + (h / 360) * 220;
+    const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
+    domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
+    domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
+  }
+
+  function updateDomToneSamplingTimer() {
+    if (domToneEnabled && !domToneTimerId) {
+      ensureDomToneAudio();
+      if (domToneAudioCtx && domToneAudioCtx.state === "suspended") domToneAudioCtx.resume().catch(() => {});
+      domToneTimerId = setInterval(updateDominantColorTone, 150);
+    } else if (!domToneEnabled && domToneTimerId) {
+      clearInterval(domToneTimerId);
+      domToneTimerId = null;
+      if (domToneGainNode) domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
+    }
+  }
+
+  function saveDomToneEnabledPref() {
+    try { localStorage.setItem(DOM_TONE_ENABLED_KEY, domToneEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveDomToneVolumePref() {
+    try { localStorage.setItem(DOM_TONE_VOLUME_KEY, String(domToneVolume)); } catch (e) {}
+  }
+
+  function setDomToneEnabled(next) {
+    if (next === domToneEnabled) return;
+    domToneEnabled = next;
+    domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
+    domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
+    domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+    saveDomToneEnabledPref();
+    updateDomToneSamplingTimer();
+  }
+
+  // ---- Edge texture tone ----
+  // A third sonification channel: rather than colour, tracks structural
+  // complexity -- how much the scene's low-res luminance grid (the same
+  // one used above for the dominant colour tone and, gated separately, for
+  // particle scene-attraction) varies from cell to cell. A flat wall reads
+  // near-silent; a busy, edge-rich scene reads as a rougher, brighter
+  // filtered-noise texture. Own AudioContext, same output-only shape as
+  // the other two.
+  let edgeToneEnabled = (() => {
+    try { return localStorage.getItem(EDGE_TONE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let edgeToneVolume = loadOutlineNumberPref(EDGE_TONE_VOLUME_KEY, EDGE_TONE_DEFAULT_VOLUME);
+  let edgeToneAudioCtx = null;
+  let edgeToneNoiseSrc = null;
+  let edgeToneFilter = null;
+  let edgeToneGainNode = null;
+  let edgeToneTimerId = null;
+
+  function sampleEdgeDensity() {
+    if (!gl || !stage.width || !stage.height) return null;
+    sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    const cellCount = SCENE_GRID_W * SCENE_GRID_H;
+    const lums = new Float32Array(cellCount);
+    for (let idx = 0; idx < cellCount; idx++) {
+      const i = idx * 4;
+      lums[idx] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+    let gradSum = 0, gradCount = 0;
+    for (let y = 0; y < SCENE_GRID_H; y++) {
+      for (let x = 0; x < SCENE_GRID_W; x++) {
+        const idx = y * SCENE_GRID_W + x;
+        if (x < SCENE_GRID_W - 1) { gradSum += Math.abs(lums[idx + 1] - lums[idx]); gradCount++; }
+        if (y < SCENE_GRID_H - 1) { gradSum += Math.abs(lums[idx + SCENE_GRID_W] - lums[idx]); gradCount++; }
+      }
+    }
+    // Normalized so a checkerboard-strength grid (adjacent cells alternating
+    // black/white) reads as ~1 -- a coarse but cheap edge-density estimate,
+    // not a real Sobel pass (that runs per-pixel in the outline shader,
+    // GPU-side, not readable back here without an extra readback pass).
+    return Math.min(1, gradSum / gradCount / 180);
+  }
+
+  function ensureEdgeToneAudio() {
+    if (edgeToneAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    edgeToneAudioCtx = new Ctx();
+    const noiseDurationS = 2;
+    const buffer = edgeToneAudioCtx.createBuffer(1, edgeToneAudioCtx.sampleRate * noiseDurationS, edgeToneAudioCtx.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let i = 0; i < channel.length; i++) channel[i] = Math.random() * 2 - 1;
+    edgeToneNoiseSrc = edgeToneAudioCtx.createBufferSource();
+    edgeToneNoiseSrc.buffer = buffer;
+    edgeToneNoiseSrc.loop = true;
+    edgeToneFilter = edgeToneAudioCtx.createBiquadFilter();
+    edgeToneFilter.type = "lowpass";
+    edgeToneFilter.frequency.value = 200;
+    edgeToneGainNode = edgeToneAudioCtx.createGain();
+    edgeToneGainNode.gain.value = 0;
+    edgeToneNoiseSrc.connect(edgeToneFilter);
+    edgeToneFilter.connect(edgeToneGainNode);
+    edgeToneGainNode.connect(edgeToneAudioCtx.destination);
+    edgeToneNoiseSrc.start();
+  }
+
+  function updateEdgeTexture() {
+    if (!edgeToneGainNode) return;
+    const now = edgeToneAudioCtx.currentTime;
+    const density = sampleEdgeDensity();
+    if (density == null) {
+      edgeToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+      return;
+    }
+    const targetGain = (edgeToneVolume / 100) * density * 0.25;
+    const targetFreq = 200 + density * 3000;
+    edgeToneGainNode.gain.setTargetAtTime(targetGain, now, 0.25);
+    edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
+  }
+
+  function updateEdgeToneSamplingTimer() {
+    if (edgeToneEnabled && !edgeToneTimerId) {
+      ensureEdgeToneAudio();
+      if (edgeToneAudioCtx && edgeToneAudioCtx.state === "suspended") edgeToneAudioCtx.resume().catch(() => {});
+      edgeToneTimerId = setInterval(updateEdgeTexture, 150);
+    } else if (!edgeToneEnabled && edgeToneTimerId) {
+      clearInterval(edgeToneTimerId);
+      edgeToneTimerId = null;
+      if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
+    }
+  }
+
+  function saveEdgeToneEnabledPref() {
+    try { localStorage.setItem(EDGE_TONE_ENABLED_KEY, edgeToneEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveEdgeToneVolumePref() {
+    try { localStorage.setItem(EDGE_TONE_VOLUME_KEY, String(edgeToneVolume)); } catch (e) {}
+  }
+
+  function setEdgeToneEnabled(next) {
+    if (next === edgeToneEnabled) return;
+    edgeToneEnabled = next;
+    edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
+    edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
+    edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
+    saveEdgeToneEnabledPref();
+    updateEdgeToneSamplingTimer();
+  }
+
   // Converts a tap position (viewport CSS pixels) into a fraction of the
   // raw video frame (0,0 top-left .. 1,1 bottom-right) — the same
   // object-fit:cover cropping and rotate180 flip the correction shader
@@ -4358,6 +4778,14 @@
       particleTrail,
       particleCount,
       particleSizeScale,
+      chimeEnabled,
+      chimeVolume,
+      domToneEnabled,
+      domToneVolume,
+      edgeToneEnabled,
+      edgeToneVolume,
+      audioReactEnabled,
+      audioReactStrength,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4621,6 +5049,39 @@
       particleSizeLabel.textContent = `${particleSizeScale}%`;
       saveParticleSizePref();
     }
+    if (typeof s.chimeEnabled === "boolean" && s.chimeEnabled !== chimeEnabled) {
+      setChimeEnabled(s.chimeEnabled);
+    }
+    if (Number.isFinite(s.chimeVolume)) {
+      chimeVolume = Math.max(0, Math.min(100, s.chimeVolume));
+      chimeVolumeSlider.value = String(chimeVolume);
+      chimeVolumeLabel.textContent = `${chimeVolume}%`;
+      saveChimeVolumePref();
+    }
+    if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
+      setDomToneEnabled(s.domToneEnabled);
+    }
+    if (Number.isFinite(s.domToneVolume)) {
+      domToneVolume = Math.max(0, Math.min(100, s.domToneVolume));
+      domToneVolumeSlider.value = String(domToneVolume);
+      domToneVolumeLabel.textContent = `${domToneVolume}%`;
+      saveDomToneVolumePref();
+    }
+    if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
+      setEdgeToneEnabled(s.edgeToneEnabled);
+    }
+    if (Number.isFinite(s.edgeToneVolume)) {
+      edgeToneVolume = Math.max(0, Math.min(100, s.edgeToneVolume));
+      edgeToneVolumeSlider.value = String(edgeToneVolume);
+      edgeToneVolumeLabel.textContent = `${edgeToneVolume}%`;
+      saveEdgeToneVolumePref();
+    }
+    if (Number.isFinite(s.audioReactStrength)) {
+      audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
+      audioReactStrengthSlider.value = String(audioReactStrength);
+      audioReactStrengthLabel.textContent = `${audioReactStrength}%`;
+      saveAudioReactStrengthPref();
+    }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
       audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
@@ -4747,6 +5208,9 @@
     // tuning was just restored above, not stale values from before the load.
     if (typeof s.audioTintEnabled === "boolean" && s.audioTintEnabled !== audioTintEnabled) {
       toggleAudioTint();
+    }
+    if (typeof s.audioReactEnabled === "boolean" && s.audioReactEnabled !== audioReactEnabled) {
+      toggleAudioReact();
     }
     if (typeof s.beatFlashEnabled === "boolean" && s.beatFlashEnabled !== beatFlashEnabled) {
       toggleBeatFlash();
@@ -5069,8 +5533,57 @@
   particleSizeLabel.textContent = `${particleSizeScale}%`;
   updateParticlesUi();
 
+  chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
+  chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
+  chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+  chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
+  chimeVolumeSlider.addEventListener("input", () => {
+    chimeVolume = parseFloat(chimeVolumeSlider.value);
+    chimeVolumeLabel.textContent = `${chimeVolumeSlider.value}%`;
+    saveChimeVolumePref();
+  });
+  chimeVolumeSlider.value = String(chimeVolume);
+  chimeVolumeLabel.textContent = `${chimeVolume}%`;
+  updateChimeSamplingTimer();
+
+  domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
+  domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
+  domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+  domToneBtn.addEventListener("click", () => setDomToneEnabled(!domToneEnabled));
+  domToneVolumeSlider.addEventListener("input", () => {
+    domToneVolume = parseFloat(domToneVolumeSlider.value);
+    domToneVolumeLabel.textContent = `${domToneVolumeSlider.value}%`;
+    saveDomToneVolumePref();
+  });
+  domToneVolumeSlider.value = String(domToneVolume);
+  domToneVolumeLabel.textContent = `${domToneVolume}%`;
+  updateDomToneSamplingTimer();
+
+  edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
+  edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
+  edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
+  edgeToneBtn.addEventListener("click", () => setEdgeToneEnabled(!edgeToneEnabled));
+  edgeToneVolumeSlider.addEventListener("input", () => {
+    edgeToneVolume = parseFloat(edgeToneVolumeSlider.value);
+    edgeToneVolumeLabel.textContent = `${edgeToneVolumeSlider.value}%`;
+    saveEdgeToneVolumePref();
+  });
+  edgeToneVolumeSlider.value = String(edgeToneVolume);
+  edgeToneVolumeLabel.textContent = `${edgeToneVolume}%`;
+  updateEdgeToneSamplingTimer();
+
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);
+
+  audioReactBtn.addEventListener("click", toggleAudioReact);
+  updateAudioReactUi();
+  audioReactStrengthSlider.addEventListener("input", () => {
+    audioReactStrength = parseFloat(audioReactStrengthSlider.value);
+    audioReactStrengthLabel.textContent = `${audioReactStrengthSlider.value}%`;
+    saveAudioReactStrengthPref();
+  });
+  audioReactStrengthSlider.value = String(audioReactStrength);
+  audioReactStrengthLabel.textContent = `${audioReactStrength}%`;
   audioTintStrengthSlider.addEventListener("input", () => {
     audioTintStrength = parseFloat(audioTintStrengthSlider.value) / 100;
     audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;

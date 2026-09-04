@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Colour Vision Extreme</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+<title>Sound Colour</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="colorvision.css">
+<link rel="stylesheet" href="sound-colour.css">
 </head>
 <body>
 <canvas id="stage"></canvas>
@@ -17,22 +17,17 @@
 
 <div id="overlay">
   <div id="panel">
-    <h1>Colour Vision Extreme</h1>
-    <p>Live camera correction built from colours you calibrate yourself, not a generic filter. Aim at a colour, tune it until it reads right, save it — corrections blend outward from every point you save.</p>
+    <h1>Sound Colour</h1>
+    <p>The correction engine from Colour Vision Extreme, dedicated to one question: what if sight and sound talked to each other? Sound &rarr; Colour: bass/mid/treble reach into the live correction itself (blend, spread, outline strength), on top of Audio colour tint's existing hue wash. Colour &rarr; Sound: the corrected view plays back as tone -- a chime near a saved colour, an ambient drone from the scene's dominant hue, a filtered-noise texture from how busy/edgy the view is.</p>
     <button id="startBtn">Enable camera &amp; start</button>
     <label id="cameraOnlyModeWrap" class="hud-slider camera-only-mode-wrap" title="For a two-device setup: this device just points somewhere and broadcasts, with no controls of its own. Do all the calibration and correction on the other (receiving) device instead.">
       <input id="cameraOnlyModeCheckbox" type="checkbox">
       Camera-only mode (broadcast to another device)
     </label>
     <p id="status" class="status" role="status" aria-live="polite"></p>
-    <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
-    <p class="hint"><a href="colorassist.html">Colour Assist (focused/everyday version) &rarr;</a></p>
-    <p class="hint"><a href="video-production.html">Video Production &rarr;</a></p>
-    <p class="hint"><a href="restore.html">Property Colour Reference &rarr;</a></p>
-    <p class="hint"><a href="call.html">Video Call &rarr;</a></p>
-    <p class="hint"><a href="batcount.html">Flying Fox Count &rarr;</a></p>
-    <p class="hint"><a href="bluelight.html">Blue Light Filter &rarr;</a></p>
-    <p class="hint"><a href="tutorials.html">Video Tutorials &rarr;</a></p>
+    <p class="hint"><a href="index.html">&larr; Back to suite home</a></p>
+    <p class="hint"><a href="colorvision.html">Colour Vision Extreme (the full correction engine) &rarr;</a></p>
+    <p class="hint"><a href="nebula.html">Sound Nebula &rarr;</a></p>
 
     <div id="receiveModeSection">
       <p class="hint">Or, on the controlling device of a two-device setup:</p>
@@ -77,6 +72,11 @@
   </label>
   <button id="audioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone as a second, artistic source of colour: live bass/mid/treble energy (same violet/cyan/pink mapping as Sound Nebula) nudges the corrected view's hue toward whatever's playing, instead of relying only on the camera.">Audio colour tint: Off</button>
   <button id="audioTintResetBtn" class="hud-btn reticle-btn-secondary hide" title="Resets every audio colour tint slider below back to its shipped default (strength, saturation/lightness push, smoothing, resolution, update rate, and all 6 bands). Doesn't turn audio colour tint off.">Reset audio tint</button>
+  <button id="audioReactBtn" class="hud-btn" aria-pressed="false" title="Sound reaching further than just tint colour: live bass boosts how strong the correction blend is, mid boosts how far a calibrated colour spreads, and treble boosts outline strength -- on top of whatever those sliders are already set to, easing back down between hits. Uses the same microphone as Audio colour tint / beat flash, so turning this on alone still needs mic permission.">Audio &rarr; Correction: Off</button>
+  <label id="audioReactStrengthWrap" class="hud-slider hide" title="How much the live audio is allowed to push the correction blend / spread / outline strength above their sliders' own settings.">
+    Reactive correction strength: <span id="audioReactStrengthLabel">40%</span>
+    <input id="audioReactStrengthSlider" type="range" min="0" max="100" value="40">
+  </label>
   <button id="particlesBtn" class="hud-btn" aria-pressed="false" title="A swarm of glowing particles over the corrected view -- same idea as Sound Nebula's particle swarm, layered on top of your colour correction instead of a plain background. Driven by sound or by Tone, depending on the Source below.">Particle effects: Off</button>
   <label id="particleSourceWrap" class="hud-slider hide" title="Audio: coloured particles (violet/cyan/pink) driven by the microphone's live bass/mid/treble energy -- needs mic permission. Tone: a single white/grey swarm driven by Freeze isolate's own Tone slider instead -- no microphone needed at all. Custom: same no-mic Tone energy, but with a hue you pick yourself below.">
     Source:
@@ -371,6 +371,21 @@
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="chimeBtn" class="hud-btn" aria-pressed="false" title="A soft tone that rises in pitch as the camera nears a saved calibration colour -- an audible second channel alongside the visual correction, silent when nothing matches.">Colour proximity chime: Off</button>
+  <label id="chimeVolumeWrap" class="hud-slider hide" title="How loud the proximity chime plays, independent of your device's system volume.">
+    Chime volume: <span id="chimeVolumeLabel">50%</span>
+    <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
+  </label>
+  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="A soft continuous tone tracking the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
+  <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
+    Tone volume: <span id="domToneVolumeLabel">40%</span>
+    <input id="domToneVolumeSlider" type="range" min="0" max="100" value="40">
+  </label>
+  <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="A filtered-noise texture tracking structural complexity in the scene -- busier, edgier views sound rougher and brighter; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
+  <label id="edgeToneVolumeWrap" class="hud-slider hide" title="How loud the edge texture tone plays, independent of your device's system volume.">
+    Texture volume: <span id="edgeToneVolumeLabel">35%</span>
+    <input id="edgeToneVolumeSlider" type="range" min="0" max="100" value="35">
+  </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
@@ -578,6 +593,6 @@
   </div>
 </div>
 
-<script src="colorvision.js"></script>
+<script src="sound-colour.js"></script>
 </body>
 </html>
