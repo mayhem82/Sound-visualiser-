@@ -1,0 +1,234 @@
+/* DMX Lighting Control — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider, .status)
+   comes from style.css so this page stays visually consistent with the rest
+   of the app. This page has no video "stage" of its own to sit behind the
+   HUD — #dmxMain fills that role instead, as a plain scrollable panel. */
+
+body { overflow: auto; }
+
+video#cameraFeed, canvas#sampleCanvas {
+  display: none;
+}
+
+#dmxMain {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#dmxMain.hide {
+  display: none;
+}
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.dmx-section p.hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.6);
+  margin: 0 0 12px;
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#fixtureList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dmx-fixture {
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(5, 5, 10, 0.35);
+}
+
+.dmx-fixture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.dmx-fixture-row:last-child { margin-bottom: 0; }
+
+.dmx-fixture input[type="text"],
+.dmx-fixture input[type="number"],
+.dmx-fixture select {
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.dmx-fixture input[type="text"] {
+  flex: 1 1 140px;
+  min-width: 100px;
+}
+
+.dmx-fixture input[type="number"] {
+  width: 72px;
+}
+
+.dmx-fixture input[type="color"] {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: transparent;
+}
+
+.dmx-fixture input[type="range"] {
+  flex: 1 1 100px;
+  accent-color: #7dd3fc;
+}
+
+.dmx-fixture .dmx-remove-btn {
+  appearance: none;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dmx-fixture .dmx-remove-btn:hover {
+  background: rgba(248, 113, 113, 0.22);
+}
+
+.dmx-fixture-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(242, 242, 247, 0.5);
+  margin-right: 2px;
+}
+
+.dmx-channel-meter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.dmx-channel-chip {
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  background: rgba(125, 211, 252, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: #bae6fd;
+}
+
+.dmx-empty-hint {
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.5);
+  text-align: center;
+  padding: 8px 0;
+}
+
+#dmxAddFixtureBtn {
+  appearance: none;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  background: rgba(125, 211, 252, 0.12);
+  color: #bae6fd;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+#dmxAddFixtureBtn:hover { background: rgba(125, 211, 252, 0.22); }
+
+.dmx-connect-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+.dmx-connect-btn:hover { filter: brightness(1.08); }
+.dmx-connect-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }

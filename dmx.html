@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DMX Lighting Control</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎛️</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="dmx.css">
+</head>
+<body>
+<video id="cameraFeed" playsinline muted hidden></video>
+<canvas id="sampleCanvas" hidden></canvas>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>DMX Lighting Control</h1>
+    <p class="hint">Turn the camera's dominant colour, how busy/edgy the scene looks, and the microphone's bass/mid/treble/beat into live DMX512 — driving real LED bars, PAR lights, or a laser/strobe trigger in the room, through a USB DMX interface.</p>
+    <p class="hint" id="serialSupportHint"></p>
+    <button id="startBtn">Open lighting control</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="sound-colour.html">Sound Colour &rarr;</a></p>
+    <p class="hint"><a href="nebula.html">Sound Nebula &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="dmxMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="serialPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="serialPillText">Interface: not connected</span></span>
+    <span id="cameraPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="cameraPillText">Camera: off</span></span>
+    <span id="micPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="micPillText">Microphone: off</span></span>
+    <p id="dmxStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section">
+    <h2>DMX interface</h2>
+    <p class="hint" title="This talks the Enttec DMX USB PRO protocol over the Web Serial API -- also implemented by most inexpensive USB-DMX interfaces sold as 'Enttec Pro compatible'. It cannot drive a plain 'Open DMX USB' dongle (one that expects the computer itself to generate the DMX break signal -- not possible from a browser), and it cannot reach an Art-Net/sACN network node directly (that's UDP, which browser JS has no access to). Web Serial itself only exists in Chromium browsers (Chrome, Edge, Opera) over HTTPS or localhost -- not Firefox, not Safari.">Uses the Enttec DMX USB PRO protocol (also implemented by most inexpensive USB-DMX interfaces) over the Web Serial API. Chrome/Edge/Opera on desktop only -- not Firefox, not Safari, and not inside most wrapped mobile apps. Won't drive a raw "Open DMX USB" dongle or talk Art-Net/sACN directly.</p>
+    <div class="dmx-inline-controls">
+      <button id="serialConnectBtn" class="dmx-connect-btn">Connect DMX interface&hellip;</button>
+      <button id="serialDisconnectBtn" class="hud-btn hide">Disconnect</button>
+      <label class="hud-slider" title="The virtual COM port's baud rate. The Enttec USB PRO widget generates the actual DMX512 timing itself, so this rarely matters -- change it only if your specific interface's driver insists on a particular value.">
+        Baud:
+        <select id="baudSelect">
+          <option value="9600">9600</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+          <option value="250000" selected>250000</option>
+        </select>
+      </label>
+      <label class="hud-slider" title="How often the full 512-channel universe is re-sent. Real DMX512 hardware expects continuous refresh, not just changes -- higher is smoother but some cheap interfaces/USB-serial drivers can't keep up much past 30-40Hz.">
+        Refresh:
+        <input id="refreshSlider" type="range" min="10" max="40" step="1" value="30">
+        <span id="refreshLabel">30</span> Hz
+      </label>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Live inputs</h2>
+    <p class="hint">Only enable what your fixtures actually use -- each is a separate permission prompt.</p>
+    <div class="dmx-inline-controls">
+      <button id="cameraToggleBtn" class="hud-btn" aria-pressed="false">Enable camera</button>
+      <button id="micToggleBtn" class="hud-btn" aria-pressed="false">Enable microphone</button>
+      <label class="hud-slider" title="How easily a bass hit counts as a beat for the Audio: Beat trigger source -- higher is more sensitive (triggers on smaller hits), same convention as Sound Nebula's Beat sensitivity.">
+        Beat sensitivity:
+        <input id="beatSensitivitySlider" type="range" min="0" max="100" value="50">
+      </label>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Fixtures</h2>
+    <p class="hint">Each fixture patches a block of DMX channels to a live signal. Start channel is 1-512; channels used depend on the profile (e.g. RGB uses 3 consecutive channels starting there).</p>
+    <div id="fixtureList"></div>
+    <p id="fixtureEmptyHint" class="dmx-empty-hint">No fixtures yet -- add one below.</p>
+    <button id="dmxAddFixtureBtn">+ Add fixture</button>
+  </section>
+
+  <button id="dmxBlackoutBtn" class="hud-btn">Blackout (zero all channels)</button>
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="dmx.js"></script>
+</body>
+</html>

@@ -35,6 +35,11 @@ share a dark visual style and a lot of underlying plumbing:
   prolonged viewing. True/filtered blend, Intensity, and Warmth sliders,
   all live with no calibration step.
 - **`tutorials.html`** — a placeholder grid for short how-to video clips.
+- **`dmx.html`** ("DMX Lighting Control") — sends the camera's dominant
+  colour/scene complexity and the microphone's bass/mid/treble/beat out as
+  real DMX512, over a USB DMX interface via the Web Serial API (desktop
+  Chrome/Edge only), to drive actual LED bars, PAR lights, and a
+  laser/strobe trigger in the room.
 
 No build step, no dependencies — open any `.html` file directly in a
 browser, or serve the folder with any static server.
