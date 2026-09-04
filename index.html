@@ -20,7 +20,7 @@
   <header id="homeHero">
     <h1>My Journey Into Sight and Sound</h1>
     <p id="homeTagline">— and code.</p>
-    <p id="homeIntro">A personal suite of camera and microphone tools, built one feature at a time: turning sound into light, correcting colour for colourblind eyes, pushing that same correction further experimentally, matching paint to reality, recording performances, calling someone else entirely, and now, counting flying foxes against a twilight sky.</p>
+    <p id="homeIntro">A personal suite of camera and microphone tools, built one feature at a time: turning sound into light, correcting colour for colourblind eyes, pushing that same correction further experimentally, matching paint to reality, recording performances, calling someone else entirely, counting flying foxes against a twilight sky, easing eye strain with real camera sensor control, and now, making sight and sound talk both ways.</p>
   </header>
 
   <section id="homeStory" aria-labelledby="homeStoryTitle">
@@ -29,15 +29,18 @@
     <p>Then it became about colour, for a reason: <a href="colorassist.html">Colour Assist</a> was built for colourblind eyes — camera in hand, calibrating real colours by eye until they read right, instead of trusting a generic filter. <a href="colorvision.html">Colour Vision Extreme</a> took that same correction engine further, as an experimental space for pushing what it could do — cartoon mode, diagnosed colour-vision-deficiency correction, and whatever gets tried next. That same engine also powers <a href="restore.html">Property Colour Reference</a>, aimed at a different problem: matching real-estate photography to a known-true paint swatch.</p>
     <p>From there, <a href="video-production.html">Video Production</a> combined both threads: record a visual performance once, then trigger it live while filming, using the same correction and effects pipeline underneath.</p>
     <p><a href="call.html">Video Call</a> took all of that (the camera pipeline, the device pairing, the styling) and pointed it at two people talking to each other, instead of one person and a mirror. No account, no server beyond a public relay for the first handshake. Just the same small toolkit, aimed at something new.</p>
-    <p>The newest piece is <a href="batcount.html">Flying Fox Count</a> — the same edge-outline processing that makes Colour Assist and Colour Vision Extreme's outline mode work, pointed at a real problem instead of a demo: making bats stand out against a dusk or dawn sky, to help count a flying fox colony's emergence or return. Work in progress, like everything above it.</p>
+    <p><a href="batcount.html">Flying Fox Count</a> — the same edge-outline processing that makes Colour Assist and Colour Vision Extreme's outline mode work, pointed at a real problem instead of a demo: making bats stand out against a dusk or dawn sky, to help count a flying fox colony's emergence or return. Work in progress.</p>
+    <p><a href="bluelight.html">Blue Light Filter</a> came next — a dedicated page for a warmer, less blue-heavy camera view in the evening. Rebuilt more than once along the way (a channel cut, then a real spectral transmission model) before settling on the honest version: no software recolouring at all, just exposing the camera's own real hardware sensors — colour temperature, exposure, focus — where the device actually reports them.</p>
+    <p>And the thread running through everything since that very first page — sound becoming light — finally grew a page of its own. See <a href="#homeNextTitle">Sight ↔ Sound</a> below.</p>
   </section>
 
   <section id="homeNext" aria-labelledby="homeNextTitle">
     <h2 id="homeNextTitle">Sight ↔ Sound</h2>
-    <p>Sound has been turning into light here since the very first page, and <a href="colorvision.html">Colour Vision Extreme</a>'s Audio colour tint already let bass, mids, and treble colour the corrected view live. <a href="sound-colour.html">Sound Colour</a> is a new, standalone page built around making that connection run both ways.</p>
-    <p><strong>Sound → Colour</strong>: bass boosts the correction blend, mid boosts how far a calibrated colour spreads, treble boosts outline strength — reaching further into the correction than Audio colour tint's hue wash alone.</p>
-    <p><strong>Colour → Sound</strong>, the newer direction: the corrected view plays back as tone, three ways so far — a chime that rises near a saved calibration colour, an ambient drone from the scene's dominant hue, and a filtered-noise texture from how busy/edgy the view is.</p>
-    <p>Also new: Sound Nebula's beat-triggered <a href="nebula.html">Colour vision flash mode</a> now crossfades between saved points instead of hard-cutting.</p>
+    <p>Sound has been turning into light here since the very first page, and <a href="colorvision.html">Colour Vision Extreme</a>'s Audio colour tint already let bass, mids, and treble colour the corrected view live. <a href="sound-colour.html">Sound Colour</a> made that connection run both ways — and it's kept growing since.</p>
+    <p><strong>Sound → Colour</strong>, four ways now: bass/mid/treble boost the correction blend, spread, and outline strength directly (Audio → Correction); an audio-reactive particle swarm; Beat flash's torch pulse, screen flash, and vibrate; and Audio colour tint's original hue wash — each its own separate mechanism, not one shared control.</p>
+    <p><strong>Colour → Sound</strong>, three ways: a melodic chime that plucks up a pentatonic scale as the camera nears a saved calibration colour, an ambient drone from the scene's dominant hue, and a filtered-noise texture from how busy/edgy the view is.</p>
+    <p>The newest piece: an opt-in <strong>Scientific colour</strong> mode, swapping hand-picked band hues for ones derived from real physics — each band's own measured frequency, folded up into the single octave visible light spans (~400–789 THz), read off as an actual wavelength and converted to a real colour, instead of one chosen for looks.</p>
+    <p>Also: Sound Nebula's beat-triggered <a href="nebula.html">Colour vision flash mode</a> now crossfades between saved points instead of hard-cutting.</p>
   </section>
 
   <section id="homeFeatures" aria-labelledby="homeFeaturesTitle">
@@ -56,7 +59,7 @@
       <a class="feature-card" href="sound-colour.html">
         <span class="feature-icon" aria-hidden="true">🎨</span>
         <h3>Sound Colour</h3>
-        <p>The correction engine turned into a two-way bridge between sight and sound — bass, mid, and treble reach into the live correction; the corrected view plays back as a chime, a drone, and a texture.</p>
+        <p>The correction engine turned into a two-way bridge between sight and sound — bass, mid, and treble reach into the live correction; the corrected view plays back as a melodic chime, a drone, and a texture.</p>
       </a>
       <a class="feature-card" href="colorassist.html">
         <span class="feature-icon" aria-hidden="true">🎯</span>
@@ -86,7 +89,7 @@
       <a class="feature-card" href="bluelight.html">
         <span class="feature-icon" aria-hidden="true">🌙</span>
         <h3>Blue Light Filter</h3>
-        <p>Live camera view with blue light cut and a warmer shift dialled in — softer on the eyes for evening or prolonged viewing, with a true/filtered blend to control how strong it looks.</p>
+        <p>Real camera-hardware sensor control for evening viewing — colour temperature, exposure, and focus, adjusted at the sensor itself where the device exposes them. The view always stays true; no software recolour.</p>
       </a>
       <a class="feature-card" href="viewer.html">
         <span class="feature-icon" aria-hidden="true">📺</span>
