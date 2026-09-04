@@ -281,15 +281,29 @@
     Chime volume: <span id="chimeVolumeLabel">50%</span>
     <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
   </label>
-  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="A soft continuous tone tracking the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
+  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
     Tone volume: <span id="domToneVolumeLabel">40%</span>
     <input id="domToneVolumeSlider" type="range" min="0" max="100" value="40">
   </label>
-  <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="A filtered-noise texture tracking structural complexity in the scene -- busier, edgier views sound rougher and brighter; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
+  <label id="domToneStyleWrap" class="hud-slider hide" title="Continuous: a soft tone that bends pitch smoothly, following the hue live. Melodic: an ambient arpeggio pad instead -- hue picks a chord root on a minor-pentatonic scale (a different scale/register from the chime's), and the chord rolls in a slow, overlapping groove rather than one sustained tone.">
+    Style:
+    <select id="domToneStyleSelect">
+      <option value="continuous">Continuous</option>
+      <option value="melodic">Melodic</option>
+    </select>
+  </label>
+  <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="Tracks structural complexity in the scene -- busier, edgier views sound rougher; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
   <label id="edgeToneVolumeWrap" class="hud-slider hide" title="How loud the edge texture tone plays, independent of your device's system volume.">
     Texture volume: <span id="edgeToneVolumeLabel">35%</span>
     <input id="edgeToneVolumeSlider" type="range" min="0" max="100" value="35">
+  </label>
+  <label id="edgeToneStyleWrap" class="hud-slider hide" title="Continuous: a filtered noise drone whose brightness and volume track density smoothly. Melodic: a percussive rhythm instead -- short noise ticks whose tempo speeds up with density (busier = faster ticking), a groove rather than a sustained texture.">
+    Style:
+    <select id="edgeToneStyleSelect">
+      <option value="continuous">Continuous</option>
+      <option value="melodic">Melodic</option>
+    </select>
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>

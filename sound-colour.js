@@ -60,6 +60,13 @@
   const DOM_TONE_ENABLED_KEY = "domToneEnabled_colorVision_v1";
   const DOM_TONE_VOLUME_KEY = "domToneVolume_colorVision_v1";
   const DOM_TONE_DEFAULT_VOLUME = 40;
+  // Continuous (the original drone) or Melodic -- an ambient arpeggio pad
+  // instead: hue picks a root note on a minor-pentatonic scale (a distinct
+  // scale/root from the chime's major pentatonic, so the two never sound
+  // like the same instrument), and a slow, overlapping arpeggio (root,
+  // third, fifth, octave) rolls through it -- a groove of its own, not a
+  // sustained tone bending pitch.
+  const DOM_TONE_STYLE_KEY = "domToneStyle_colorVision_v1";
   // Edge texture tone -- a third sonification channel: rather than colour,
   // this one tracks structural complexity (how much the scene's low-res
   // luminance grid varies cell-to-cell) as a filtered-noise texture --
@@ -68,6 +75,12 @@
   const EDGE_TONE_ENABLED_KEY = "edgeToneEnabled_colorVision_v1";
   const EDGE_TONE_VOLUME_KEY = "edgeToneVolume_colorVision_v1";
   const EDGE_TONE_DEFAULT_VOLUME = 35;
+  // Continuous (the original filtered drone) or Melodic -- here that means
+  // rhythmic, not pitched: short percussive noise ticks whose tempo speeds
+  // up with density (busier scene = faster ticking), each brightness-
+  // filtered by that same density -- a groove distinct from both the
+  // chime's pitched pluck and the dominant tone's pad arpeggio.
+  const EDGE_TONE_STYLE_KEY = "edgeToneStyle_colorVision_v1";
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -310,10 +323,14 @@
   const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
   const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
   const domToneVolumeLabel = document.getElementById("domToneVolumeLabel");
+  const domToneStyleWrap = document.getElementById("domToneStyleWrap");
+  const domToneStyleSelect = document.getElementById("domToneStyleSelect");
   const edgeToneBtn = document.getElementById("edgeToneBtn");
   const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
   const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
   const edgeToneVolumeLabel = document.getElementById("edgeToneVolumeLabel");
+  const edgeToneStyleWrap = document.getElementById("edgeToneStyleWrap");
+  const edgeToneStyleSelect = document.getElementById("edgeToneStyleSelect");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -812,8 +829,10 @@
       chimeVolume: CHIME_DEFAULT_VOLUME,
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
+      domToneStyle: "continuous",
       edgeToneEnabled: false,
       edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
+      edgeToneStyle: "continuous",
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -2886,10 +2905,32 @@
     try { return localStorage.getItem(DOM_TONE_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let domToneVolume = loadOutlineNumberPref(DOM_TONE_VOLUME_KEY, DOM_TONE_DEFAULT_VOLUME);
+  let domToneStyle = (() => {
+    try { return localStorage.getItem(DOM_TONE_STYLE_KEY) === "melodic" ? "melodic" : "continuous"; } catch (e) { return "continuous"; }
+  })();
   let domToneAudioCtx = null;
   let domToneOsc = null;
   let domToneGainNode = null;
   let domToneTimerId = null;
+  // Melodic mode's groove: the same major-pentatonic shape as the chime's
+  // scale, but rooted a tritone away (F#3 instead of C4) -- a tritone
+  // transposition of a pentatonic scale is the one shift guaranteed to land
+  // on a completely disjoint set of pitch classes (an earlier attempt at
+  // rooting this on A3 as a "minor pentatonic" turned out to share every
+  // note with the chime's scale -- A minor pentatonic IS C major
+  // pentatonic's relative minor, same five notes -- so this really is a
+  // different scale, not just a different mode of the same one). Chord
+  // degrees (root/third/fifth/octave-ish) roll in a slow arpeggio rather
+  // than firing all at once.
+  const DOM_TONE_SCALE_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+  const DOM_TONE_ROOT_HZ = 185.00; // F#3
+  const DOM_TONE_SCALE_HZ = DOM_TONE_SCALE_SEMITONES.map((st) => DOM_TONE_ROOT_HZ * Math.pow(2, st / 12));
+  const DOM_TONE_CHORD_OFFSETS = [0, 2, 4, 7];
+  // Groove tempo: one arpeggio step every 3rd 150ms sampling tick (~450ms) --
+  // slow enough to read as an ambient pad, not a fast melodic run.
+  const DOM_TONE_ARP_TICKS = 3;
+  let domToneArpTickCount = 0;
+  let domToneArpStep = 0;
 
   function sampleDominantColor() {
     if (!gl || !stage.width || !stage.height) return null;
@@ -2917,22 +2958,58 @@
     domToneOsc.start();
   }
 
-  function updateDominantColorTone() {
-    if (!domToneGainNode) return;
+  // Melodic mode's single arpeggio note -- its own oscillator + gain
+  // envelope, same one-shot pattern as the chime's pluck but with a slower
+  // attack and a longer decay, so overlapping notes blend into a pad
+  // instead of standing apart as separate hits.
+  function playDomTonePadNote(freq, velocity) {
     const now = domToneAudioCtx.currentTime;
+    const osc = domToneAudioCtx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    const gain = domToneAudioCtx.createGain();
+    const peak = Math.max(0.001, velocity * (domToneVolume / 100) * 0.2);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
+    osc.connect(gain);
+    gain.connect(domToneAudioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 1.7);
+  }
+
+  function updateDominantColorTone() {
+    if (!domToneAudioCtx) return;
     const rgb = sampleDominantColor();
-    if (!rgb) {
-      domToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+    if (domToneStyle === "continuous") {
+      const now = domToneAudioCtx.currentTime;
+      if (!rgb) {
+        domToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+        return;
+      }
+      const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+      // Hue mapped across one octave (220-440Hz) rather than the chime's
+      // wider proximity range -- this tone is meant to sit in the
+      // background as a continuous drone, not compete for attention.
+      const targetFreq = 220 + (h / 360) * 220;
+      const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
+      domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
+      domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
       return;
     }
+    // Melodic: hue picks the chord root, an arpeggio step plays every few
+    // ticks -- a rolling ambient pad instead of one bent tone.
+    domToneArpTickCount++;
+    if (!rgb) return;
     const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
-    // Hue mapped across one octave (220-440Hz) rather than the chime's
-    // wider proximity range -- this tone is meant to sit in the background
-    // as a continuous drone, not compete for attention.
-    const targetFreq = 220 + (h / 360) * 220;
-    const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
-    domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
-    domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
+    if (l < 0.03) return; // near-black scene -- stays silent, same as continuous mode fading to 0
+    if (domToneArpTickCount < DOM_TONE_ARP_TICKS) return;
+    domToneArpTickCount = 0;
+    const rootIndex = Math.floor((h / 360) * (DOM_TONE_SCALE_HZ.length - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]));
+    const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
+    domToneArpStep++;
+    const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
+    playDomTonePadNote(DOM_TONE_SCALE_HZ[noteIndex], Math.min(1, l * 1.3));
   }
 
   function updateDomToneSamplingTimer() {
@@ -2943,6 +3020,7 @@
     } else if (!domToneEnabled && domToneTimerId) {
       clearInterval(domToneTimerId);
       domToneTimerId = null;
+      domToneArpTickCount = 0;
       if (domToneGainNode) domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -2953,6 +3031,9 @@
   function saveDomToneVolumePref() {
     try { localStorage.setItem(DOM_TONE_VOLUME_KEY, String(domToneVolume)); } catch (e) {}
   }
+  function saveDomToneStylePref() {
+    try { localStorage.setItem(DOM_TONE_STYLE_KEY, domToneStyle); } catch (e) {}
+  }
 
   function setDomToneEnabled(next) {
     if (next === domToneEnabled) return;
@@ -2960,8 +3041,19 @@
     domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
     domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
     domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+    domToneStyleWrap.classList.toggle("hide", !domToneEnabled);
     saveDomToneEnabledPref();
     updateDomToneSamplingTimer();
+  }
+
+  function setDomToneStyle(next) {
+    if (next !== "continuous" && next !== "melodic") return;
+    domToneStyle = next;
+    if (domToneStyle === "continuous" && domToneGainNode && domToneAudioCtx) {
+      domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
+    }
+    domToneArpTickCount = 0;
+    saveDomToneStylePref();
   }
 
   // ---- Edge texture tone ----
@@ -2976,11 +3068,18 @@
     try { return localStorage.getItem(EDGE_TONE_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let edgeToneVolume = loadOutlineNumberPref(EDGE_TONE_VOLUME_KEY, EDGE_TONE_DEFAULT_VOLUME);
+  let edgeToneStyle = (() => {
+    try { return localStorage.getItem(EDGE_TONE_STYLE_KEY) === "melodic" ? "melodic" : "continuous"; } catch (e) { return "continuous"; }
+  })();
   let edgeToneAudioCtx = null;
   let edgeToneNoiseSrc = null;
   let edgeToneFilter = null;
   let edgeToneGainNode = null;
   let edgeToneTimerId = null;
+  // Rhythmic mode's groove: time (ms) since the last percussive tick,
+  // ticked forward every 150ms sampling pass; tempo itself is derived live
+  // from density in updateEdgeTexture (busier = faster).
+  let edgeToneTickElapsedMs = 0;
 
   function sampleEdgeDensity() {
     if (!gl || !stage.width || !stage.height) return null;
@@ -3030,18 +3129,64 @@
     edgeToneNoiseSrc.start();
   }
 
-  function updateEdgeTexture() {
-    if (!edgeToneGainNode) return;
+  // Rhythmic mode's single percussive hit -- a short one-shot filtered noise
+  // burst (its own buffer source + bandpass filter + gain, discarded after),
+  // brightness-filtered by density the same way the continuous drone's
+  // lowpass cutoff already is, so louder/busier still means brighter/busier.
+  function playEdgeTexTick(density) {
     const now = edgeToneAudioCtx.currentTime;
+    const dur = 0.12;
+    const buffer = edgeToneAudioCtx.createBuffer(1, Math.max(1, Math.round(edgeToneAudioCtx.sampleRate * dur)), edgeToneAudioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = edgeToneAudioCtx.createBufferSource();
+    src.buffer = buffer;
+    const filter = edgeToneAudioCtx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 400 + density * 4000;
+    filter.Q.value = 0.7;
+    const gain = edgeToneAudioCtx.createGain();
+    const peak = Math.max(0.001, (edgeToneVolume / 100) * density * 0.5);
+    gain.gain.setValueAtTime(peak, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(edgeToneAudioCtx.destination);
+    src.start(now);
+    src.stop(now + dur + 0.02);
+  }
+
+  function updateEdgeTexture() {
+    if (!edgeToneAudioCtx) return;
     const density = sampleEdgeDensity();
-    if (density == null) {
-      edgeToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+    if (edgeToneStyle === "continuous") {
+      const now = edgeToneAudioCtx.currentTime;
+      if (density == null) {
+        edgeToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+        return;
+      }
+      const targetGain = (edgeToneVolume / 100) * density * 0.25;
+      const targetFreq = 200 + density * 3000;
+      edgeToneGainNode.gain.setTargetAtTime(targetGain, now, 0.25);
+      edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
       return;
     }
-    const targetGain = (edgeToneVolume / 100) * density * 0.25;
-    const targetFreq = 200 + density * 3000;
-    edgeToneGainNode.gain.setTargetAtTime(targetGain, now, 0.25);
-    edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
+    // Rhythmic: a percussive tick whose tempo speeds up with density --
+    // busier scenes tick faster (down to 150ms apart), near-flat scenes
+    // tick slowly/rarely, same "near-silent on a flat wall" spirit as the
+    // continuous mode's gain fading to 0. Gated at a low floor, not the
+    // continuous mode's own perceptual scale -- a genuinely flat wall reads
+    // as ~0 density and stays silent, but this shouldn't cut off well
+    // before that the way a higher floor would.
+    edgeToneTickElapsedMs += 150;
+    if (density == null || density < 0.008) {
+      edgeToneTickElapsedMs = 0;
+      return;
+    }
+    const tickIntervalMs = 650 - density * 500;
+    if (edgeToneTickElapsedMs < tickIntervalMs) return;
+    edgeToneTickElapsedMs = 0;
+    playEdgeTexTick(density);
   }
 
   function updateEdgeToneSamplingTimer() {
@@ -3052,6 +3197,7 @@
     } else if (!edgeToneEnabled && edgeToneTimerId) {
       clearInterval(edgeToneTimerId);
       edgeToneTimerId = null;
+      edgeToneTickElapsedMs = 0;
       if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -3062,6 +3208,9 @@
   function saveEdgeToneVolumePref() {
     try { localStorage.setItem(EDGE_TONE_VOLUME_KEY, String(edgeToneVolume)); } catch (e) {}
   }
+  function saveEdgeToneStylePref() {
+    try { localStorage.setItem(EDGE_TONE_STYLE_KEY, edgeToneStyle); } catch (e) {}
+  }
 
   function setEdgeToneEnabled(next) {
     if (next === edgeToneEnabled) return;
@@ -3069,8 +3218,19 @@
     edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
     edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
     edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
+    edgeToneStyleWrap.classList.toggle("hide", !edgeToneEnabled);
     saveEdgeToneEnabledPref();
     updateEdgeToneSamplingTimer();
+  }
+
+  function setEdgeToneStyle(next) {
+    if (next !== "continuous" && next !== "melodic") return;
+    edgeToneStyle = next;
+    if (edgeToneStyle === "melodic" && edgeToneGainNode && edgeToneAudioCtx) {
+      edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
+    }
+    edgeToneTickElapsedMs = 0;
+    saveEdgeToneStylePref();
   }
 
   // Converts a tap position (viewport CSS pixels) into a fraction of the
@@ -3373,8 +3533,10 @@
       chimeVolume,
       domToneEnabled,
       domToneVolume,
+      domToneStyle,
       edgeToneEnabled,
       edgeToneVolume,
+      edgeToneStyle,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -3564,6 +3726,10 @@
       domToneVolumeLabel.textContent = `${domToneVolume}%`;
       saveDomToneVolumePref();
     }
+    if (s.domToneStyle === "continuous" || s.domToneStyle === "melodic") {
+      setDomToneStyle(s.domToneStyle);
+      domToneStyleSelect.value = domToneStyle;
+    }
     if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
       setEdgeToneEnabled(s.edgeToneEnabled);
     }
@@ -3572,6 +3738,10 @@
       edgeToneVolumeSlider.value = String(edgeToneVolume);
       edgeToneVolumeLabel.textContent = `${edgeToneVolume}%`;
       saveEdgeToneVolumePref();
+    }
+    if (s.edgeToneStyle === "continuous" || s.edgeToneStyle === "melodic") {
+      setEdgeToneStyle(s.edgeToneStyle);
+      edgeToneStyleSelect.value = edgeToneStyle;
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -4026,6 +4196,7 @@
   domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
   domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
   domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+  domToneStyleWrap.classList.toggle("hide", !domToneEnabled);
   domToneBtn.addEventListener("click", () => setDomToneEnabled(!domToneEnabled));
   domToneVolumeSlider.addEventListener("input", () => {
     domToneVolume = parseFloat(domToneVolumeSlider.value);
@@ -4034,11 +4205,14 @@
   });
   domToneVolumeSlider.value = String(domToneVolume);
   domToneVolumeLabel.textContent = `${domToneVolume}%`;
+  domToneStyleSelect.addEventListener("change", () => setDomToneStyle(domToneStyleSelect.value));
+  domToneStyleSelect.value = domToneStyle;
   updateDomToneSamplingTimer();
 
   edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
   edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
   edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
+  edgeToneStyleWrap.classList.toggle("hide", !edgeToneEnabled);
   edgeToneBtn.addEventListener("click", () => setEdgeToneEnabled(!edgeToneEnabled));
   edgeToneVolumeSlider.addEventListener("input", () => {
     edgeToneVolume = parseFloat(edgeToneVolumeSlider.value);
@@ -4047,6 +4221,8 @@
   });
   edgeToneVolumeSlider.value = String(edgeToneVolume);
   edgeToneVolumeLabel.textContent = `${edgeToneVolume}%`;
+  edgeToneStyleSelect.addEventListener("change", () => setEdgeToneStyle(edgeToneStyleSelect.value));
+  edgeToneStyleSelect.value = edgeToneStyle;
   updateEdgeToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
