@@ -8,8 +8,6 @@
   const ROTATE_KEY = "cvRotate180_v1";
   const SPREAD_KEY = "cvSpread_v1";
   const DEFAULT_SPREAD = 4;
-  const CVD_TYPE_KEY = "cvCvdType_v1";
-  const CVD_STRENGTH_KEY = "cvCvdStrength_v1";
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
   const OUTLINE_ENABLED_KEY = "outlinesEnabled_colorVision_v1";
   const OUTLINE_THICKNESS_KEY = "outlineThickness_colorVision_v1";
@@ -20,45 +18,18 @@
   const OUTLINE_DEFAULT_OPACITY = 1;
   const OUTLINE_COLOR_KEY = "outlineColor_colorVision_v1";
   const OUTLINE_DEFAULT_COLOR = "#ffffff";
-  const FREEZE_ENABLED_KEY = "freezeIsolateEnabled_colorVision_v1";
-  const FREEZE_BLEND_KEY = "freezeBlend_colorVision_v1";
-  const FREEZE_SPREAD_KEY = "freezeSpread_colorVision_v1";
-  const FREEZE_TONE_KEY = "freezeTone_colorVision_v1";
   const FREEZE_DEFAULT_BLEND = 1;
   const FREEZE_DEFAULT_SPREAD = 15;
   const FREEZE_DEFAULT_TONE = 0;
-  const CARTOON_ENABLED_KEY = "cartoonEnabled_colorVision_v1";
-  const CARTOON_LEVELS_KEY = "cartoonLevels_colorVision_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
-  const CARTOON_EDGE_THICKNESS_KEY = "cartoonEdgeThickness_colorVision_v1";
-  const CARTOON_EDGE_STRENGTH_KEY = "cartoonEdgeStrength_colorVision_v1";
-  const CARTOON_SATURATION_KEY = "cartoonSaturation_colorVision_v1";
   const CARTOON_DEFAULT_EDGE_THICKNESS = 2;
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
-  const CARTOON_THEME_KEY = "cartoonTheme_colorVision_v1";
-  const CARTOON_THEME_NAMES = ["none", "greyscale", "sepia", "desert", "oasis"];
-  const CARTOON_DEFAULT_THEME = "none";
-  // Presets just populate the two duotone colour pickers below — the shader
-  // itself no longer knows about named themes, only the live lo/hi colours.
-  const CARTOON_THEME_PRESETS = {
-    greyscale: { lo: "#0d0d0d", hi: "#f2f2f2" },
-    sepia: { lo: "#24170f", hi: "#e8d6a8" },
-    desert: { lo: "#4c240f", hi: "#e8b866" },
-    oasis: { lo: "#053d3b", hi: "#8fe3bf" }
-  };
-  const CARTOON_THEME_ENABLED_KEY = "cartoonThemeEnabled_colorVision_v1";
-  const CARTOON_THEME_LO_KEY = "cartoonThemeLo_colorVision_v1";
-  const CARTOON_THEME_HI_KEY = "cartoonThemeHi_colorVision_v1";
   const CARTOON_THEME_DEFAULT_LO = "#0d0d0d";
   const CARTOON_THEME_DEFAULT_HI = "#f2f2f2";
-  const SHUTTER_MODE_KEY = "shutterMode_colorVision_v1";
-  const FLOATING_CAPTURE_POS_KEY = "floatingCapturePos_colorVision_v1";
   const PARTICLES_ENABLED_KEY = "particlesEnabled_colorVision_v1";
   const PARTICLE_OPACITY_KEY = "particleOpacity_colorVision_v1";
   const PARTICLE_DEFAULT_OPACITY = 70;
-  const PARTICLE_SOURCE_KEY = "particleSource_colorVision_v1";
-  const PARTICLE_DEFAULT_SOURCE = "audio";
   // Legacy single-choice key (kept only so an old save can be migrated
   // into the 4 independent toggles below, never written again).
   const PARTICLE_BEHAVIOR_KEY = "particleBehavior_colorVision_v1";
@@ -66,8 +37,6 @@
   const PARTICLE_SEEK_BRIGHTNESS_KEY = "particleSeekBrightness_colorVision_v1";
   const PARTICLE_COLOUR_ATTRACT_KEY = "particleColourAttract_colorVision_v1";
   const PARTICLE_MOVE_ATTRACT_KEY = "particleMoveAttract_colorVision_v1";
-  const PARTICLE_CUSTOM_HUE_KEY = "particleCustomHue_colorVision_v1";
-  const PARTICLE_DEFAULT_CUSTOM_HUE = 280;
   const PARTICLE_TRAIL_KEY = "particleTrail_colorVision_v1";
   const PARTICLE_DEFAULT_TRAIL = 0;
   const PARTICLE_COUNT_KEY = "particleCount_colorVision_v1";
@@ -195,17 +164,6 @@
   const FLICKER_DUTY = 0.45;
   const BEAT_TORCH_MAX_FAILS = 5;
 
-  const LONG_PRESS_MS = 450;
-  const DRAG_CANCEL_PX = 10;
-  const RECORD_FPS_KEY = "recordFps_colorVision_v1";
-  const DEFAULT_RECORD_FPS = 30;
-  const RECORD_FPS_OPTIONS = [15, 24, 30, 60];
-  // Public, no-signup STUN server — needed for NAT traversal even between
-  // devices on the same wifi network in many router configurations. No
-  // TURN relay is configured (would need a paid or self-hosted server),
-  // so very restrictive networks can still block the connection.
-  const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
-
   const stage = document.getElementById("stage");
   const video = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
@@ -214,16 +172,6 @@
   const overlay = document.getElementById("overlay");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
-  const cameraOnlyModeCheckbox = document.getElementById("cameraOnlyModeCheckbox");
-  const cameraOnlyBadge = document.getElementById("cameraOnlyBadge");
-  const cameraOnlyRoomCode = document.getElementById("cameraOnlyRoomCode");
-  const cameraOnlyStatusText = document.getElementById("cameraOnlyStatusText");
-  const cameraOnlyStopBtn = document.getElementById("cameraOnlyStopBtn");
-  const showReceiveBtn = document.getElementById("showReceiveBtn");
-  const receiveForm = document.getElementById("receiveForm");
-  const receiveRoomInput = document.getElementById("receiveRoomInput");
-  const receiveConnectBtn = document.getElementById("receiveConnectBtn");
-  const receiverStatusBadge = document.getElementById("receiverStatusBadge");
 
   const hud = document.getElementById("hud");
   const blendSlider = document.getElementById("blendSlider");
@@ -240,16 +188,11 @@
   const particleOpacityWrap = document.getElementById("particleOpacityWrap");
   const particleOpacitySlider = document.getElementById("particleOpacitySlider");
   const particleOpacityLabel = document.getElementById("particleOpacityLabel");
-  const particleSourceWrap = document.getElementById("particleSourceWrap");
-  const particleSourceSelect = document.getElementById("particleSourceSelect");
   const particleBehaviorWrap = document.getElementById("particleBehaviorWrap");
   const particleOrbitPathCheckbox = document.getElementById("particleOrbitPathCheckbox");
   const particleSeekBrightnessCheckbox = document.getElementById("particleSeekBrightnessCheckbox");
   const particleColourAttractCheckbox = document.getElementById("particleColourAttractCheckbox");
   const particleMoveAttractCheckbox = document.getElementById("particleMoveAttractCheckbox");
-  const particleCustomHueWrap = document.getElementById("particleCustomHueWrap");
-  const particleCustomHueSlider = document.getElementById("particleCustomHueSlider");
-  const particleCustomHueSwatch = document.getElementById("particleCustomHueSwatch");
   const particleTrailWrap = document.getElementById("particleTrailWrap");
   const particleTrailSlider = document.getElementById("particleTrailSlider");
   const particleTrailLabel = document.getElementById("particleTrailLabel");
@@ -332,10 +275,6 @@
   const beatSyncDelayWrap = document.getElementById("beatSyncDelayWrap");
   const beatSyncDelaySlider = document.getElementById("beatSyncDelaySlider");
   const beatSyncDelayLabel = document.getElementById("beatSyncDelayLabel");
-  const cvdTypeSelect = document.getElementById("cvdTypeSelect");
-  const cvdStrengthWrap = document.getElementById("cvdStrengthWrap");
-  const cvdStrengthSlider = document.getElementById("cvdStrengthSlider");
-  const cvdStrengthLabel = document.getElementById("cvdStrengthLabel");
   const outlinesBtn = document.getElementById("outlinesBtn");
   const outlineThicknessWrap = document.getElementById("outlineThicknessWrap");
   const outlineThicknessSlider = document.getElementById("outlineThicknessSlider");
@@ -348,37 +287,6 @@
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
   const outlineColorWrap = document.getElementById("outlineColorWrap");
   const outlineColorInput = document.getElementById("outlineColorInput");
-  const freezeIsolateBtn = document.getElementById("freezeIsolateBtn");
-  const freezeBlendWrap = document.getElementById("freezeBlendWrap");
-  const freezeBlendSlider = document.getElementById("freezeBlendSlider");
-  const freezeBlendLabel = document.getElementById("freezeBlendLabel");
-  const freezeSpreadWrap = document.getElementById("freezeSpreadWrap");
-  const freezeSpreadSlider = document.getElementById("freezeSpreadSlider");
-  const freezeSpreadLabel = document.getElementById("freezeSpreadLabel");
-  const freezeToneWrap = document.getElementById("freezeToneWrap");
-  const freezeToneSlider = document.getElementById("freezeToneSlider");
-  const freezeToneLabel = document.getElementById("freezeToneLabel");
-  const cartoonBtn = document.getElementById("cartoonBtn");
-  const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
-  const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
-  const cartoonLevelsLabel = document.getElementById("cartoonLevelsLabel");
-  const cartoonEdgeThicknessWrap = document.getElementById("cartoonEdgeThicknessWrap");
-  const cartoonEdgeThicknessSlider = document.getElementById("cartoonEdgeThicknessSlider");
-  const cartoonEdgeThicknessLabel = document.getElementById("cartoonEdgeThicknessLabel");
-  const cartoonEdgeStrengthWrap = document.getElementById("cartoonEdgeStrengthWrap");
-  const cartoonEdgeStrengthSlider = document.getElementById("cartoonEdgeStrengthSlider");
-  const cartoonEdgeStrengthLabel = document.getElementById("cartoonEdgeStrengthLabel");
-  const cartoonSaturationWrap = document.getElementById("cartoonSaturationWrap");
-  const cartoonSaturationSlider = document.getElementById("cartoonSaturationSlider");
-  const cartoonSaturationLabel = document.getElementById("cartoonSaturationLabel");
-  const cartoonThemeWrap = document.getElementById("cartoonThemeWrap");
-  const cartoonThemeSelect = document.getElementById("cartoonThemeSelect");
-  const cartoonThemeEnabledWrap = document.getElementById("cartoonThemeEnabledWrap");
-  const cartoonThemeEnabledCheckbox = document.getElementById("cartoonThemeEnabledCheckbox");
-  const cartoonThemeLoWrap = document.getElementById("cartoonThemeLoWrap");
-  const cartoonThemeLoInput = document.getElementById("cartoonThemeLoInput");
-  const cartoonThemeHiWrap = document.getElementById("cartoonThemeHiWrap");
-  const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const chimeBtn = document.getElementById("chimeBtn");
@@ -397,45 +305,10 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
-  const zoomControl = document.getElementById("zoomControl");
-  const zoomOutBtn = document.getElementById("zoomOutBtn");
-  const zoomLabel = document.getElementById("zoomLabel");
-  const zoomInBtn = document.getElementById("zoomInBtn");
   const torchBtn = document.getElementById("torchBtn");
-  const exposureModeBtn = document.getElementById("exposureModeBtn");
-  const shutterWrap = document.getElementById("shutterWrap");
-  const shutterSlider = document.getElementById("shutterSlider");
-  const shutterLabel = document.getElementById("shutterLabel");
-  const isoWrap = document.getElementById("isoWrap");
-  const isoSlider = document.getElementById("isoSlider");
-  const isoLabel = document.getElementById("isoLabel");
-  const evWrap = document.getElementById("evWrap");
-  const evSlider = document.getElementById("evSlider");
-  const evLabel = document.getElementById("evLabel");
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
-  const photoBtn = document.getElementById("photoBtn");
-  const recordFpsSelect = document.getElementById("recordFpsSelect");
-  const recordBtn = document.getElementById("recordBtn");
   const cameraStatus = document.getElementById("cameraStatus");
-  const recordingIndicator = document.getElementById("recordingIndicator");
-  const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
-  const floatingCaptureBar = document.getElementById("floatingCaptureBar");
-  const floatingCalibrateBtn = document.getElementById("floatingCalibrateBtn");
-  const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
-  const floatingRecordBtn = document.getElementById("floatingRecordBtn");
-  const floatingPointsBtn = document.getElementById("floatingPointsBtn");
-
-  const connectTabletBtn = document.getElementById("connectTabletBtn");
-  const castBtn = document.getElementById("castBtn");
-  const viewerPanel = document.getElementById("viewerPanel");
-  const startShareBtn = document.getElementById("startShareBtn");
-  const shareCodeBlock = document.getElementById("shareCodeBlock");
-  const shareRoomCode = document.getElementById("shareRoomCode");
-  const shareViewUrlText = document.getElementById("shareViewUrlText");
-  const viewerStatus = document.getElementById("viewerStatus");
-  const closeViewerPanelBtn = document.getElementById("closeViewerPanelBtn");
-  const viewerConnectedBadge = document.getElementById("viewerConnectedBadge");
 
   const reticleLayer = document.getElementById("reticleLayer");
   const reticle = document.getElementById("reticle");
@@ -533,8 +406,13 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
-  let cvdType = loadCvdTypePref();
-  let cvdStrength = loadCvdStrengthPref();
+  // CVD-type correction and Cartoon mode belong to Colour Vision Extreme's
+  // own broader toolset, not this page's Sight <-> Sound focus -- their UI
+  // is gone here, but these stay hardcoded at their neutral/off defaults so
+  // the shared correction shader (which still expects these uniforms) keeps
+  // compiling and rendering unchanged.
+  const cvdType = "none";
+  const cvdStrength = 1;
   let outlinesEnabled = (() => {
     try { return localStorage.getItem(OUTLINE_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
@@ -543,28 +421,23 @@
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
   let outlineColor = loadOutlineColorPref();
   let outlineColorRgb = hexToRgb01(outlineColor);
-  let freezeIsolateEnabled = (() => {
-    try { return localStorage.getItem(FREEZE_ENABLED_KEY) === "1"; } catch (e) { return false; }
-  })();
-  let freezeBlend = loadOutlineNumberPref(FREEZE_BLEND_KEY, FREEZE_DEFAULT_BLEND);
-  let freezeSpread = loadOutlineNumberPref(FREEZE_SPREAD_KEY, FREEZE_DEFAULT_SPREAD);
-  // 0-100: how much every match, live, ignores hue/chroma and goes by
-  // lightness alone -- a pure grey has no hue of its own, so this is what
-  // actually recreates that "matches anything at this brightness" effect,
-  // as a direct global slider like Freeze blend/match distance rather than
-  // something requiring a saved calibration point of its own.
-  let freezeTone = loadOutlineNumberPref(FREEZE_TONE_KEY, FREEZE_DEFAULT_TONE);
+  // Freeze isolate belongs to Colour Vision Extreme's own broader toolset,
+  // not this page's Sight <-> Sound focus -- its UI is gone here, but these
+  // stay hardcoded at their neutral/off defaults so the shared correction
+  // shader (which still expects these uniforms) keeps compiling and
+  // rendering unchanged.
+  const freezeIsolateEnabled = false;
+  const freezeBlend = FREEZE_DEFAULT_BLEND;
+  const freezeSpread = FREEZE_DEFAULT_SPREAD;
+  const freezeTone = FREEZE_DEFAULT_TONE;
   let particlesEnabled = (() => {
     try { return localStorage.getItem(PARTICLES_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let particleOpacity = loadOutlineNumberPref(PARTICLE_OPACITY_KEY, PARTICLE_DEFAULT_OPACITY);
-  let particleSource = (() => {
-    try {
-      const raw = localStorage.getItem(PARTICLE_SOURCE_KEY);
-      return raw === "audio" || raw === "tone" || raw === "custom" ? raw : PARTICLE_DEFAULT_SOURCE;
-    } catch (e) { return PARTICLE_DEFAULT_SOURCE; }
-  })();
-  let particleCustomHue = loadOutlineNumberPref(PARTICLE_CUSTOM_HUE_KEY, PARTICLE_DEFAULT_CUSTOM_HUE);
+  // Tone/Custom (no-mic alternatives) belong to Colour Vision Extreme's
+  // broader particle toolset, not this page's Sight <-> Sound focus --
+  // particles here are always driven by live audio bands.
+  const particleSource = "audio";
   let particleTrail = loadOutlineNumberPref(PARTICLE_TRAIL_KEY, PARTICLE_DEFAULT_TRAIL);
   let particleCount = loadOutlineNumberPref(PARTICLE_COUNT_KEY, PARTICLE_DEFAULT_COUNT);
   let particleSizeScale = loadOutlineNumberPref(PARTICLE_SIZE_KEY, PARTICLE_DEFAULT_SIZE);
@@ -658,43 +531,20 @@
   let beatTorchBusy = false;
   let beatTorchFailCount = 0;
   const vibrateSupported = typeof navigator.vibrate === "function";
-  let cartoonEnabled = (() => {
-    try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
-  })();
-  let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
-  let cartoonEdgeThickness = loadOutlineNumberPref(CARTOON_EDGE_THICKNESS_KEY, CARTOON_DEFAULT_EDGE_THICKNESS);
-  let cartoonEdgeStrength = loadOutlineNumberPref(CARTOON_EDGE_STRENGTH_KEY, CARTOON_DEFAULT_EDGE_STRENGTH);
-  let cartoonSaturation = loadOutlineNumberPref(CARTOON_SATURATION_KEY, CARTOON_DEFAULT_SATURATION);
-  let cartoonTheme = loadCartoonThemePref();
-  let cartoonThemeEnabled = (() => {
-    try { return localStorage.getItem(CARTOON_THEME_ENABLED_KEY) === "1"; } catch (e) { return false; }
-  })();
-  let cartoonThemeLo = loadCartoonThemeColorPref(CARTOON_THEME_LO_KEY, CARTOON_THEME_DEFAULT_LO);
-  let cartoonThemeHi = loadCartoonThemeColorPref(CARTOON_THEME_HI_KEY, CARTOON_THEME_DEFAULT_HI);
-  let cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
-  let cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
-  let shutterMode = (() => {
-    try { return localStorage.getItem(SHUTTER_MODE_KEY) === "video" ? "video" : "photo"; } catch (e) { return "photo"; }
-  })();
-  let shutterModeStatusTimer = null;
-  let recordFps = (() => {
-    try {
-      const raw = parseInt(localStorage.getItem(RECORD_FPS_KEY), 10);
-      return RECORD_FPS_OPTIONS.includes(raw) ? raw : DEFAULT_RECORD_FPS;
-    } catch (e) { return DEFAULT_RECORD_FPS; }
-  })();
+  const cartoonEnabled = false;
+  const cartoonLevels = CARTOON_DEFAULT_LEVELS;
+  const cartoonEdgeThickness = CARTOON_DEFAULT_EDGE_THICKNESS;
+  const cartoonEdgeStrength = CARTOON_DEFAULT_EDGE_STRENGTH;
+  const cartoonSaturation = CARTOON_DEFAULT_SATURATION;
+  const cartoonThemeEnabled = false;
+  const cartoonThemeLoRgb = hexToRgb01(CARTOON_THEME_DEFAULT_LO);
+  const cartoonThemeHiRgb = hexToRgb01(CARTOON_THEME_DEFAULT_HI);
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
   let exposureTrack = null;
   let currentExposureMode = "continuous";
   let exposureModeSupported = false;
-  let zoomTrack = null;
-  let zoomSupported = false;
-  let zoomMin = 1;
-  let zoomMax = 1;
-  let zoomStep = 0.1;
-  let zoomValue = 1;
   let currentStream = null;
   let videoDevices = [];
   let currentDeviceIndex = -1;
@@ -716,8 +566,6 @@
   // for viewers, decoupled from the operator's own adjustable local view.
   let fixedCorrectionCanvas = null, fixedGl = null, fixedProgram = null,
     fixedUniforms = null, fixedQuadBuffer = null, fixedVideoTexture = null;
-  let castVideo = null;
-  let casting = false;
   let rafId = null;
   let aimIntervalId = null;
 
@@ -874,34 +722,17 @@
       blend: 100,
       spread: DEFAULT_SPREAD,
       rotate180: false,
-      cvdType: "none",
-      cvdStrength: 1,
       outlinesEnabled: false,
       outlineThickness: OUTLINE_DEFAULT_THICKNESS,
       outlineBlend: OUTLINE_DEFAULT_BLEND,
       outlineOpacity: OUTLINE_DEFAULT_OPACITY,
       outlineColor: OUTLINE_DEFAULT_COLOR,
-      freezeIsolateEnabled: false,
-      freezeBlend: FREEZE_DEFAULT_BLEND,
-      freezeSpread: FREEZE_DEFAULT_SPREAD,
-      freezeTone: FREEZE_DEFAULT_TONE,
-      cartoonEnabled: false,
-      cartoonLevels: CARTOON_DEFAULT_LEVELS,
-      cartoonEdgeThickness: CARTOON_DEFAULT_EDGE_THICKNESS,
-      cartoonEdgeStrength: CARTOON_DEFAULT_EDGE_STRENGTH,
-      cartoonSaturation: CARTOON_DEFAULT_SATURATION,
-      cartoonTheme: CARTOON_DEFAULT_THEME,
-      cartoonThemeEnabled: false,
-      cartoonThemeLo: CARTOON_THEME_DEFAULT_LO,
-      cartoonThemeHi: CARTOON_THEME_DEFAULT_HI,
       particlesEnabled: false,
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
-      particleSource: PARTICLE_DEFAULT_SOURCE,
       particleOrbitPath: true,
       particleSeekBrightness: false,
       particleColourAttract: false,
       particleMoveAttract: false,
-      particleCustomHue: PARTICLE_DEFAULT_CUSTOM_HUE,
       particleTrail: PARTICLE_DEFAULT_TRAIL,
       particleCount: PARTICLE_DEFAULT_COUNT,
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
@@ -936,9 +767,6 @@
     const base = fullDefaultsSnapshot();
     const preset = (id, name, overrides) => ({ id, name, points: [], settings: { ...base, ...overrides } });
     return [
-      preset("builtin-protan", "Protanopia correction", { cvdType: "protan", cvdStrength: 1 }),
-      preset("builtin-deutan", "Deuteranopia correction", { cvdType: "deutan", cvdStrength: 1 }),
-      preset("builtin-tritan", "Tritanopia correction", { cvdType: "tritan", cvdStrength: 1 }),
       preset("builtin-chill-glow", "Chill audio glow", {
         audioTintEnabled: true,
         audioTintStrength: 0.25,
@@ -948,12 +776,6 @@
         audioTintUpdateMs: 150
       }),
       preset("builtin-rave", "Rave mode", {
-        cartoonEnabled: true,
-        cartoonLevels: 5,
-        cartoonSaturation: 2.0,
-        cartoonThemeEnabled: true,
-        cartoonThemeLo: "#1a0033",
-        cartoonThemeHi: "#00f0ff",
         audioTintEnabled: true,
         audioTintStrength: 0.85,
         audioTintSatStrength: 0.4,
@@ -968,12 +790,7 @@
         beatFlashSpeed: 0.9,
         beatScreenFlashEnabled: true
       }),
-      preset("builtin-cartoon-sketch", "Cartoon sketch (outlined)", {
-        cartoonEnabled: true,
-        cartoonLevels: 6,
-        cartoonEdgeThickness: 3,
-        cartoonEdgeStrength: 0.8,
-        cartoonSaturation: 1.5,
+      preset("builtin-outlined", "Outlined", {
         outlinesEnabled: true,
         outlineThickness: 3,
         outlineBlend: 0.6,
@@ -1051,18 +868,6 @@
   }
   function saveOutlinesEnabledPref() {
     try { localStorage.setItem(OUTLINE_ENABLED_KEY, outlinesEnabled ? "1" : "0"); } catch (e) {}
-  }
-  function saveFreezeIsolateEnabledPref() {
-    try { localStorage.setItem(FREEZE_ENABLED_KEY, freezeIsolateEnabled ? "1" : "0"); } catch (e) {}
-  }
-  function saveFreezeBlendPref() {
-    try { localStorage.setItem(FREEZE_BLEND_KEY, String(freezeBlend)); } catch (e) {}
-  }
-  function saveFreezeSpreadPref() {
-    try { localStorage.setItem(FREEZE_SPREAD_KEY, String(freezeSpread)); } catch (e) {}
-  }
-  function saveFreezeTonePref() {
-    try { localStorage.setItem(FREEZE_TONE_KEY, String(freezeTone)); } catch (e) {}
   }
   function saveOutlineThicknessPref() {
     try { localStorage.setItem(OUTLINE_THICKNESS_KEY, String(outlineThickness)); } catch (e) {}
@@ -1242,26 +1047,10 @@
 
   // ---- Particle effects (ported from Sound Nebula's particle swarm) ----
   // A glowing particle swarm layered over the corrected view, on its own 2D
-  // canvas rather than drawn into the WebGL shader (see renderLoop).
-  // Two sources, selectable and built to extend with more later:
-  //   "audio" -- one swarm per one of the three primary AUDIO_TINT_BANDS
-  //     (Bass/Mid/Treble), reusing whichever hue each band is already set
-  //     to and its live rawEnergy (computed every tick in
-  //     computeAudioTintHue() regardless of that band's own enabled flag,
-  //     which only gates the separate hue-tint feature) -- no second
-  //     microphone stream, same shared audioAnalysisTick driving this
-  //     alongside audio tint and beat flash.
-  //   "tone" -- a single hue-less (white/grey) swarm driven by Freeze
-  //     isolate's own Tone slider (freezeTone) instead of sound. Tone
-  //     already means "brightness only, no hue" everywhere else on this
-  //     page, so particles here are deliberately colourless too, and
-  //     needing no microphone at all is the point -- this is the option
-  //     for using particle effects without a mic permission prompt.
-  //   "custom" -- same no-mic Tone-slider energy, but with a fixed hue you
-  //     pick yourself (particleCustomHue) instead of forced white/grey --
-  //     for when you want a specific colour rather than audio-reactive or
-  //     colourless.
-  const PARTICLE_SOURCES = ["audio", "tone", "custom"];
+  // canvas rather than drawn into the WebGL shader (see renderLoop). Always
+  // driven by live audio (one swarm per AUDIO_TINT_BAND, Bass/Mid/Treble) --
+  // the no-mic Tone/Custom sources belong to Colour Vision Extreme's own
+  // broader particle toolset, not this page's Sight <-> Sound focus.
 
   // Behavior is orthogonal to source above -- source decides colour/energy,
   // behavior decides where a particle wants to be and how it gets there.
@@ -1408,12 +1197,6 @@
 
   function seedParticles() {
     particles = [];
-    if (particleSource === "tone" || particleSource === "custom") {
-      // One flat pool, no band split -- overall density matches the 3
-      // audio bands combined so switching source doesn't look sparser.
-      for (let i = 0; i < particleCount * 3; i++) particles.push(makeParticle(0));
-      return;
-    }
     for (let bandIndex = 0; bandIndex < 3; bandIndex++) {
       for (let i = 0; i < particleCount; i++) particles.push(makeParticle(bandIndex));
     }
@@ -1425,16 +1208,11 @@
     particleCanvas.height = Math.round(window.innerHeight * dpr);
   }
 
-  // Abstracts "what makes this particle move/glow" away from the audio
-  // bands specifically -- energy is always a 0-1 scalar; hue is a real hue
-  // in Audio mode, or null in Tone mode (hue-less white/grey glow instead).
+  // Particles are a sound -> sight mechanism, same as Audio colour tint or
+  // Beat flash, just via a swarm instead of a hue wash or a torch pulse --
+  // so this page only ever drives them from live audio (bass/mid/treble),
+  // never from a no-mic Tone/Custom alternative.
   function getParticleEnergyAndHue(p) {
-    if (particleSource === "tone") {
-      return { energy: freezeTone / 100, hue: null };
-    }
-    if (particleSource === "custom") {
-      return { energy: freezeTone / 100, hue: particleCustomHue };
-    }
     const band = AUDIO_TINT_BANDS[p.bandIndex];
     return { energy: band.rawEnergy, hue: band.hue };
   }
@@ -1642,9 +1420,6 @@
   function saveParticleOpacityPref() {
     try { localStorage.setItem(PARTICLE_OPACITY_KEY, String(particleOpacity)); } catch (e) {}
   }
-  function saveParticleSourcePref() {
-    try { localStorage.setItem(PARTICLE_SOURCE_KEY, particleSource); } catch (e) {}
-  }
   function saveParticleOrbitPathPref() {
     try { localStorage.setItem(PARTICLE_ORBIT_PATH_KEY, particleOrbitPath ? "1" : "0"); } catch (e) {}
   }
@@ -1657,9 +1432,6 @@
   function saveParticleMoveAttractPref() {
     try { localStorage.setItem(PARTICLE_MOVE_ATTRACT_KEY, particleMoveAttract ? "1" : "0"); } catch (e) {}
   }
-  function saveParticleCustomHuePref() {
-    try { localStorage.setItem(PARTICLE_CUSTOM_HUE_KEY, String(particleCustomHue)); } catch (e) {}
-  }
   function saveParticleTrailPref() {
     try { localStorage.setItem(PARTICLE_TRAIL_KEY, String(particleTrail)); } catch (e) {}
   }
@@ -1668,10 +1440,6 @@
   }
   function saveParticleSizePref() {
     try { localStorage.setItem(PARTICLE_SIZE_KEY, String(particleSizeScale)); } catch (e) {}
-  }
-
-  function updateParticleCustomHueSwatch() {
-    particleCustomHueSwatch.style.background = `hsl(${particleCustomHue}, 90%, 65%)`;
   }
 
   function setParticleCount(next) {
@@ -1690,12 +1458,10 @@
     particlesBtn.classList.toggle("active", particlesEnabled);
     particlesBtn.setAttribute("aria-pressed", String(particlesEnabled));
     particleOpacityWrap.classList.toggle("hide", !particlesEnabled);
-    particleSourceWrap.classList.toggle("hide", !particlesEnabled);
     particleBehaviorWrap.classList.toggle("hide", !particlesEnabled);
     particleTrailWrap.classList.toggle("hide", !particlesEnabled);
     particleCountWrap.classList.toggle("hide", !particlesEnabled);
     particleSizeWrap.classList.toggle("hide", !particlesEnabled);
-    particleCustomHueWrap.classList.toggle("hide", !particlesEnabled || particleSource !== "custom");
   }
 
   async function toggleParticles() {
@@ -1707,40 +1473,13 @@
       updateSceneSamplingTimer();
       return;
     }
-    if (particleSource === "audio") {
-      const started = audioTintCtx ? true : await startAudioTint();
-      if (!started) return;
-    }
+    const started = audioTintCtx ? true : await startAudioTint();
+    if (!started) return;
     seedParticles();
     particlesEnabled = true;
     saveParticlesEnabledPref();
     updateParticlesUi();
     updateSceneSamplingTimer();
-  }
-
-  async function setParticleSource(next) {
-    if (!PARTICLE_SOURCES.includes(next) || next === particleSource) return;
-    const switchingToAudioWhileEnabled = particlesEnabled && next === "audio";
-    if (switchingToAudioWhileEnabled && !audioTintCtx) {
-      const started = await startAudioTint();
-      if (!started) { particleSourceSelect.value = particleSource; return; }
-    }
-    particleSource = next;
-    saveParticleSourcePref();
-    updateParticlesUi();
-    if (particlesEnabled) {
-      seedParticles();
-      // Switching TO tone/custom while already enabled may leave an audio
-      // session running for no reason if nothing else needs it, same
-      // cleanup toggleAudioTint/toggleBeatFlash already do on their own way out.
-      maybeStopAudioAnalysis();
-    }
-  }
-
-  function setParticleCustomHue(next) {
-    particleCustomHue = Math.max(0, Math.min(360, next));
-    saveParticleCustomHuePref();
-    updateParticleCustomHueSwatch();
   }
 
   function setParticleTrail(next) {
@@ -2078,116 +1817,6 @@
     outlinesEnabled = !outlinesEnabled;
     saveOutlinesEnabledPref();
     updateOutlinesUi();
-  }
-
-  function updateFreezeIsolateUi() {
-    freezeIsolateBtn.textContent = freezeIsolateEnabled ? "Freeze isolate: On" : "Freeze isolate: Off";
-    freezeIsolateBtn.classList.toggle("active", freezeIsolateEnabled);
-    freezeIsolateBtn.setAttribute("aria-pressed", String(freezeIsolateEnabled));
-    [freezeBlendWrap, freezeSpreadWrap, freezeToneWrap].forEach((el) => el.classList.toggle("hide", !freezeIsolateEnabled));
-  }
-
-  function toggleFreezeIsolateMode() {
-    freezeIsolateEnabled = !freezeIsolateEnabled;
-    saveFreezeIsolateEnabledPref();
-    updateFreezeIsolateUi();
-  }
-
-  function saveCartoonEnabledPref() {
-    try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
-  }
-  function saveCartoonLevelsPref() {
-    try { localStorage.setItem(CARTOON_LEVELS_KEY, String(cartoonLevels)); } catch (e) {}
-  }
-  function saveCartoonEdgeThicknessPref() {
-    try { localStorage.setItem(CARTOON_EDGE_THICKNESS_KEY, String(cartoonEdgeThickness)); } catch (e) {}
-  }
-  function saveCartoonEdgeStrengthPref() {
-    try { localStorage.setItem(CARTOON_EDGE_STRENGTH_KEY, String(cartoonEdgeStrength)); } catch (e) {}
-  }
-  function saveCartoonSaturationPref() {
-    try { localStorage.setItem(CARTOON_SATURATION_KEY, String(cartoonSaturation)); } catch (e) {}
-  }
-  function loadCartoonThemePref() {
-    try {
-      const raw = localStorage.getItem(CARTOON_THEME_KEY);
-      return CARTOON_THEME_NAMES.includes(raw) ? raw : CARTOON_DEFAULT_THEME;
-    } catch (e) {
-      return CARTOON_DEFAULT_THEME;
-    }
-  }
-  function saveCartoonThemePref() {
-    try { localStorage.setItem(CARTOON_THEME_KEY, cartoonTheme); } catch (e) {}
-  }
-  function loadCartoonThemeColorPref(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return /^#[0-9a-f]{6}$/i.test(raw) ? raw : fallback;
-    } catch (e) {
-      return fallback;
-    }
-  }
-  function saveCartoonThemeEnabledPref() {
-    try { localStorage.setItem(CARTOON_THEME_ENABLED_KEY, cartoonThemeEnabled ? "1" : "0"); } catch (e) {}
-  }
-  function saveCartoonThemeLoPref() {
-    try { localStorage.setItem(CARTOON_THEME_LO_KEY, cartoonThemeLo); } catch (e) {}
-  }
-  function saveCartoonThemeHiPref() {
-    try { localStorage.setItem(CARTOON_THEME_HI_KEY, cartoonThemeHi); } catch (e) {}
-  }
-
-  // Cartoon mode and Outlines mode can both be on at once — the shader
-  // applies Cartoon's posterize + ink lines first, then layers Outlines'
-  // own coloured edge overlay on top of that result (see main()).
-  function updateCartoonUi() {
-    cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
-    cartoonBtn.classList.toggle("active", cartoonEnabled);
-    cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
-    [
-      cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap,
-      cartoonThemeWrap, cartoonThemeEnabledWrap, cartoonThemeLoWrap, cartoonThemeHiWrap
-    ].forEach((el) => el.classList.toggle("hide", !cartoonEnabled));
-  }
-
-  function toggleCartoonMode() {
-    cartoonEnabled = !cartoonEnabled;
-    saveCartoonEnabledPref();
-    updateCartoonUi();
-  }
-
-  function loadCvdTypePref() {
-    try {
-      const raw = localStorage.getItem(CVD_TYPE_KEY);
-      return Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, raw) ? raw : "none";
-    } catch (e) {
-      return "none";
-    }
-  }
-
-  function saveCvdTypePref() {
-    try {
-      localStorage.setItem(CVD_TYPE_KEY, cvdType);
-    } catch (e) {
-      // Non-fatal — just won't persist across reloads.
-    }
-  }
-
-  function loadCvdStrengthPref() {
-    try {
-      const raw = parseFloat(localStorage.getItem(CVD_STRENGTH_KEY));
-      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
-    } catch (e) {
-      return 1;
-    }
-  }
-
-  function saveCvdStrengthPref() {
-    try {
-      localStorage.setItem(CVD_STRENGTH_KEY, String(cvdStrength));
-    } catch (e) {
-      // Non-fatal — just won't persist across reloads.
-    }
   }
 
   function setStatus(msg) {
@@ -2662,116 +2291,6 @@
     resizeParticleCanvas();
   }
 
-  function ensureOriginalCanvas() {
-    if (originalCanvas) return;
-    originalCanvas = document.createElement("canvas");
-    originalCanvas.width = stage.width;
-    originalCanvas.height = stage.height;
-    // Off-screen but still in the document and not display:none — some
-    // browsers (notably WebKit) throttle or stop updating captureStream()
-    // output from a canvas that's display:none or never painted.
-    originalCanvas.style.position = "fixed";
-    originalCanvas.style.left = "-99999px";
-    originalCanvas.style.top = "0";
-    document.body.appendChild(originalCanvas);
-    originalCtx = originalCanvas.getContext("2d");
-  }
-
-  // A second, independent render of the exact same correction — same
-  // calibrated points, CVD type, spread, rotation — except uBlend is
-  // always 1.0 here, regardless of the operator's own "True <-> Corrected"
-  // slider on the main stage. That slider is for locally previewing how
-  // strong the correction looks; what gets sent to a viewer as "Modified"
-  // should always be the full correction, not whatever the operator
-  // happens to be locally scrubbing through.
-  function ensureFixedCorrectionCanvas() {
-    if (fixedCorrectionCanvas) return;
-    fixedCorrectionCanvas = document.createElement("canvas");
-    fixedCorrectionCanvas.width = stage.width;
-    fixedCorrectionCanvas.height = stage.height;
-    fixedCorrectionCanvas.style.position = "fixed";
-    fixedCorrectionCanvas.style.left = "-99999px";
-    fixedCorrectionCanvas.style.top = "0";
-    document.body.appendChild(fixedCorrectionCanvas);
-    const ctxState = initGLContext(fixedCorrectionCanvas);
-    fixedGl = ctxState.gl;
-    fixedProgram = ctxState.program;
-    fixedUniforms = ctxState.uniforms;
-    fixedQuadBuffer = ctxState.quadBuffer;
-    fixedVideoTexture = ctxState.videoTexture;
-    fixedGl.viewport(0, 0, fixedCorrectionCanvas.width, fixedCorrectionCanvas.height);
-    uploadPointUniforms();
-  }
-
-  // ---- Cast to TV ----
-  // Uses the browser's own built-in casting -- the Remote Playback API
-  // (Chrome/Edge/Android) or WebKit's AirPlay picker (Safari) -- rather
-  // than anything custom. Neither needs a registered Cast application (a
-  // real external Google Cast Developer Console setup this suite has no
-  // way to include), but both are genuinely best-effort: casting a live
-  // MediaStream-backed <video> (not a plain file/URL) is inconsistently
-  // supported across devices and Chrome versions, and may simply not find
-  // or connect to every TV. The button is hidden entirely unless one of
-  // the two APIs is actually present -- never a fake control offered on a
-  // browser that can't do this at all.
-  function castApiAvailable() {
-    const probe = document.createElement("video");
-    return "remote" in probe || typeof probe.webkitShowPlaybackTargetPicker === "function";
-  }
-
-  function updateCastUi() {
-    castBtn.textContent = casting ? "\u{1F4FA} Casting…" : "\u{1F4FA} Cast to TV";
-    castBtn.classList.toggle("active", casting);
-    castBtn.setAttribute("aria-pressed", String(casting));
-  }
-
-  function ensureCastVideo() {
-    if (castVideo) return;
-    castVideo = document.createElement("video");
-    castVideo.muted = true;
-    castVideo.playsInline = true;
-    castVideo.setAttribute("x-webkit-airplay", "allow");
-    // Off-screen but in the document, not display:none -- same reasoning
-    // as originalCanvas/fixedCorrectionCanvas: some browsers throttle or
-    // stop updating a captureStream()-fed element that's never painted.
-    castVideo.style.position = "fixed";
-    castVideo.style.left = "-99999px";
-    castVideo.style.top = "0";
-    document.body.appendChild(castVideo);
-
-    if ("remote" in castVideo) {
-      castVideo.remote.addEventListener("connect", () => { casting = true; updateCastUi(); });
-      castVideo.remote.addEventListener("connecting", () => { casting = true; updateCastUi(); });
-      castVideo.remote.addEventListener("disconnect", () => { casting = false; updateCastUi(); });
-    } else {
-      castVideo.addEventListener("webkitcurrentplaybacktargetiswirelesschanged", () => {
-        casting = !!castVideo.webkitCurrentPlaybackTargetIsWireless;
-        updateCastUi();
-      });
-    }
-  }
-
-  async function startCast() {
-    ensureFixedCorrectionCanvas();
-    ensureCastVideo();
-    if (!castVideo.srcObject) {
-      castVideo.srcObject = fixedCorrectionCanvas.captureStream(30);
-      try { await castVideo.play(); } catch (e) { /* autoplay quirks -- remote playback can still work without local playback succeeding */ }
-    }
-    try {
-      if ("remote" in castVideo) {
-        await castVideo.remote.prompt();
-      } else if (typeof castVideo.webkitShowPlaybackTargetPicker === "function") {
-        castVideo.webkitShowPlaybackTargetPicker();
-      }
-    } catch (err) {
-      // NotFoundError (no devices), InvalidStateError (already prompting),
-      // or a user-dismissed prompt all land here -- report plainly rather
-      // than pretending it worked.
-      showCameraStatus("Couldn't start casting: " + (err.message || err.name || "unknown error"));
-    }
-  }
-
   function uploadPointUniformsTo(glCtx, prog, uni) {
     const count = Math.min(points.length, MAX_POINTS);
     const labArr = new Float32Array(MAX_POINTS * 3);
@@ -2949,42 +2468,11 @@
       uploadPointUniforms();
       renderLoop();
       refreshVideoDevices();
-      if (cameraOnlyModeCheckbox.checked) {
-        await enterCameraOnlyMode();
-      } else {
-        overlay.classList.add("hide");
-        hud.classList.remove("hide");
-      }
-      updateFloatingCaptureBarVisibility();
+      overlay.classList.add("hide");
+      hud.classList.remove("hide");
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
-  }
-
-  // ---- Camera-only broadcast mode ----
-  // For a two-device setup: this device just points somewhere and streams
-  // its raw feed, with no controls of its own to fumble with. All
-  // calibration/correction/control happens on whichever other device
-  // connects via "Receive camera from another device" (see
-  // connectAsReceiver below) — that device gets the raw feed and runs its
-  // own full local correction pipeline against it, same as if it had its
-  // own camera. The camera view itself stays fully visible the whole
-  // time — this only hides the overlay, same as a normal local start, and
-  // shows a small non-blocking corner badge with the room code instead of
-  // the full control HUD.
-  async function enterCameraOnlyMode() {
-    overlay.classList.add("hide");
-    cameraOnlyBadge.classList.remove("hide");
-    cameraOnlyStatusText.textContent = "Connecting to relay…";
-    await startTabletShare();
-    updateFloatingCaptureBarVisibility();
-  }
-
-  function exitCameraOnlyMode() {
-    stopTabletShare("");
-    cameraOnlyBadge.classList.add("hide");
-    hud.classList.remove("hide");
-    updateFloatingCaptureBarVisibility();
   }
 
   async function attachStream(stream) {
@@ -2993,8 +2481,6 @@
     await video.play();
     const track = stream.getVideoTracks()[0];
     setupTorch(track);
-    setupExposure(track);
-    setupZoom(track);
   }
 
   function stopCurrentStream() {
@@ -3044,10 +2530,6 @@
       if (activeId) cameraSelect.value = activeId;
       currentDeviceIndex = activeId ? videoDevices.findIndex((d) => d.deviceId === activeId) : -1;
       if (currentDeviceIndex === -1) currentDeviceIndex = 0;
-      // Keep any connected remote viewer's picker in sync with this
-      // device's real camera list (harmless no-op if not broadcasting —
-      // publishSignal itself no-ops without an active room).
-      if (typeof publishDeviceList === "function") publishDeviceList();
     } catch (err) {
       cameraSelectWrap.classList.add("hide");
     }
@@ -3090,22 +2572,8 @@
     }
   }
 
-  // Kept for the remote/receiver control path (see applyReceiverModeUi and
-  // switchRemoteCamera below), where the receiving device has no local
-  // device list of its own to pick from and can only ask the camera device
-  // to advance to its own next camera.
-  async function switchCamera() {
-    if (videoDevices.length <= 1 || switchingCamera) return;
-    const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
-    await switchToDevice(videoDevices[nextIndex].deviceId);
-  }
-
   cameraSelect.addEventListener("change", () => {
-    if (isReceiverMode && receiverConnection) {
-      receiverConnection.switchRemoteToDevice(cameraSelect.value);
-    } else {
-      switchToDevice(cameraSelect.value);
-    }
+    switchToDevice(cameraSelect.value);
   });
 
   // ---- Flashlight (torch) ----
@@ -3148,995 +2616,6 @@
       torchSupported = false;
       torchBtn.classList.add("hide");
     }
-  }
-
-  // ---- Manual exposure ----
-  // Auto-exposure constantly re-adjusts brightness in response to the
-  // scene, which can shift how a colour reads from one moment to the next
-  // — locking it down keeps the corrected view (and any colour you're
-  // calibrating against) consistent instead of drifting as the camera
-  // hunts for exposure. Same capability-detection pattern as the torch:
-  // only exposed on some Android/Chrome-based cameras, not iOS Safari.
-
-  // Some devices report exposureTime/iso/exposureCompensation as raw
-  // floats with binary-rounding noise (e.g. an exposureCompensation of
-  // "0" arriving as 2.98023224e-8) — rounding before display keeps the
-  // labels readable instead of showing scientific notation or long
-  // fractional tails.
-  function formatExposureNumber(value, decimals) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return String(value);
-    const factor = Math.pow(10, decimals);
-    const rounded = Math.round(n * factor) / factor;
-    return String(Object.is(rounded, -0) ? 0 : rounded);
-  }
-
-  function setupExposure(track) {
-    exposureTrack = track;
-    currentExposureMode = "continuous";
-    exposureModeSupported = false;
-    exposureModeBtn.classList.add("hide");
-    exposureModeBtn.classList.remove("active");
-    exposureModeBtn.setAttribute("aria-pressed", "false");
-    exposureModeBtn.textContent = "Exposure: Auto";
-    shutterWrap.classList.add("hide");
-    isoWrap.classList.add("hide");
-    evWrap.classList.add("hide");
-
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const settings = track.getSettings ? track.getSettings() : {};
-
-    exposureModeSupported = Array.isArray(caps.exposureMode) && caps.exposureMode.includes("manual");
-    exposureModeBtn.classList.toggle("hide", !exposureModeSupported);
-
-    if (caps.exposureTime) {
-      shutterSlider.min = caps.exposureTime.min;
-      shutterSlider.max = caps.exposureTime.max;
-      shutterSlider.step = caps.exposureTime.step || 1;
-      shutterSlider.value = settings.exposureTime != null ? settings.exposureTime : caps.exposureTime.min;
-      shutterLabel.textContent = formatExposureNumber(shutterSlider.value, 0);
-      shutterWrap.classList.remove("hide");
-    }
-    if (caps.iso) {
-      isoSlider.min = caps.iso.min;
-      isoSlider.max = caps.iso.max;
-      isoSlider.step = caps.iso.step || 1;
-      isoSlider.value = settings.iso != null ? settings.iso : caps.iso.min;
-      isoLabel.textContent = formatExposureNumber(isoSlider.value, 0);
-      isoWrap.classList.remove("hide");
-    }
-    if (caps.exposureCompensation) {
-      evSlider.min = caps.exposureCompensation.min;
-      evSlider.max = caps.exposureCompensation.max;
-      evSlider.step = caps.exposureCompensation.step || 0.1;
-      evSlider.value = settings.exposureCompensation != null ? settings.exposureCompensation : 0;
-      evLabel.textContent = formatExposureNumber(evSlider.value, 2);
-      evWrap.classList.remove("hide");
-    }
-
-    track.addEventListener("ended", () => {
-      // Same reasoning as the torch's own "ended" handler — the controls
-      // go with the track that stops backing them.
-      exposureModeSupported = false;
-      exposureModeBtn.classList.add("hide");
-      shutterWrap.classList.add("hide");
-      isoWrap.classList.add("hide");
-      evWrap.classList.add("hide");
-    });
-  }
-
-  async function setExposureMode(mode) {
-    if (!exposureTrack) return;
-    try {
-      await exposureTrack.applyConstraints({ advanced: [{ exposureMode: mode }] });
-      currentExposureMode = mode;
-    } catch (err) {
-      // Device advertised the mode but rejected switching to it — leave
-      // the UI reflecting whatever actually took effect below.
-    }
-    exposureModeBtn.textContent = "Exposure: " + (currentExposureMode === "manual" ? "Manual" : "Auto");
-    exposureModeBtn.classList.toggle("active", currentExposureMode === "manual");
-    exposureModeBtn.setAttribute("aria-pressed", String(currentExposureMode === "manual"));
-  }
-
-  function toggleExposureMode() {
-    if (!exposureModeSupported) return;
-    setExposureMode(currentExposureMode === "manual" ? "continuous" : "manual");
-  }
-
-  async function applyShutter() {
-    shutterLabel.textContent = formatExposureNumber(shutterSlider.value, 0);
-    if (!exposureTrack) return;
-    if (currentExposureMode !== "manual") await setExposureMode("manual");
-    try {
-      await exposureTrack.applyConstraints({ advanced: [{ exposureTime: parseFloat(shutterSlider.value) }] });
-    } catch (err) {}
-  }
-
-  async function applyIso() {
-    isoLabel.textContent = formatExposureNumber(isoSlider.value, 0);
-    if (!exposureTrack) return;
-    if (currentExposureMode !== "manual") await setExposureMode("manual");
-    try {
-      await exposureTrack.applyConstraints({ advanced: [{ iso: parseFloat(isoSlider.value) }] });
-    } catch (err) {}
-  }
-
-  async function applyExposureCompensation() {
-    evLabel.textContent = formatExposureNumber(evSlider.value, 2);
-    if (!exposureTrack) return;
-    // Unlike shutter/ISO, exposure compensation is meaningful in auto mode
-    // too (it's what an EV +/- dial does on a regular camera), so this one
-    // doesn't force a switch to manual.
-    try {
-      await exposureTrack.applyConstraints({ advanced: [{ exposureCompensation: parseFloat(evSlider.value) }] });
-    } catch (err) {}
-  }
-
-  // ---- Zoom ----
-  // A real camera-hardware zoom (Image Capture API's `zoom` constraint),
-  // never a digital crop-and-scale fake — same capability-gated pattern as
-  // torch/exposure above. Fixed outside #hud (see #zoomControl in the
-  // markup) so it survives both plain tap-to-hide and fullscreen, right
-  // alongside #fullscreenBtn.
-
-  function updateZoomLabel() {
-    zoomLabel.textContent = `${zoomValue.toFixed(1)}x`;
-  }
-
-  function setupZoom(track) {
-    zoomTrack = track;
-    zoomSupported = false;
-    zoomControl.classList.add("hide");
-
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const settings = track.getSettings ? track.getSettings() : {};
-    const range = caps && caps.zoom;
-    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) return;
-
-    zoomSupported = true;
-    zoomMin = range.min;
-    zoomMax = range.max;
-    zoomStep = Number.isFinite(range.step) && range.step > 0 ? range.step : (zoomMax - zoomMin) / 10 || 0.1;
-    zoomValue = Number.isFinite(settings.zoom) ? settings.zoom : zoomMin;
-    updateZoomLabel();
-    zoomControl.classList.remove("hide");
-  }
-
-  async function applyZoom(next) {
-    if (!zoomTrack || !zoomSupported) return;
-    const clamped = Math.min(zoomMax, Math.max(zoomMin, next));
-    try {
-      await zoomTrack.applyConstraints({ advanced: [{ zoom: clamped }] });
-      zoomValue = clamped;
-      updateZoomLabel();
-    } catch (err) {
-      // Reported as supported but rejected in practice — stop offering it
-      // rather than leave a dead control.
-      zoomSupported = false;
-      zoomControl.classList.add("hide");
-    }
-  }
-
-  // ---- Photo & video capture ----
-  // Captures the fully-composited stage canvas — true/corrected blend,
-  // per-point calibration, and any colour-blindness-type correction all
-  // baked in — exactly what's currently on screen, not a re-render.
-
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    // Programmatic a.click() still dispatches a real, bubbling click event.
-    // Without this it reaches the tap-to-hide-HUD listener on document.body
-    // (the anchor is outside every excluded container) and silently closes
-    // the HUD right after every photo, video, or export download.
-    a.addEventListener("click", (e) => e.stopPropagation());
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function timestampForFilename() {
-    return new Date().toISOString().replace(/[:.]/g, "-");
-  }
-
-  function takePhoto() {
-    if (!gl) return;
-    stage.toBlob((blob) => {
-      if (!blob) {
-        showCameraStatus("Couldn't capture a photo — try again.");
-        return;
-      }
-      downloadBlob(blob, `colour-vision-photo-${timestampForFilename()}.png`);
-    }, "image/png");
-  }
-
-  function pickRecordingMimeType() {
-    if (typeof MediaRecorder === "undefined") return "";
-    const candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
-    return candidates.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
-  }
-
-  function updateRecordingLabel() {
-    const secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
-    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
-    const ss = String(secs % 60).padStart(2, "0");
-    recordBtn.textContent = `⏹ ${mm}:${ss}`;
-    floatingRecordBtn.textContent = `⏹ ${mm}:${ss}`;
-    recordingIndicatorTime.textContent = `${mm}:${ss}`;
-  }
-
-  function startRecording() {
-    if (isRecording || !gl || typeof stage.captureStream !== "function") return;
-    recordingMimeType = pickRecordingMimeType();
-    if (!recordingMimeType) {
-      showCameraStatus("Video recording isn't supported in this browser.");
-      return;
-    }
-    let canvasStream;
-    try {
-      canvasStream = stage.captureStream(recordFps);
-    } catch (err) {
-      showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
-      return;
-    }
-    recordedChunks = [];
-    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: recordingMimeType });
-    mediaRecorder.addEventListener("dataavailable", (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    });
-    mediaRecorder.addEventListener("stop", () => {
-      const ext = recordingMimeType.includes("mp4") ? "mp4" : "webm";
-      const blob = new Blob(recordedChunks, { type: recordingMimeType });
-      recordedChunks = [];
-      if (blob.size > 0) {
-        downloadBlob(blob, `colour-vision-video-${timestampForFilename()}.${ext}`);
-      } else {
-        showCameraStatus("Recording produced no data — try again.");
-      }
-    });
-    mediaRecorder.start();
-    isRecording = true;
-    recordingStartedAt = Date.now();
-    recordBtn.classList.add("recording");
-    recordBtn.setAttribute("aria-pressed", "true");
-    floatingRecordBtn.classList.add("recording");
-    floatingRecordBtn.setAttribute("aria-pressed", "true");
-    recordingIndicator.classList.remove("hide");
-    // Framerate is baked into the captureStream() call above — changing
-    // the dropdown mid-recording wouldn't affect the file already being
-    // written, so lock it to avoid the false impression that it would.
-    recordFpsSelect.disabled = true;
-    updateRecordingLabel();
-    recordingTimerId = setInterval(updateRecordingLabel, 500);
-  }
-
-  function stopRecording() {
-    if (!isRecording || !mediaRecorder) return;
-    mediaRecorder.stop();
-    isRecording = false;
-    recordBtn.classList.remove("recording");
-    recordBtn.setAttribute("aria-pressed", "false");
-    recordBtn.textContent = "⏺ Record";
-    floatingRecordBtn.classList.remove("recording");
-    floatingRecordBtn.setAttribute("aria-pressed", "false");
-    floatingRecordBtn.textContent = "⏺ Record";
-    recordingIndicator.classList.add("hide");
-    recordFpsSelect.disabled = false;
-    if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
-  }
-
-  function toggleRecording() {
-    if (isRecording) stopRecording();
-    else startRecording();
-  }
-
-  // ---- Floating capture bar ----
-  // Photo/Record live inside #hud, which the user can tap away entirely
-  // (see the body click handler near the bottom of this file) — this
-  // small floating duplicate stays reachable in that "no HUD" state, so
-  // capture never needs the full control panel back up. It's draggable
-  // (long-press, then move, then release) so it can be parked wherever's
-  // convenient — out from under a thumb, or off the actual subject.
-
-  function loadFloatingCapturePos() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(FLOATING_CAPTURE_POS_KEY));
-      if (raw && Number.isFinite(raw.left) && Number.isFinite(raw.top)) return raw;
-    } catch (e) {}
-    return null;
-  }
-
-  function saveFloatingCapturePos(pos) {
-    try { localStorage.setItem(FLOATING_CAPTURE_POS_KEY, JSON.stringify(pos)); } catch (e) {}
-  }
-
-  function clampFloatingCapturePos(left, top) {
-    const maxLeft = Math.max(4, window.innerWidth - floatingCaptureBar.offsetWidth - 4);
-    const maxTop = Math.max(4, window.innerHeight - floatingCaptureBar.offsetHeight - 4);
-    return { left: Math.min(Math.max(4, left), maxLeft), top: Math.min(Math.max(4, top), maxTop) };
-  }
-
-  function applyFloatingCapturePos() {
-    const pos = loadFloatingCapturePos();
-    if (!pos) return;
-    const clamped = clampFloatingCapturePos(pos.left, pos.top);
-    floatingCaptureBar.style.left = `${clamped.left}px`;
-    floatingCaptureBar.style.top = `${clamped.top}px`;
-    floatingCaptureBar.style.right = "auto";
-    floatingCaptureBar.style.bottom = "auto";
-  }
-
-  // Only visible once a corrected view actually exists (gl set, whether
-  // from a local camera or a received tablet feed) and the HUD itself is
-  // hidden — camera-only broadcast mode has its own minimal badge and
-  // doesn't need this duplicated on top of it.
-  function updateFloatingCaptureBarVisibility() {
-    const visible = !!gl && hud.classList.contains("hide") && cameraOnlyBadge.classList.contains("hide");
-    floatingCaptureBar.classList.toggle("hide", !visible);
-  }
-
-  // Long-press-then-drag, distinguished from a plain tap: a timer starts
-  // on pointerdown, and only once it fires does the bar start actually
-  // following the pointer — a quick tap never crosses that threshold, so
-  // it reaches the pressed button's own click handler normally. Moving
-  // far enough before the timer fires cancels it outright (treated as an
-  // accidental/scrolling touch, not a drag).
-  function setupDraggableCaptureBar() {
-    let pressTimer = null;
-    let dragging = false;
-    let moved = false;
-    let suppressClick = false;
-    let startX = 0, startY = 0, barStartLeft = 0, barStartTop = 0;
-
-    function beginDrag() {
-      dragging = true;
-      moved = false;
-      floatingCaptureBar.classList.add("dragging");
-      const rect = floatingCaptureBar.getBoundingClientRect();
-      barStartLeft = rect.left;
-      barStartTop = rect.top;
-    }
-
-    function endPress() {
-      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-      if (dragging) {
-        floatingCaptureBar.classList.remove("dragging");
-        if (moved) {
-          const clamped = clampFloatingCapturePos(
-            parseFloat(floatingCaptureBar.style.left) || barStartLeft,
-            parseFloat(floatingCaptureBar.style.top) || barStartTop
-          );
-          saveFloatingCapturePos(clamped);
-          suppressClick = true;
-        }
-        dragging = false;
-      }
-    }
-
-    floatingCaptureBar.addEventListener("pointerdown", (e) => {
-      if (e.button !== undefined && e.button !== 0 && e.pointerType === "mouse") return;
-      startX = e.clientX;
-      startY = e.clientY;
-      const rect = floatingCaptureBar.getBoundingClientRect();
-      barStartLeft = rect.left;
-      barStartTop = rect.top;
-      pressTimer = setTimeout(() => {
-        pressTimer = null;
-        beginDrag();
-        try { floatingCaptureBar.setPointerCapture(e.pointerId); } catch (err) {}
-      }, LONG_PRESS_MS);
-    });
-
-    floatingCaptureBar.addEventListener("pointermove", (e) => {
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (!dragging) {
-        if (pressTimer && Math.hypot(dx, dy) > DRAG_CANCEL_PX) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
-        }
-        return;
-      }
-      moved = true;
-      e.preventDefault();
-      const clamped = clampFloatingCapturePos(barStartLeft + dx, barStartTop + dy);
-      floatingCaptureBar.style.left = `${clamped.left}px`;
-      floatingCaptureBar.style.top = `${clamped.top}px`;
-      floatingCaptureBar.style.right = "auto";
-      floatingCaptureBar.style.bottom = "auto";
-    });
-
-    floatingCaptureBar.addEventListener("pointerup", endPress);
-    floatingCaptureBar.addEventListener("pointercancel", endPress);
-
-    // Capture phase, so a drag-ending click gets swallowed before it
-    // reaches the Photo/Record button's own listener underneath.
-    floatingCaptureBar.addEventListener("click", (e) => {
-      if (suppressClick) {
-        e.preventDefault();
-        e.stopPropagation();
-        suppressClick = false;
-      }
-    }, true);
-
-    window.addEventListener("resize", () => {
-      if (!floatingCaptureBar.style.left) return;
-      const clamped = clampFloatingCapturePos(
-        parseFloat(floatingCaptureBar.style.left),
-        parseFloat(floatingCaptureBar.style.top)
-      );
-      floatingCaptureBar.style.left = `${clamped.left}px`;
-      floatingCaptureBar.style.top = `${clamped.top}px`;
-    });
-  }
-
-  // ---- Hardware volume-button shutter ----
-  // Volume-down fires whichever mode is currently selected (photo shutter,
-  // or start/stop video); volume-up switches which mode that is, so both
-  // photo and video stay reachable from the hardware buttons alone.
-  function fireShutter() {
-    if (shutterMode === "video") toggleRecording();
-    else takePhoto();
-  }
-
-  function saveShutterModePref() {
-    try { localStorage.setItem(SHUTTER_MODE_KEY, shutterMode); } catch (e) {}
-  }
-
-  function toggleShutterMode() {
-    shutterMode = shutterMode === "video" ? "photo" : "video";
-    saveShutterModePref();
-    showCameraStatus(`Volume shutter: ${shutterMode === "video" ? "Video" : "Photo"} mode`);
-    if (shutterModeStatusTimer) clearTimeout(shutterModeStatusTimer);
-    shutterModeStatusTimer = setTimeout(hideCameraStatus, 1600);
-  }
-
-  // ---- Tablet viewer (WebRTC, signaled over public MQTT relays) ----
-  // Streams the same fully-composited stage canvas used for photo/video
-  // capture to a second device (e.g. a tablet) as a read-only viewer. The
-  // video itself is still direct peer-to-peer WebRTC — no backend needed
-  // for that — but the one-time offer/answer handshake used to be a manual
-  // copy/paste of an SDP blob, which doesn't work between two unrelated
-  // devices with no clipboard sync between them. Instead, a short room code
-  // is generated here and the handshake rides a few public MQTT-over-
-  // websocket brokers (retained messages, addressed by device ID so other
-  // rooms' traffic is ignored) — the other device only has to type in a
-  // 5-character code. viewer.html is the minimal read-only page that
-  // receives it. Same pattern as the live-sharing feature in this author's
-  // darts scorer app.
-
-  const LIVE_BROKERS = [
-    "wss://broker.emqx.io:8084/mqtt",
-    "wss://broker.hivemq.com:8884/mqtt",
-    "wss://test.mosquitto.org:8081/mqtt",
-  ];
-
-  function makeRoomCode() {
-    const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    let code = "";
-    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
-    return code;
-  }
-
-  function makeDeviceId() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return "dev-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-  }
-
-  function signalTopic(room) {
-    return `sound-visualiser-pair/${room}/signal`;
-  }
-
-  const broadcastShare = {
-    active: false,
-    room: null,
-    deviceId: makeDeviceId(),
-    clients: [],
-    peers: new Map(), // viewerId -> { pc }
-  };
-
-  function loadMqttLib() {
-    return new Promise((resolve, reject) => {
-      if (window.mqtt) { resolve(); return; }
-      const s = document.createElement("script");
-      s.src = "https://unpkg.com/mqtt@5/dist/mqtt.min.js";
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("Could not load the live-pairing library — check your internet connection."));
-      document.head.appendChild(s);
-    });
-  }
-
-  function publishSignal(fields, opts) {
-    opts = opts || {};
-    if (!broadcastShare.room) return;
-    const msg = Object.assign({ v: 1, from: broadcastShare.deviceId, to: null, ts: Date.now() }, fields);
-    const payload = JSON.stringify(msg);
-    const topic = signalTopic(broadcastShare.room);
-    broadcastShare.clients.forEach((c) => {
-      if (c.connected) c.publish(topic, payload, { retain: !!opts.retain, qos: opts.qos != null ? opts.qos : 0 });
-    });
-  }
-
-  function connectBroadcastSignaling(room) {
-    return loadMqttLib().then(() => new Promise((resolve, reject) => {
-      let resolved = false;
-      const topic = signalTopic(room);
-      LIVE_BROKERS.forEach((url) => {
-        try {
-          const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
-          client.on("connect", () => {
-            client.subscribe(topic, { qos: 1 });
-            if (!resolved) { resolved = true; resolve(); }
-          });
-          client.on("message", (t, payload) => {
-            if (t === topic) handleBroadcastSignal(payload.toString());
-          });
-          broadcastShare.clients.push(client);
-        } catch (e) { /* other relays may still work */ }
-      });
-      setTimeout(() => { if (!resolved) reject(new Error("Couldn't reach a relay.")); }, 9000);
-    }));
-  }
-
-  function handleBroadcastSignal(raw) {
-    let msg;
-    try { msg = JSON.parse(raw); } catch (e) { return; }
-    if (!msg || msg.from === broadcastShare.deviceId) return;
-    if (msg.type === "viewer-here") {
-      ensureBroadcastPeerFor(msg.from);
-      publishDeviceList(msg.from);
-      return;
-    }
-    if (msg.type === "answer" && msg.to === broadcastShare.deviceId) handleBroadcastAnswer(msg);
-    // Lets a connected viewer remote-control the camera picker — either a
-    // specific device by id (from the labeled list this host publishes,
-    // see publishDeviceList below), or the older blind "next" no-op-safe
-    // fallback kept for any receiver that hasn't seen a device-list yet.
-    if (msg.type === "switch-device" && msg.to === broadcastShare.deviceId) switchToDevice(msg.deviceId);
-    if (msg.type === "switch-camera" && msg.to === broadcastShare.deviceId) switchCamera();
-  }
-
-  // Sends this device's real, labeled camera list to a specific viewer (or
-  // broadcasts to all if no viewerId given) so a remote receiver's picker
-  // shows actual hardware names instead of only being able to blindly
-  // advance to "next camera".
-  function publishDeviceList(viewerId) {
-    publishSignal({
-      type: "device-list",
-      to: viewerId || null,
-      devices: videoDevices.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }))
-    });
-  }
-
-  // Mirrors broadcast status into both the normal "Connect tablet" panel
-  // (viewerStatus) and the camera-only mode's own corner badge
-  // (cameraOnlyStatusText, only ever shown in camera-only mode) — whichever
-  // one the operator is actually looking at stays in sync automatically.
-  function setViewerStatus(text) {
-    viewerStatus.textContent = text;
-    cameraOnlyStatusText.textContent = text;
-  }
-
-  function updateViewerConnectedBadge() {
-    const anyConnected = Array.from(broadcastShare.peers.values()).some(
-      (entry) => entry.pc && entry.pc.connectionState === "connected"
-    );
-    viewerConnectedBadge.classList.toggle("hide", !anyConnected);
-    if (anyConnected) setViewerStatus("Tablet connected.");
-  }
-
-  async function ensureBroadcastPeerFor(viewerId) {
-    if (broadcastShare.peers.has(viewerId)) return; // dedupe repeated viewer-here / multi-broker echoes
-    if (!gl || typeof stage.captureStream !== "function") {
-      setViewerStatus("Viewer streaming isn't supported in this browser.");
-      return;
-    }
-    ensureOriginalCanvas();
-    ensureFixedCorrectionCanvas();
-
-    const entry = { pc: null };
-    broadcastShare.peers.set(viewerId, entry);
-
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    entry.pc = pc;
-    // Two separate MediaStreams (not two tracks on one stream — a <video>
-    // element only ever renders one video track per stream) so the viewer
-    // can tell them apart and show both at once, original alongside
-    // corrected. WebRTC preserves each MediaStream's id end-to-end (it's
-    // part of the SDP as the track's msid), so that id — sent as plain
-    // metadata on the offer below — is what the viewer matches against,
-    // rather than guessing from which track event fires first.
-    // correctedStream comes from fixedCorrectionCanvas (always full
-    // correction), not the main stage — the stage reflects whatever the
-    // operator's own local blend slider is currently set to, which is for
-    // local preview only and shouldn't affect what a viewer sees.
-    const correctedStream = fixedCorrectionCanvas.captureStream(30);
-    const originalStream = originalCanvas.captureStream(30);
-    correctedStream.getTracks().forEach((t) => pc.addTrack(t, correctedStream));
-    originalStream.getTracks().forEach((t) => pc.addTrack(t, originalStream));
-
-    pc.addEventListener("connectionstatechange", () => {
-      if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
-        if (broadcastShare.peers.get(viewerId) === entry) broadcastShare.peers.delete(viewerId);
-      }
-      updateViewerConnectedBadge();
-    });
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await waitForIceGatheringComplete(pc);
-      publishSignal({
-        type: "offer",
-        to: viewerId,
-        sdp: pc.localDescription.sdp,
-        correctedStreamId: correctedStream.id,
-        originalStreamId: originalStream.id
-      }, { qos: 1 });
-    } catch (err) {
-      broadcastShare.peers.delete(viewerId);
-      setViewerStatus("Couldn't connect to the other device: " + (err.message || err.name || "unknown error"));
-    }
-  }
-
-  async function handleBroadcastAnswer(msg) {
-    const entry = broadcastShare.peers.get(msg.from);
-    if (!entry || !entry.pc) return;
-    if (entry.pc.signalingState !== "have-local-offer") return; // dedupe: already answered / stale
-    // The same answer can arrive again (multiple relays, or the viewer's
-    // heartbeat firing again before its own connection state updates)
-    // right as the first delivery is still resolving — signalingState
-    // hasn't caught up yet, so the guard above can't catch it. Harmless;
-    // just ignore the redundant attempt.
-    try {
-      await entry.pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
-    } catch (e) {}
-  }
-
-  // Waiting for ICE gathering to finish before sending the offer means
-  // every candidate is already embedded in the SDP — no separate ICE
-  // candidate exchange needed over the relay.
-  function waitForIceGatheringComplete(peer) {
-    if (peer.iceGatheringState === "complete") return Promise.resolve();
-    return new Promise((resolve) => {
-      let done = false;
-      function finish() {
-        if (done) return;
-        done = true;
-        peer.removeEventListener("icegatheringstatechange", check);
-        resolve();
-      }
-      function check() {
-        if (peer.iceGatheringState === "complete") finish();
-      }
-      peer.addEventListener("icegatheringstatechange", check);
-      setTimeout(finish, 3500);
-    });
-  }
-
-  function stopTabletShare(message) {
-    broadcastShare.active = false;
-    broadcastShare.peers.forEach((entry) => { try { if (entry.pc) entry.pc.close(); } catch (e) {} });
-    broadcastShare.peers.clear();
-    broadcastShare.clients.forEach((c) => { try { c.end(true); } catch (e) {} });
-    broadcastShare.clients = [];
-    broadcastShare.room = null;
-    shareCodeBlock.classList.add("hide");
-    viewerConnectedBadge.classList.add("hide");
-    setViewerStatus(message || "");
-    startShareBtn.textContent = "Start live sharing";
-    startShareBtn.disabled = false;
-  }
-
-  async function startTabletShare() {
-    startShareBtn.disabled = true;
-    setViewerStatus("Connecting to relay…");
-    const room = makeRoomCode();
-    broadcastShare.room = room;
-
-    try {
-      await connectBroadcastSignaling(room);
-    } catch (err) {
-      setViewerStatus(err.message || "Couldn't start live sharing.");
-      broadcastShare.room = null;
-      startShareBtn.disabled = false;
-      return;
-    }
-
-    broadcastShare.active = true;
-    shareRoomCode.textContent = room;
-    cameraOnlyRoomCode.textContent = room;
-    const viewUrl = new URL("viewer.html", location.href);
-    viewUrl.searchParams.set("room", room);
-    shareViewUrlText.textContent = viewUrl.toString();
-    shareCodeBlock.classList.remove("hide");
-    setViewerStatus("Waiting for the other device to connect…");
-    startShareBtn.textContent = "Stop live sharing";
-    startShareBtn.disabled = false;
-  }
-
-  function toggleTabletShare() {
-    if (broadcastShare.active) {
-      stopTabletShare("Sharing stopped.");
-    } else {
-      startTabletShare();
-    }
-  }
-
-  // ---- Receiving a camera feed from another device ----
-  // The reverse of "Connect tablet" above: this is the *answerer* side of
-  // the same room-code/WebRTC pairing, but instead of displaying the
-  // incoming video read-only (like viewer.html does), the "original"
-  // (raw, uncorrected) track becomes this page's own video source — so
-  // the whole existing calibration/correction pipeline below runs against
-  // it exactly as if it came from a local camera. Lets one device (e.g. a
-  // phone in camera-only mode above) just point somewhere while another
-  // device (e.g. a tablet) does all the calibration and shows the result.
-  let receiverConnection = null;
-  let isReceiverMode = false;
-  let receiverStarted = false;
-
-  // Mirrors receiver-side status into a small badge that stays visible
-  // even after the start overlay hides (setStatus()'s own #status element
-  // lives inside #panel, inside #overlay — invisible once connected) so
-  // the connection/error state stays visible for troubleshooting instead
-  // of silently going dark the moment the overlay hides.
-  function setReceiverStatus(text) {
-    setStatus(text);
-    receiverStatusBadge.textContent = text;
-    receiverStatusBadge.classList.toggle("hide", !text);
-  }
-
-  function connectAsReceiver(room) {
-    const deviceId = makeDeviceId();
-    let clients = [];
-    let pc = null;
-    let heartbeatTimer = null;
-    let torn = false;
-    let pendingIds = null;
-    let hostId = null;
-
-    function publish(fields, opts) {
-      opts = opts || {};
-      const msg = Object.assign({ v: 1, from: deviceId, to: null, ts: Date.now() }, fields);
-      const payload = JSON.stringify(msg);
-      const topic = signalTopic(room);
-      clients.forEach((c) => {
-        if (c.connected) c.publish(topic, payload, { retain: !!opts.retain, qos: opts.qos != null ? opts.qos : 0 });
-      });
-    }
-
-    function stopHeartbeat() {
-      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    }
-    function startHeartbeat() {
-      stopHeartbeat();
-      publish({ type: "viewer-here" });
-      heartbeatTimer = setInterval(() => publish({ type: "viewer-here" }), 3000);
-    }
-
-    async function handleOffer(msg) {
-      if (pc && ["new", "connecting", "connected"].includes(pc.connectionState)) return;
-      pendingIds = { corrected: msg.correctedStreamId || null, original: msg.originalStreamId || null };
-      hostId = msg.from;
-      console.log("[receiver] offer received from camera device", { correctedStreamId: pendingIds.corrected, originalStreamId: pendingIds.original });
-      setReceiverStatus("Camera device found — connecting…");
-
-      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-
-      pc.addEventListener("track", (e) => {
-        const streamId = e.streams[0] && e.streams[0].id;
-        console.log("[receiver] track event", { streamId, matchesOriginal: !pendingIds || !pendingIds.original || streamId === pendingIds.original });
-        // Only the raw/original feed matters — correction happens locally
-        // on this device, not on the camera device's.
-        if (pendingIds && pendingIds.original && streamId !== pendingIds.original) return;
-        video.srcObject = e.streams[0];
-        video.play().catch((err) => console.error("[receiver] video.play() failed", err));
-        finishReceiverStart();
-      });
-
-      pc.addEventListener("connectionstatechange", () => {
-        if (!pc || torn) return;
-        console.log("[receiver] connectionState:", pc.connectionState);
-        if (pc.connectionState === "connected") {
-          setReceiverStatus("Receiving from camera device.");
-        } else if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-          setReceiverStatus("Connection to the camera device was lost.");
-        }
-      });
-
-      try {
-        await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp });
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await waitForIceGatheringComplete(pc);
-        publish({ type: "answer", to: msg.from, sdp: pc.localDescription.sdp }, { qos: 1 });
-      } catch (err) {
-        console.error("[receiver] handleOffer failed", err);
-        setReceiverStatus(err.message || err.name || "Couldn't connect.");
-      }
-    }
-
-    function handleMessage(raw) {
-      let msg;
-      try { msg = JSON.parse(raw); } catch (e) { return; }
-      if (!msg || msg.from === deviceId) return;
-      if (msg.type === "offer" && msg.to === deviceId) handleOffer(msg);
-      // Camera device's real, labeled camera list — lets this receiver's
-      // picker show actual hardware names instead of a blind "next"
-      // toggle. Only accepted once we know which device is the host
-      // (targeted or broadcast-to-all both work; anything from a stray
-      // second camera device in the same room is ignored).
-      if (msg.type === "device-list" && (!hostId || msg.from === hostId) && (!msg.to || msg.to === deviceId)) {
-        if (!hostId) hostId = msg.from;
-        applyRemoteDeviceList(msg.devices || []);
-      }
-    }
-
-    setReceiverStatus("Connecting to relay…");
-
-    const ready = new Promise((resolveReady, rejectReady) => {
-      loadMqttLib().then(() => {
-        if (torn) { rejectReady(new Error("cancelled")); return; }
-        let resolved = false;
-        const topic = signalTopic(room);
-        console.log("[receiver] subscribing for room", room, "topic", topic);
-        clients = LIVE_BROKERS.map((url) => {
-          const client = window.mqtt.connect(url, { connectTimeout: 9000, reconnectPeriod: 5000 });
-          client.on("connect", () => {
-            client.subscribe(topic, { qos: 1 });
-            if (!resolved) {
-              resolved = true;
-              setReceiverStatus("Waiting for the camera device…");
-              startHeartbeat();
-              resolveReady();
-            }
-          });
-          client.on("message", (t, payload) => {
-            if (t === topic) handleMessage(payload.toString());
-          });
-          return client;
-        });
-
-        setTimeout(() => {
-          if (resolved || torn) return;
-          rejectReady(new Error("Couldn't reach a relay — check your internet connection and try again."));
-        }, 9000);
-      }).catch((err) => {
-        if (torn) return;
-        rejectReady(err);
-      });
-    });
-
-    return {
-      ready,
-      // Remote-controls the camera device's own switch-camera cycling
-      // (already listened for there — see handleBroadcastSignal above) —
-      // used only as a fallback for the brief window before the camera
-      // device's device-list has arrived (see handleMessage above) and
-      // this receiver's picker has real options to send by id. No-ops on
-      // the other end if it only has one camera.
-      switchRemoteCamera() {
-        publish({ type: "switch-camera", to: hostId });
-      },
-      // Preferred path once a device-list has been received: tells the
-      // camera device to switch to this specific deviceId directly,
-      // rather than blindly cycling — same "actual hardware, actual
-      // labels" fix as the local (non-remote) picker above.
-      switchRemoteToDevice(remoteDeviceId) {
-        if (!hostId) { this.switchRemoteCamera(); return; }
-        publish({ type: "switch-device", to: hostId, deviceId: remoteDeviceId });
-      },
-      teardown() {
-        torn = true;
-        stopHeartbeat();
-        if (pc) { pc.close(); pc = null; }
-        clients.forEach((c) => { try { c.end(true); } catch (e) {} });
-        clients = [];
-      }
-    };
-  }
-
-  // Populates this receiver's own camera picker from the labeled list the
-  // camera device published (see connectAsReceiver's handleMessage and
-  // publishDeviceList on the host side) — same select element the local
-  // (non-remote) picker uses, just fed remote entries instead of this
-  // device's own enumerateDevices() result.
-  function applyRemoteDeviceList(devices) {
-    cameraSelect.innerHTML = "";
-    devices.forEach((d) => {
-      const option = document.createElement("option");
-      option.value = d.deviceId;
-      option.textContent = d.label || d.deviceId;
-      cameraSelect.appendChild(option);
-    });
-    cameraSelectWrap.classList.toggle("hide", devices.length <= 1);
-  }
-
-  function finishReceiverStart() {
-    if (receiverStarted) return;
-    receiverStarted = true;
-    isReceiverMode = true;
-    setReceiverStatus("Receiving from camera device.");
-    overlay.classList.add("hide");
-    hud.classList.remove("hide");
-    resizeStage();
-    initGL();
-    uploadPointUniforms();
-    renderLoop();
-    applyReceiverModeUi();
-    updateFloatingCaptureBarVisibility();
-  }
-
-  function applyReceiverModeUi() {
-    // No local camera hardware on this device to control — these only
-    // make sense for a camera physically attached to it.
-    torchBtn.classList.add("hide");
-    exposureModeBtn.classList.add("hide");
-    shutterWrap.classList.add("hide");
-    isoWrap.classList.add("hide");
-    evWrap.classList.add("hide");
-    // Broadcasting further from a receiving device isn't supported — keeps
-    // a two-device setup to exactly two devices.
-    connectTabletBtn.classList.add("hide");
-    // Repurposed below to remote-control the camera device's lens instead
-    // of switching this device's own (nonexistent) camera — populated from
-    // the device-list the camera device publishes (see connectAsReceiver /
-    // handleBroadcastSignal), so this shows its real labels too, not just
-    // a blind "next" toggle.
-    cameraSelectWrap.classList.remove("hide");
-    cameraSelectWrap.title = "Remotely switch the camera device's lens or camera (no-op if it only has one).";
-  }
-
-  function startReceiving() {
-    const room = receiveRoomInput.value.trim().toUpperCase();
-    if (room.length < 4) {
-      setReceiverStatus("Enter the room code shown on the camera device.");
-      return;
-    }
-    receiveConnectBtn.disabled = true;
-    receiverConnection = connectAsReceiver(room);
-    receiverConnection.ready.catch((err) => {
-      receiverConnection = null;
-      setReceiverStatus((err && err.message) || "Couldn't connect. Check your internet connection and try again.");
-      receiveConnectBtn.disabled = false;
-    });
-  }
-
-  // Mobile browsers throttle requestAnimationFrame hard (often to ~1fps or
-  // less) in a tab that isn't the active/foreground one — which is exactly
-  // the render loop that feeds the shared canvases, so backgrounding this
-  // tab (e.g. switching to the viewer in a second tab on the same phone)
-  // makes the connected viewer's screen freeze or go blank even though the
-  // WebRTC connection itself is still "connected". Surfacing that here is
-  // the most this page can do about it — there's no way for a background
-  // tab to force full-rate rendering.
-  document.addEventListener("visibilitychange", () => {
-    if (!broadcastShare.active) return;
-    if (document.hidden) {
-      setViewerStatus("This tab is in the background — the shared view will freeze until it's active again.");
-    } else {
-      const anyConnected = Array.from(broadcastShare.peers.values()).some(
-        (entry) => entry.pc && entry.pc.connectionState === "connected"
-      );
-      setViewerStatus(anyConnected ? "Tablet connected." : "Waiting for a tablet to connect…");
-      updateViewerConnectedBadge();
-    }
-  });
-
-  function openViewerPanel() {
-    hideOverlayPanels();
-    viewerPanel.classList.remove("hide");
-    closeViewerPanelBtn.focus();
-  }
-
-  function closeViewerPanel() {
-    viewerPanel.classList.add("hide");
-    connectTabletBtn.focus();
   }
 
   // ---- Sampling for calibration ----
@@ -4524,7 +3003,6 @@
     tunePanel.classList.add("hide");
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
-    viewerPanel.classList.add("hide");
   }
 
   function openTuneForNewPoint(sourceColor, returnFocusEl = calibrateBtn) {
@@ -4745,23 +3223,11 @@
       blend: Number(blendSlider.value),
       spread,
       rotate180,
-      cvdType,
-      cvdStrength,
       outlinesEnabled,
       outlineThickness,
       outlineBlend,
       outlineOpacity,
       outlineColor,
-      freezeIsolateEnabled,
-      freezeBlend,
-      freezeSpread,
-      freezeTone,
-      cartoonEnabled,
-      cartoonLevels,
-      cartoonEdgeThickness,
-      cartoonEdgeStrength,
-      cartoonSaturation,
-      cartoonTheme,
       // audioTintEnabled/beatFlashEnabled ARE captured — loading a template
       // is an explicit user action (clicking Load), so restoring them tries
       // the same silent-resume path already used for a page reload (works
@@ -4769,12 +3235,10 @@
       // same as clicking the button by hand would).
       particlesEnabled,
       particleOpacity,
-      particleSource,
       particleOrbitPath,
       particleSeekBrightness,
       particleColourAttract,
       particleMoveAttract,
-      particleCustomHue,
       particleTrail,
       particleCount,
       particleSizeScale,
@@ -4795,9 +3259,6 @@
       audioTintUpdateMs,
       audioTintExtraBandsVisible,
       ...audioTintBandsSnapshot(),
-      cartoonThemeEnabled,
-      cartoonThemeLo,
-      cartoonThemeHi,
       beatFlashEnabled,
       beatSensitivity,
       beatFlashSpeed,
@@ -4873,18 +3334,6 @@
       rotateBtn.classList.toggle("active", rotate180);
       saveRotatePref();
     }
-    if (typeof s.cvdType === "string" && Object.prototype.hasOwnProperty.call(CVD_TYPE_CODES, s.cvdType)) {
-      cvdType = s.cvdType;
-      cvdTypeSelect.value = cvdType;
-      cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
-      saveCvdTypePref();
-    }
-    if (Number.isFinite(s.cvdStrength)) {
-      cvdStrength = s.cvdStrength;
-      cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
-      cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
-      saveCvdStrengthPref();
-    }
     if (typeof s.outlinesEnabled === "boolean" && s.outlinesEnabled !== outlinesEnabled) toggleOutlinesMode();
     if (Number.isFinite(s.outlineThickness)) {
       outlineThickness = s.outlineThickness;
@@ -4910,86 +3359,11 @@
       outlineColorInput.value = outlineColor;
       saveOutlineColorPref();
     }
-    if (typeof s.freezeIsolateEnabled === "boolean" && s.freezeIsolateEnabled !== freezeIsolateEnabled) toggleFreezeIsolateMode();
-    if (Number.isFinite(s.freezeBlend)) {
-      freezeBlend = s.freezeBlend;
-      freezeBlendSlider.value = String(Math.round(freezeBlend * 100));
-      freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
-      saveFreezeBlendPref();
-    }
-    if (Number.isFinite(s.freezeSpread)) {
-      freezeSpread = s.freezeSpread;
-      freezeSpreadSlider.value = String(freezeSpread);
-      freezeSpreadLabel.textContent = String(freezeSpread);
-      saveFreezeSpreadPref();
-    }
-    if (Number.isFinite(s.freezeTone)) {
-      freezeTone = s.freezeTone;
-      freezeToneSlider.value = String(freezeTone);
-      freezeToneLabel.textContent = `${freezeTone}%`;
-      saveFreezeTonePref();
-    }
-    if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
-    if (Number.isFinite(s.cartoonLevels)) {
-      cartoonLevels = s.cartoonLevels;
-      cartoonLevelsSlider.value = String(cartoonLevels);
-      cartoonLevelsLabel.textContent = String(cartoonLevels);
-      saveCartoonLevelsPref();
-    }
-    if (Number.isFinite(s.cartoonEdgeThickness)) {
-      cartoonEdgeThickness = s.cartoonEdgeThickness;
-      cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
-      cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
-      saveCartoonEdgeThicknessPref();
-    }
-    if (Number.isFinite(s.cartoonEdgeStrength)) {
-      cartoonEdgeStrength = s.cartoonEdgeStrength;
-      cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
-      cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
-      saveCartoonEdgeStrengthPref();
-    }
-    if (Number.isFinite(s.cartoonSaturation)) {
-      cartoonSaturation = s.cartoonSaturation;
-      cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
-      cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
-      saveCartoonSaturationPref();
-    }
-    if (typeof s.cartoonTheme === "string" && CARTOON_THEME_NAMES.includes(s.cartoonTheme)) {
-      cartoonTheme = s.cartoonTheme;
-      cartoonThemeSelect.value = cartoonTheme;
-      saveCartoonThemePref();
-    }
-    if (typeof s.cartoonThemeEnabled === "boolean") {
-      cartoonThemeEnabled = s.cartoonThemeEnabled;
-      cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
-      saveCartoonThemeEnabledPref();
-    }
-    if (typeof s.cartoonThemeLo === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeLo)) {
-      cartoonThemeLo = s.cartoonThemeLo;
-      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
-      cartoonThemeLoInput.value = cartoonThemeLo;
-      saveCartoonThemeLoPref();
-    }
-    if (typeof s.cartoonThemeHi === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeHi)) {
-      cartoonThemeHi = s.cartoonThemeHi;
-      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
-      cartoonThemeHiInput.value = cartoonThemeHi;
-      saveCartoonThemeHiPref();
-    }
     if (Number.isFinite(s.particleOpacity)) {
       particleOpacity = s.particleOpacity;
       particleOpacitySlider.value = String(particleOpacity);
       particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
       saveParticleOpacityPref();
-    }
-    if (s.particleSource === "audio" || s.particleSource === "tone" || s.particleSource === "custom") {
-      // Set directly (not via setParticleSource, which is for interactive
-      // switching and requests the mic on the spot) -- the later on/off
-      // restore below reads particleSource when it decides whether
-      // toggleParticles() needs to start the mic.
-      particleSource = s.particleSource;
-      particleSourceSelect.value = particleSource;
-      saveParticleSourcePref();
     }
     // New-format templates carry the 4 independent toggles directly;
     // older templates (saved before this became checkboxes) carry the
@@ -5021,12 +3395,6 @@
       saveParticleColourAttractPref();
       saveParticleMoveAttractPref();
       updateSceneSamplingTimer();
-    }
-    if (Number.isFinite(s.particleCustomHue)) {
-      particleCustomHue = Math.max(0, Math.min(360, s.particleCustomHue));
-      particleCustomHueSlider.value = String(particleCustomHue);
-      updateParticleCustomHueSwatch();
-      saveParticleCustomHuePref();
     }
     if (Number.isFinite(s.particleTrail)) {
       particleTrail = Math.max(0, Math.min(100, s.particleTrail));
@@ -5359,6 +3727,22 @@
       (p.exposureAdjust === undefined || typeof p.exposureAdjust === "number");
   }
 
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    // Programmatic a.click() still dispatches a real, bubbling click event.
+    // Without this it reaches the tap-to-hide-HUD listener on document.body
+    // (the anchor is outside every excluded container) and silently closes
+    // the HUD right after every export download.
+    a.addEventListener("click", (e) => e.stopPropagation());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function exportPoints() {
     if (points.length === 0) {
       importExportStatus.textContent = "No saved colours to export yet.";
@@ -5425,18 +3809,6 @@
     saveSpreadPref();
   });
 
-  cvdTypeSelect.addEventListener("change", () => {
-    cvdType = cvdTypeSelect.value;
-    cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
-    saveCvdTypePref();
-  });
-
-  cvdStrengthSlider.addEventListener("input", () => {
-    cvdStrength = parseFloat(cvdStrengthSlider.value) / 100;
-    cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
-    saveCvdStrengthPref();
-  });
-
   outlinesBtn.addEventListener("click", toggleOutlinesMode);
   outlineThicknessSlider.addEventListener("input", () => {
     outlineThickness = parseFloat(outlineThicknessSlider.value);
@@ -5467,30 +3839,6 @@
   outlineColorInput.value = outlineColor;
   updateOutlinesUi();
 
-  freezeIsolateBtn.addEventListener("click", toggleFreezeIsolateMode);
-  freezeBlendSlider.addEventListener("input", () => {
-    freezeBlend = parseFloat(freezeBlendSlider.value) / 100;
-    freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
-    saveFreezeBlendPref();
-  });
-  freezeSpreadSlider.addEventListener("input", () => {
-    freezeSpread = parseFloat(freezeSpreadSlider.value);
-    freezeSpreadLabel.textContent = String(freezeSpread);
-    saveFreezeSpreadPref();
-  });
-  freezeToneSlider.addEventListener("input", () => {
-    freezeTone = parseFloat(freezeToneSlider.value);
-    freezeToneLabel.textContent = `${freezeToneSlider.value}%`;
-    saveFreezeTonePref();
-  });
-  freezeBlendSlider.value = String(Math.round(freezeBlend * 100));
-  freezeBlendLabel.textContent = `${freezeBlendSlider.value}%`;
-  freezeSpreadSlider.value = String(freezeSpread);
-  freezeSpreadLabel.textContent = String(freezeSpread);
-  freezeToneSlider.value = String(freezeTone);
-  freezeToneLabel.textContent = `${freezeTone}%`;
-  updateFreezeIsolateUi();
-
   particlesBtn.addEventListener("click", toggleParticles);
   particleOpacitySlider.addEventListener("input", () => {
     particleOpacity = parseFloat(particleOpacitySlider.value);
@@ -5499,8 +3847,6 @@
   });
   particleOpacitySlider.value = String(particleOpacity);
   particleOpacityLabel.textContent = `${particleOpacitySlider.value}%`;
-  particleSourceSelect.addEventListener("change", () => setParticleSource(particleSourceSelect.value));
-  particleSourceSelect.value = particleSource;
   particleOrbitPathCheckbox.addEventListener("change", () => setParticleOrbitPath(particleOrbitPathCheckbox.checked));
   particleOrbitPathCheckbox.checked = particleOrbitPath;
   particleSeekBrightnessCheckbox.addEventListener("change", () => setParticleSeekBrightness(particleSeekBrightnessCheckbox.checked));
@@ -5510,9 +3856,6 @@
   particleMoveAttractCheckbox.addEventListener("change", () => setParticleMoveAttract(particleMoveAttractCheckbox.checked));
   particleMoveAttractCheckbox.checked = particleMoveAttract;
   updateSceneSamplingTimer();
-  particleCustomHueSlider.addEventListener("input", () => setParticleCustomHue(parseFloat(particleCustomHueSlider.value)));
-  particleCustomHueSlider.value = String(particleCustomHue);
-  updateParticleCustomHueSwatch();
   particleTrailSlider.addEventListener("input", () => {
     setParticleTrail(parseFloat(particleTrailSlider.value));
     particleTrailLabel.textContent = `${particleTrailSlider.value}%`;
@@ -5751,77 +4094,6 @@
     });
   }
 
-  cartoonBtn.addEventListener("click", toggleCartoonMode);
-  cartoonLevelsSlider.addEventListener("input", () => {
-    cartoonLevels = parseFloat(cartoonLevelsSlider.value);
-    cartoonLevelsLabel.textContent = String(cartoonLevels);
-    saveCartoonLevelsPref();
-  });
-  cartoonLevelsSlider.value = String(cartoonLevels);
-  cartoonLevelsLabel.textContent = String(cartoonLevels);
-  cartoonEdgeThicknessSlider.addEventListener("input", () => {
-    cartoonEdgeThickness = parseFloat(cartoonEdgeThicknessSlider.value);
-    cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
-    saveCartoonEdgeThicknessPref();
-  });
-  cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
-  cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
-  cartoonEdgeStrengthSlider.addEventListener("input", () => {
-    cartoonEdgeStrength = parseFloat(cartoonEdgeStrengthSlider.value) / 100;
-    cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
-    saveCartoonEdgeStrengthPref();
-  });
-  cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
-  cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
-  cartoonSaturationSlider.addEventListener("input", () => {
-    cartoonSaturation = parseFloat(cartoonSaturationSlider.value) / 100;
-    cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
-    saveCartoonSaturationPref();
-  });
-  cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
-  cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
-  cartoonThemeSelect.addEventListener("change", () => {
-    cartoonTheme = cartoonThemeSelect.value;
-    saveCartoonThemePref();
-    const preset = CARTOON_THEME_PRESETS[cartoonTheme];
-    cartoonThemeEnabled = !!preset;
-    if (preset) {
-      cartoonThemeLo = preset.lo;
-      cartoonThemeHi = preset.hi;
-      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
-      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
-      cartoonThemeLoInput.value = cartoonThemeLo;
-      cartoonThemeHiInput.value = cartoonThemeHi;
-      saveCartoonThemeLoPref();
-      saveCartoonThemeHiPref();
-    }
-    cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
-    saveCartoonThemeEnabledPref();
-  });
-  cartoonThemeSelect.value = cartoonTheme;
-
-  cartoonThemeEnabledCheckbox.addEventListener("change", () => {
-    cartoonThemeEnabled = cartoonThemeEnabledCheckbox.checked;
-    saveCartoonThemeEnabledPref();
-  });
-  cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
-
-  cartoonThemeLoInput.addEventListener("input", () => {
-    cartoonThemeLo = cartoonThemeLoInput.value;
-    cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
-    saveCartoonThemeLoPref();
-  });
-  cartoonThemeLoInput.value = cartoonThemeLo;
-
-  cartoonThemeHiInput.addEventListener("input", () => {
-    cartoonThemeHi = cartoonThemeHiInput.value;
-    cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
-    saveCartoonThemeHiPref();
-  });
-  cartoonThemeHiInput.value = cartoonThemeHi;
-
-  updateCartoonUi();
-
   pauseBtn.addEventListener("click", () => {
     paused = !paused;
     pauseBtn.textContent = paused ? "Resume" : "Pause";
@@ -5859,14 +4131,12 @@
     } catch (e) { /* fullscreen not available/permitted — still hide the HUD below */ }
     fullscreenActive = true;
     hud.classList.add("hide");
-    updateFloatingCaptureBarVisibility();
     setFullscreenBtnState(true);
   }
 
   function exitFullscreenMode() {
     fullscreenActive = false;
     hud.classList.remove("hide");
-    updateFloatingCaptureBarVisibility();
     setFullscreenBtnState(false);
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) {
@@ -5879,9 +4149,6 @@
   }
   fullscreenBtn.addEventListener("click", toggleFullscreenMode);
 
-  zoomOutBtn.addEventListener("click", () => applyZoom(zoomValue - zoomStep));
-  zoomInBtn.addEventListener("click", () => applyZoom(zoomValue + zoomStep));
-
   // The browser's own fullscreen-exit gesture (Esc key, swipe-down on
   // mobile, back gesture) doesn't go through exitFullscreenMode() above, so
   // this catches that path too and keeps the button/HUD state in sync.
@@ -5892,56 +4159,6 @@
   });
 
   torchBtn.addEventListener("click", toggleTorch);
-  exposureModeBtn.addEventListener("click", toggleExposureMode);
-  shutterSlider.addEventListener("input", applyShutter);
-  isoSlider.addEventListener("input", applyIso);
-  evSlider.addEventListener("input", applyExposureCompensation);
-  photoBtn.addEventListener("click", takePhoto);
-  recordFpsSelect.value = String(recordFps);
-  recordFpsSelect.addEventListener("change", () => {
-    recordFps = parseInt(recordFpsSelect.value, 10);
-    try { localStorage.setItem(RECORD_FPS_KEY, String(recordFps)); } catch (e) {}
-  });
-  recordBtn.addEventListener("click", toggleRecording);
-  floatingPhotoBtn.addEventListener("click", takePhoto);
-  floatingRecordBtn.addEventListener("click", toggleRecording);
-  setupDraggableCaptureBar();
-  applyFloatingCapturePos();
-
-  connectTabletBtn.addEventListener("click", openViewerPanel);
-  startShareBtn.addEventListener("click", toggleTabletShare);
-  closeViewerPanelBtn.addEventListener("click", closeViewerPanel);
-
-  castBtn.classList.toggle("hide", !castApiAvailable());
-  castBtn.addEventListener("click", startCast);
-
-  cameraOnlyStopBtn.addEventListener("click", exitCameraOnlyMode);
-  showReceiveBtn.addEventListener("click", () => {
-    receiveForm.classList.remove("hide");
-    showReceiveBtn.classList.add("hide");
-  });
-  receiveConnectBtn.addEventListener("click", startReceiving);
-  receiveRoomInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") startReceiving();
-  });
-
-  // Best-effort hardware shutter: most browsers never forward physical
-  // volume-button presses to page JavaScript at all (iOS Safari and
-  // desktop never do), and even where a browser does — mainly some
-  // Android/Chrome versions, especially as an installed PWA — the OS may
-  // still also change the system volume alongside it. Where it works,
-  // volume-down fires the current shutter mode (photo or video) and
-  // volume-up switches which mode that is; the on-screen Photo/Record
-  // buttons are the reliable fallback everywhere else.
-  document.addEventListener("keydown", (e) => {
-    const isDown = e.key === "AudioVolumeDown" || e.code === "AudioVolumeDown";
-    const isUp = e.key === "AudioVolumeUp" || e.code === "AudioVolumeUp";
-    if (!isDown && !isUp) return;
-    if (!currentStream) return;
-    e.preventDefault();
-    if (isUp) toggleShutterMode();
-    else fireShutter();
-  });
 
   calibrateBtn.addEventListener("click", () => openChoosePanel());
   chooseAimBtn.addEventListener("click", () => {
@@ -5949,13 +4166,6 @@
     choosePanelReturnFocusEl = null;
     startAiming();
   });
-  // Previously skipped straight to aiming, with no way to reach the preset
-  // swatches or the plain colour picker — the only way to open Calibrate
-  // at all once the HUD (and its own calibrateBtn) is hidden, so those
-  // options were entirely unreachable while the HUD was hidden or in
-  // fullscreen. Now opens the same choose panel calibrateBtn does,
-  // returning focus to this button instead of the HUD's hidden one.
-  floatingCalibrateBtn.addEventListener("click", () => openChoosePanel(floatingCalibrateBtn));
   colourPickerInput.addEventListener("input", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
@@ -6002,10 +4212,6 @@
     closePointsBtn.focus();
   }
   pointsBtn.addEventListener("click", openPointsPanel);
-  // The HUD's own Saved colours button is unreachable whenever the HUD is
-  // hidden (plain tap-to-hide, or fullscreen) — this is the floating
-  // bar's twin of it, same as Photo/Record/Calibrate already have theirs.
-  floatingPointsBtn.addEventListener("click", openPointsPanel);
   closePointsBtn.addEventListener("click", closePointsPanel);
   selectModeBtn.addEventListener("click", () => setSelectMode(!selectMode));
   deleteSelectedBtn.addEventListener("click", deleteSelected);
@@ -6035,8 +4241,6 @@
       closePointsPanel();
     } else if (!choosePanel.classList.contains("hide")) {
       closeChoosePanel();
-    } else if (!viewerPanel.classList.contains("hide")) {
-      closeViewerPanel();
     } else if (aiming) {
       stopAiming();
     }
@@ -6050,14 +4254,13 @@
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #viewerPanel, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar, #fullscreenBtn, #zoomControl"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #fullscreenBtn"
     ));
   }
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;
     hud.classList.toggle("hide");
-    updateFloatingCaptureBarVisibility();
   });
 
   updatePointsCount();
@@ -6067,8 +4270,4 @@
   spreadSlider.value = String(spread);
   spreadLabel.textContent = spreadDescription(spread);
   rotateBtn.classList.toggle("active", rotate180);
-  cvdTypeSelect.value = cvdType;
-  cvdStrengthWrap.classList.toggle("hide", cvdType === "none");
-  cvdStrengthSlider.value = String(Math.round(cvdStrength * 100));
-  cvdStrengthLabel.textContent = `${cvdStrengthSlider.value}%`;
 })();

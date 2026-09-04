@@ -20,51 +20,17 @@
     <h1>Sound Colour</h1>
     <p>The correction engine from Colour Vision Extreme, dedicated to one question: what if sight and sound talked to each other? Sound &rarr; Colour: bass/mid/treble reach into the live correction itself (blend, spread, outline strength), on top of Audio colour tint's existing hue wash. Colour &rarr; Sound: the corrected view plays back as tone -- a chime near a saved colour, an ambient drone from the scene's dominant hue, a filtered-noise texture from how busy/edgy the view is.</p>
     <button id="startBtn">Enable camera &amp; start</button>
-    <label id="cameraOnlyModeWrap" class="hud-slider camera-only-mode-wrap" title="For a two-device setup: this device just points somewhere and broadcasts, with no controls of its own. Do all the calibration and correction on the other (receiving) device instead.">
-      <input id="cameraOnlyModeCheckbox" type="checkbox">
-      Camera-only mode (broadcast to another device)
-    </label>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="index.html">&larr; Back to suite home</a></p>
     <p class="hint"><a href="colorvision.html">Colour Vision Extreme (the full correction engine) &rarr;</a></p>
     <p class="hint"><a href="nebula.html">Sound Nebula &rarr;</a></p>
-
-    <div id="receiveModeSection">
-      <p class="hint">Or, on the controlling device of a two-device setup:</p>
-      <button id="showReceiveBtn" class="hud-btn reticle-btn-secondary">Receive camera from another device</button>
-      <div id="receiveForm" class="hide">
-        <p class="hint">On the camera device: open this page, check "Camera-only mode" above, tap "Enable camera &amp; start", then read out the room code shown there.</p>
-        <input id="receiveRoomInput" type="text" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off">
-        <button id="receiveConnectBtn" class="hud-btn">Connect</button>
-      </div>
-    </div>
   </div>
-</div>
-
-<div id="cameraOnlyBadge" class="hide" role="status" aria-live="polite">
-  <div class="room-code-label">Room code</div>
-  <div id="cameraOnlyRoomCode" class="room-code" aria-live="polite"></div>
-  <p id="cameraOnlyStatusText" class="hint">Starting…</p>
-  <button id="cameraOnlyStopBtn" class="hud-btn reticle-btn-secondary">Show full controls</button>
 </div>
 
 <div id="hud" class="hide">
   <label id="blendWrap" class="hud-slider" title="0% shows the true camera image. 100% shows the fully corrected image.">
     True &harr; Corrected: <span id="blendLabel">100%</span>
     <input id="blendSlider" type="range" min="0" max="100" value="100">
-  </label>
-  <label id="cvdTypeWrap" class="hud-slider" title="Applies a whole-frame correction tuned to a diagnosed colour vision deficiency type, independent of any colours you calibrate by hand below.">
-    Colour blindness type:
-    <select id="cvdTypeSelect">
-      <option value="none">None (manual only)</option>
-      <option value="protan">Protanopia (red-weak)</option>
-      <option value="deutan">Deuteranopia (green-weak)</option>
-      <option value="tritan">Tritanopia (blue-yellow)</option>
-    </select>
-  </label>
-  <label id="cvdStrengthWrap" class="hud-slider hide" title="How strongly the type-based correction is applied. Lower it if the full correction looks over-saturated or unnatural for your degree of colour vision deficiency.">
-    Type correction: <span id="cvdStrengthLabel">100%</span>
-    <input id="cvdStrengthSlider" type="range" min="0" max="100" value="100">
   </label>
   <label id="spreadWrap" class="hud-slider" title="How far a saved colour's correction generalises to nearby colours. Tight keeps it local to the exact shade you calibrated; wide lets it cover more of the scene.">
     Correction spread: <span id="spreadLabel">Medium</span>
@@ -77,20 +43,7 @@
     Reactive correction strength: <span id="audioReactStrengthLabel">40%</span>
     <input id="audioReactStrengthSlider" type="range" min="0" max="100" value="40">
   </label>
-  <button id="particlesBtn" class="hud-btn" aria-pressed="false" title="A swarm of glowing particles over the corrected view -- same idea as Sound Nebula's particle swarm, layered on top of your colour correction instead of a plain background. Driven by sound or by Tone, depending on the Source below.">Particle effects: Off</button>
-  <label id="particleSourceWrap" class="hud-slider hide" title="Audio: coloured particles (violet/cyan/pink) driven by the microphone's live bass/mid/treble energy -- needs mic permission. Tone: a single white/grey swarm driven by Freeze isolate's own Tone slider instead -- no microphone needed at all. Custom: same no-mic Tone energy, but with a hue you pick yourself below.">
-    Source:
-    <select id="particleSourceSelect">
-      <option value="audio">Audio (mic)</option>
-      <option value="tone">Tone (no mic)</option>
-      <option value="custom">Custom colour (no mic)</option>
-    </select>
-  </label>
-  <label id="particleCustomHueWrap" class="hud-slider hide" title="The fixed hue Custom-source particles glow -- drag to pick any colour around the wheel.">
-    Particle colour:
-    <span id="particleCustomHueSwatch" style="display:inline-block; width:1em; height:1em; border-radius:50%; vertical-align:middle; margin:0 4px; border:1px solid rgba(242,242,247,0.4);"></span>
-    <input id="particleCustomHueSlider" type="range" min="0" max="360" value="280">
-  </label>
+  <button id="particlesBtn" class="hud-btn" aria-pressed="false" title="A swarm of glowing particles over the corrected view -- same idea as Sound Nebula's particle swarm, layered on top of your colour correction instead of a plain background. Driven by the microphone's live bass/mid/treble energy, same as Audio colour tint.">Particle effects: Off</button>
   <div id="particleBehaviorWrap" class="hud-slider hide" title="Combine any of these -- they are not exclusive, so a swarm can e.g. orbit AND seek brightness AND cluster by colour all at once.">
     Behavior:
     <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Each particle keeps circling its target point at its own personal radius, instead of sitting still on top of it.">
@@ -99,7 +52,7 @@
     <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Each particle independently steers toward whichever distinct bright region of the live camera view is nearest to it -- a scene with two separate bright spots gets two separate groups of particles, not one shared destination everyone chases. A real reaction to the actual scene (brightness-seeking movement), not object recognition or true image understanding.">
       <input type="checkbox" id="particleSeekBrightnessCheckbox"> Seek brightness
     </label>
-    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Particles with a similar hue pull toward each other, clustering same-coloured particles together. No effect in Tone mode (no hue to compare).">
+    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;" title="Particles with a similar hue pull toward each other, clustering same-coloured particles together.">
       <input type="checkbox" id="particleColourAttractCheckbox"> Colour attraction
     </label>
     <label style="display:inline-flex; align-items:center; gap:4px;" title="Faster-moving particles pull nearby slower ones along with them.">
@@ -114,7 +67,7 @@
     Particle trails: <span id="particleTrailLabel">0%</span>
     <input id="particleTrailSlider" type="range" min="0" max="100" value="0">
   </label>
-  <label id="particleCountWrap" class="hud-slider hide" title="How many particles per group (Audio: per band; Tone/Custom: per third of the flat pool). More particles means a denser swarm, and re-seeds the swarm when changed.">
+  <label id="particleCountWrap" class="hud-slider hide" title="How many particles per audio band (Bass/Mid/Treble). More particles means a denser swarm, and re-seeds the swarm when changed.">
     Particle count: <span id="particleCountLabel">30</span>
     <input id="particleCountSlider" type="range" min="5" max="100" value="30" step="1">
   </label>
@@ -300,7 +253,7 @@
     Sync delay: <span id="beatSyncDelayLabel">0 ms</span>
     <input id="beatSyncDelaySlider" type="range" min="0" max="500" step="10" value="0">
   </label>
-  <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view, blended with the normal full-colour correction. Can be combined with Cartoon mode too.">Outlines mode: Off</button>
+  <button id="outlinesBtn" class="hud-btn" aria-pressed="false" title="Overlays detected edges on the camera view, blended with the normal full-colour correction.">Outlines mode: Off</button>
   <label id="outlineThicknessWrap" class="hud-slider hide" title="How thick the edge lines are.">
     Outline thickness: <span id="outlineThicknessLabel">2px</span>
     <input id="outlineThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
@@ -316,58 +269,6 @@
   <label id="outlineColorWrap" class="hud-btn choose-picker-btn hide" title="Colour used for outline edge lines.">
     Outline colour
     <input id="outlineColorInput" type="color" value="#ffffff" aria-label="Outline colour">
-  </label>
-  <button id="freezeIsolateBtn" class="hud-btn" aria-pressed="false" title="Show only your saved (frozen) colours in their corrected true colour — everything else in shot fades to black. Needs at least one saved colour; with none saved, the whole frame goes black.">Freeze isolate: Off</button>
-  <label id="freezeBlendWrap" class="hud-slider hide" title="0% is the normal view. 100% is fully isolated — anything not near a saved colour goes fully black.">
-    Freeze blend: <span id="freezeBlendLabel">100%</span>
-    <input id="freezeBlendSlider" type="range" min="0" max="100" value="100">
-  </label>
-  <label id="freezeSpreadWrap" class="hud-slider hide" title="How close a shade in shot has to be to one of your saved colours to still show through. Lower is stricter (only the almost-exact shade shows); higher is looser (nearby shades show too).">
-    Freeze match distance: <span id="freezeSpreadLabel">15</span>
-    <input id="freezeSpreadSlider" type="range" min="1" max="40" value="15">
-  </label>
-  <label id="freezeToneWrap" class="hud-slider hide" title="0% matches your saved colours normally (hue and lightness both count). 100% ignores hue entirely and matches purely by brightness — a pure grey has no hue of its own, so this is what recreates that same-brightness-any-colour effect, live, on whatever you've already saved.">
-    Tone: <span id="freezeToneLabel">0%</span>
-    <input id="freezeToneSlider" type="range" min="0" max="100" value="0">
-  </label>
-  <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the camera view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
-  <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
-    Cartoon levels: <span id="cartoonLevelsLabel">6</span>
-    <input id="cartoonLevelsSlider" type="range" min="2" max="24" step="1" value="6">
-  </label>
-  <label id="cartoonEdgeThicknessWrap" class="hud-slider hide" title="How wide the cartoon ink lines are.">
-    Cartoon edge thickness: <span id="cartoonEdgeThicknessLabel">2px</span>
-    <input id="cartoonEdgeThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
-  </label>
-  <label id="cartoonEdgeStrengthWrap" class="hud-slider hide" title="How bold/dark the cartoon ink lines are, and how easily they trigger on softer edges.">
-    Cartoon edge strength: <span id="cartoonEdgeStrengthLabel">60%</span>
-    <input id="cartoonEdgeStrengthSlider" type="range" min="0" max="100" step="5" value="60">
-  </label>
-  <label id="cartoonSaturationWrap" class="hud-slider hide" title="How vivid the flat cartoon colour bands are.">
-    Cartoon saturation: <span id="cartoonSaturationLabel">135%</span>
-    <input id="cartoonSaturationSlider" type="range" min="100" max="300" step="5" value="135">
-  </label>
-  <label id="cartoonThemeWrap" class="hud-slider hide" title="Presets that fill in the duotone shadow/highlight colours below. Original colours turns the duotone recolour off.">
-    Cartoon colour theme:
-    <select id="cartoonThemeSelect">
-      <option value="none">Original colours</option>
-      <option value="greyscale">Greyscale</option>
-      <option value="sepia">Sepia</option>
-      <option value="desert">Desert</option>
-      <option value="oasis">Oasis</option>
-    </select>
-  </label>
-  <label id="cartoonThemeEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns the duotone recolour on or off. When off, cartoon mode keeps its normal flat colours regardless of the shadow/highlight colours below.">
-    <input id="cartoonThemeEnabledCheckbox" type="checkbox">
-    Duotone recolour
-  </label>
-  <label id="cartoonThemeLoWrap" class="hud-btn choose-picker-btn hide" title="Shadow colour for the cartoon duotone recolour.">
-    Duotone shadows
-    <input id="cartoonThemeLoInput" type="color" value="#0d0d0d" aria-label="Cartoon duotone shadow colour">
-  </label>
-  <label id="cartoonThemeHiWrap" class="hud-btn choose-picker-btn hide" title="Highlight colour for the cartoon duotone recolour.">
-    Duotone highlights
-    <input id="cartoonThemeHiInput" type="color" value="#f2f2f2" aria-label="Cartoon duotone highlight colour">
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
@@ -389,35 +290,9 @@
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
-  <button id="exposureModeBtn" class="hud-btn hide" aria-pressed="false" title="Lock the camera's exposure so it stops auto-adjusting brightness — colours read more consistently when the camera isn't hunting for exposure.">Exposure: Auto</button>
-  <label id="shutterWrap" class="hud-slider hide" title="Manual shutter speed. Lower is faster/darker, higher is slower/brighter.">
-    Shutter: <span id="shutterLabel"></span>
-    <input id="shutterSlider" type="range">
-  </label>
-  <label id="isoWrap" class="hud-slider hide" title="Manual ISO (sensor sensitivity). Higher brightens the image but can add noise.">
-    ISO: <span id="isoLabel"></span>
-    <input id="isoSlider" type="range">
-  </label>
-  <label id="evWrap" class="hud-slider hide" title="Exposure compensation — nudges brightness up or down without leaving auto exposure.">
-    EV: <span id="evLabel"></span>
-    <input id="evSlider" type="range">
-  </label>
   <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see — a phone's own lenses, or a USB webcam / HDMI-to-USB capture card feeding a dedicated camera into this device — appear here the same way, labelled straight from the OS/driver. The browser doesn't distinguish 'phone lens' from 'camera hardware'.">
     Camera: <select id="cameraSelect"></select>
   </label>
-  <button id="photoBtn" class="hud-btn" title="Take a photo of the corrected view. On some Android browsers, the phone's volume-down button works as a shutter too.">&#128247; Photo</button>
-  <label id="recordFpsWrap" class="hud-slider" title="Frame rate for recorded video. Lower is a smaller file; higher is smoother motion. Locked once recording starts.">
-    Recording FPS:
-    <select id="recordFpsSelect">
-      <option value="15">15 fps</option>
-      <option value="24">24 fps</option>
-      <option value="30" selected>30 fps</option>
-      <option value="60">60 fps</option>
-    </select>
-  </label>
-  <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
-  <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a tablet) as a read-only viewer.">Connect tablet</button>
-  <button id="castBtn" class="hud-btn hide" aria-pressed="false" title="Cast the corrected view to a Chromecast or AirPlay TV using your browser's own built-in casting -- best-effort: support for casting a live view (rather than a video file) varies by browser and device, so this may not find or work with every TV. Hidden entirely if your browser doesn't expose either casting API at all.">&#128250; Cast to TV</button>
   <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
   <a href="colorassist.html" class="hud-btn">Colour Assist &rarr;</a>
   <a href="video-production.html" class="hud-btn">Video Production &rarr;</a>
@@ -428,53 +303,11 @@
 </div>
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
-<p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
-<p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
-<p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
 
-<div id="floatingCaptureBar" class="hide" role="group" aria-label="Calibrate, photo, video capture, and saved colours">
-  <button id="floatingCalibrateBtn" class="hud-btn" title="Aim the camera at a colour to calibrate. Long-press and drag to move this bar.">&#127919; Calibrate</button>
-  <button id="floatingPhotoBtn" class="hud-btn" title="Take a photo of the corrected view. Long-press and drag to move this bar.">&#128247; Photo</button>
-  <button id="floatingRecordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view. Long-press and drag to move this bar.">&#9210; Record</button>
-  <button id="floatingPointsBtn" class="hud-btn" title="Open your saved colours — the HUD's own button for this is hidden right now. Long-press and drag to move this bar.">&#127912; Saved</button>
-</div>
-
-<!-- Always on screen, in both HUD and fullscreen states — unlike the rest
-     of the floating bar above, this doesn't disappear when the HUD is
-     showing, so there's one large, unmissable, fixed target to get in and
-     back out of fullscreen without hunting for a tiny gap of bare video. -->
+<!-- Always on screen, in both HUD and fullscreen states, so there's one
+     large, unmissable, fixed target to get in and back out of fullscreen
+     without hunting for a tiny gap of bare video. -->
 <button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
-
-<!-- Fixed outside #hud like #fullscreenBtn above, so it stays reachable at
-     the bottom of the screen in fullscreen too. Real camera-hardware zoom
-     (Image Capture API), hidden entirely unless the camera actually
-     reports support. -->
-<div id="zoomControl" class="hide" role="group" aria-label="Zoom">
-  <button id="zoomOutBtn" class="hud-btn" title="Zoom out">&#8722;</button>
-  <span id="zoomLabel">1.0x</span>
-  <button id="zoomInBtn" class="hud-btn" title="Zoom in">&#43;</button>
-</div>
-
-<div id="viewerPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="viewerPanelTitle">
-  <div id="viewerPanelInner">
-    <h2 id="viewerPanelTitle">Connect a tablet as a viewer</h2>
-    <p class="hint">On the other device, open <a href="viewer.html" target="_blank" rel="noopener">viewer.html</a> from this site, then type in the room code below and tap Connect.</p>
-
-    <button id="startShareBtn" class="hud-btn">Start live sharing</button>
-
-    <div id="shareCodeBlock" class="hide">
-      <div class="room-code-label">Room code</div>
-      <div id="shareRoomCode" class="room-code" aria-live="polite"></div>
-      <p class="hint">Or open this link directly on the other device:<br><span id="shareViewUrlText" class="share-url"></span></p>
-    </div>
-
-    <p id="viewerStatus" class="hint" role="status" aria-live="polite"></p>
-
-    <div class="tune-actions">
-      <button id="closeViewerPanelBtn" class="hud-btn reticle-btn-secondary">Close</button>
-    </div>
-  </div>
-</div>
 
 <div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
   <div id="choosePanelInner">
