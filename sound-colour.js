@@ -118,6 +118,16 @@
   const EDGE_TONE_DETUNE_KEY = "edgeToneDetune_colorVision_v1";
   const EDGE_TONE_RANDOMNESS_KEY = "edgeToneRandomness_colorVision_v1";
   const EDGE_TONE_RANDOMNESS_MAX_CENTS = 20;
+  // Shared loudness ceilings for the synth branch, so no channel reads as
+  // quieter than another purely from an old per-channel constant that was
+  // never actually tuned against the other two -- chime's pluck used 0.5,
+  // dominant tone's arpeggio note used a noticeably lower 0.2 (continuous
+  // drone 0.12, deliberately meant to sit in the background, which is a
+  // separate, still-intentional difference from its OWN melodic mode, not
+  // from chime/edge texture). Same envelope shape per channel (pluck vs.
+  // pad vs. noise burst) still differs -- only the ceiling is now shared.
+  const SONIFICATION_ONESHOT_PEAK = 0.5; // chime pluck, dominant tone arpeggio note, edge texture rhythmic hit
+  const SONIFICATION_CONTINUOUS_PEAK = 0.3; // dominant tone drone, edge texture continuous texture
   // Bars: how many 16-step bars edge texture's rhythm cycles through before
   // repeating -- each bar rotates the same Euclidean pattern by a fixed
   // offset (a real, standard rhythm technique: rotating a Euclidean rhythm
@@ -143,7 +153,11 @@
   //   algorithm), "steady_pulse" (hits fall on an evenly-spaced subdivision
   //   instead of a syncopated spread -- density picks the subdivision, not
   //   the spacing), "swing" (euclidean hit placement, but alternating long/
-  //   short 16th-note timing instead of a straight grid).
+  //   short 16th-note timing instead of a straight grid), "random_walk"
+  //   (euclidean hit placement again, but pitch wanders the scale instead
+  //   of density picking the note directly -- the other three are
+  //   rhythm-only, this is the note-choice one, same idea as chime's/
+  //   dominant tone's own random_walk above).
   const CHIME_PATTERN_KEY = "chimePattern_colorVision_v1";
   const DOM_TONE_PATTERN_KEY = "domTonePattern_colorVision_v1";
   const EDGE_TONE_PATTERN_KEY = "edgeTonePattern_colorVision_v1";
@@ -3097,7 +3111,16 @@
     { name: "Applause", program: 126, folder: "applause" },
     { name: "Gunshot", program: 127, folder: "gunshot" }
   ];
-  const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  // Every channel (chime, dominant tone, edge texture) can now pick from
+  // either instrument list -- edge texture used to be limited to the
+  // percussive one only (a pure drum machine, before it had real pitch of
+  // its own), and chime/dominant tone to the pitched one only, which made
+  // percussive/FX colours unreachable from either of the two channels that
+  // actually have room to use them melodically. One combined lookup table
+  // means whichever list a saved instrument came from still resolves
+  // correctly everywhere, regardless of which channel picked it.
+  const GM_ALL_INSTRUMENTS = GM_INSTRUMENTS.concat(GM_PERCUSSIVE_INSTRUMENTS);
+const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   function hzToMidiNote(freq) {
     return 69 + 12 * Math.log2(freq / 440);
@@ -3338,7 +3361,7 @@
   let chimeInstrument = (() => {
     try {
       const raw = localStorage.getItem(CHIME_INSTRUMENT_KEY);
-      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "music_box";
+      return GM_ALL_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "music_box";
     } catch (e) { return "music_box"; }
   })();
   // Colour source: Saved (needs a calibrated colour, the original design)
@@ -3412,7 +3435,7 @@
   function playChimeNote(freq, velocity) {
     const totalCents = chimeDetuneCents + randomCentsJitter(chimeRandomness, CHIME_RANDOMNESS_MAX_CENTS);
     if (chimeOutput === "midi") {
-      const inst = GM_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "music_box");
+      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "music_box");
       playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100, totalCents);
       return;
     }
@@ -3425,7 +3448,7 @@
     osc.type = "triangle";
     osc.frequency.value = freq * centsToRateFactor(totalCents);
     const gain = chimeAudioCtx.createGain();
-    const peak = Math.max(0.001, velocity * (chimeVolume / 100) * 0.5);
+    const peak = Math.max(0.001, velocity * (chimeVolume / 100) * SONIFICATION_ONESHOT_PEAK);
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(peak, now + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
@@ -3590,7 +3613,7 @@
   }
 
   function setChimeInstrument(next) {
-    if (!GM_INSTRUMENTS.some((i) => i.folder === next)) return;
+    if (!GM_ALL_INSTRUMENTS.some((i) => i.folder === next)) return;
     chimeInstrument = next;
     saveChimeInstrumentPref();
   }
@@ -3657,7 +3680,7 @@
   let domToneInstrument = (() => {
     try {
       const raw = localStorage.getItem(DOM_TONE_INSTRUMENT_KEY);
-      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "marimba";
+      return GM_ALL_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "marimba";
     } catch (e) { return "marimba"; }
   })();
   let domToneAudioCtx = null;
@@ -3762,7 +3785,7 @@
   function playDomTonePadNote(freq, velocity) {
     const totalCents = domToneDetuneCents + randomCentsJitter(domToneRandomness, DOM_TONE_RANDOMNESS_MAX_CENTS);
     if (domToneOutput === "midi") {
-      const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "marimba");
+      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "marimba");
       playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600, totalCents);
       return;
     }
@@ -3775,7 +3798,7 @@
     osc.type = "sine";
     osc.frequency.value = freq * centsToRateFactor(totalCents);
     const gain = domToneAudioCtx.createGain();
-    const peak = Math.max(0.001, velocity * (domToneVolume / 100) * 0.2);
+    const peak = Math.max(0.001, velocity * (domToneVolume / 100) * SONIFICATION_ONESHOT_PEAK);
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(peak, now + 0.12);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
@@ -3804,7 +3827,7 @@
     const exactMidiNote = hzToMidiNote(targetFreq) + domToneDetuneCents / 100;
     const nearestBase = Math.round(exactMidiNote);
     const bendCents = (exactMidiNote - nearestBase) * 100;
-    const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "marimba");
+    const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "marimba");
     sendMidiProgramChange(DOM_TONE_MIDI_CHANNEL, inst.program);
     if (domToneContinuousMidiBaseNote !== nearestBase) {
       if (domToneContinuousMidiBaseNote != null) sendMidiNoteOff(DOM_TONE_MIDI_CHANNEL, domToneContinuousMidiBaseNote);
@@ -3904,10 +3927,14 @@
       }
       const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
       // Hue mapped across one octave (220-440Hz) rather than the chime's
-      // wider proximity range -- this tone is meant to sit in the
-      // background as a continuous drone, not compete for attention.
+      // wider proximity range -- narrower pitch range is what keeps this
+      // read as an ambient drone, not a lower gain ceiling (that used to
+      // sit well below chime/edge texture's own; now shares
+      // SONIFICATION_CONTINUOUS_PEAK with edge texture's continuous style
+      // instead of being quieter by default just because of a stale
+      // per-channel constant).
       const targetFreq = (220 + (h / 360) * 220) * centsToRateFactor(domToneDetuneCents);
-      const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
+      const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * SONIFICATION_CONTINUOUS_PEAK;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
       return;
@@ -4077,7 +4104,7 @@
   }
 
   function setDomToneInstrument(next) {
-    if (!GM_INSTRUMENTS.some((i) => i.folder === next)) return;
+    if (!GM_ALL_INSTRUMENTS.some((i) => i.folder === next)) return;
     domToneInstrument = next;
     saveDomToneInstrumentPref();
   }
@@ -4136,7 +4163,7 @@
   let edgeToneInstrument = (() => {
     try {
       const raw = localStorage.getItem(EDGE_TONE_INSTRUMENT_KEY);
-      return GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "woodblock";
+      return GM_ALL_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "woodblock";
     } catch (e) { return "woodblock"; }
   })();
   // Edge texture's scale: chime uses a major-pentatonic scale rooted at
@@ -4198,12 +4225,20 @@
   let edgeToneRandomness = loadOutlineNumberPref(EDGE_TONE_RANDOMNESS_KEY, 0);
   let edgeToneBars = loadOutlineNumberPref(EDGE_TONE_BARS_KEY, EDGE_TONE_DEFAULT_BARS);
   let edgeToneBarIndex = 0;
-  // Pattern (Melodic only): which rhythm generator actually decides hit
-  // placement/timing -- see the big comment above CHIME_PATTERN_KEY.
+  // Pattern (Melodic only): which generator actually decides hit placement/
+  // timing (Steady pulse, Swing) -- see the big comment above
+  // CHIME_PATTERN_KEY. Euclidean/Steady pulse/Swing are all rhythm-only:
+  // every one of them still picks pitch the same fixed way (density maps
+  // straight onto a scale position, see updateEdgeTexture). Random walk is
+  // the odd one out -- a genuine note-choice pattern like chime's/dominant
+  // tone's own Random walk, wandering EDGE_TONE_SCALE_HZ instead of jumping
+  // straight to the density-picked note, reusing Euclidean's hit placement
+  // (like Swing already does) since it only changes pitch, not rhythm.
+  let edgeToneWalkIndex = null;
   let edgeTonePattern = (() => {
     try {
       const raw = localStorage.getItem(EDGE_TONE_PATTERN_KEY);
-      return raw === "steady_pulse" || raw === "swing" ? raw : "euclidean";
+      return raw === "steady_pulse" || raw === "swing" || raw === "random_walk" ? raw : "euclidean";
     } catch (e) { return "euclidean"; }
   })();
 
@@ -4303,13 +4338,23 @@
   // just the MIDI/Instrument outputs.
   function playEdgeTexTick(density, freq) {
     const totalCents = edgeToneDetuneCents + randomCentsJitter(edgeToneRandomness, EDGE_TONE_RANDOMNESS_MAX_CENTS);
+    // Loudness curve: sampleEdgeDensity is calibrated so a checkerboard-
+    // strength grid reads as ~1, which real footage rarely approaches --
+    // a plain linear multiply by density caps this channel's practical
+    // loudness far below chime's (whose driving "closeness" signal reaches
+    // 1.0 in ordinary use) even at Volume 100%. A sqrt curve keeps 0 silent
+    // and 1 at the same peak as a linear mapping would, but lifts the
+    // realistic middle of density's actual range so Volume has real room
+    // to be heard -- used for loudness only; the brightness scaling below
+    // still uses the raw, uncurved density.
+    const loudness = Math.sqrt(Math.max(0, Math.min(1, density)));
     if (edgeToneOutput === "midi") {
-      const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === "woodblock");
-      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), density, 150, totalCents);
+      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "woodblock");
+      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), loudness, 150, totalCents);
       return;
     }
     if (edgeToneOutput === "instrument") {
-      playInstrumentNote(edgeToneInstrument, hzToMidiNote(freq), density * (edgeToneVolume / 100), 0.3, totalCents);
+      playInstrumentNote(edgeToneInstrument, hzToMidiNote(freq), loudness * (edgeToneVolume / 100), 0.3, totalCents);
       return;
     }
     const now = edgeToneAudioCtx.currentTime;
@@ -4329,7 +4374,7 @@
     filter.frequency.value = (freq * (1 + density * 3)) * centsToRateFactor(totalCents);
     filter.Q.value = 0.7;
     const gain = edgeToneAudioCtx.createGain();
-    const peak = Math.max(0.001, (edgeToneVolume / 100) * density * 0.5);
+    const peak = Math.max(0.001, (edgeToneVolume / 100) * loudness * SONIFICATION_ONESHOT_PEAK);
     gain.gain.setValueAtTime(peak, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
     src.connect(filter);
@@ -4348,7 +4393,11 @@
         edgeToneGainNode.gain.setTargetAtTime(0, now, 0.15);
         return;
       }
-      const targetGain = (edgeToneVolume / 100) * density * 0.25;
+      // Same loudness curve as the rhythmic hit above (see playEdgeTexTick)
+      // -- density's realistic range rarely nears 1, so a plain linear
+      // multiply would cap this well below what Volume 100% implies.
+      // targetFreq (brightness) keeps using raw, uncurved density.
+      const targetGain = (edgeToneVolume / 100) * Math.sqrt(Math.max(0, Math.min(1, density))) * SONIFICATION_CONTINUOUS_PEAK;
       const targetFreq = 200 + density * 3000;
       edgeToneGainNode.gain.setTargetAtTime(targetGain, now, 0.25);
       edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
@@ -4415,7 +4464,24 @@
     // drives both rhythm and pitch" idea chime/dominant tone already use
     // (closeness and hue), just fed by edge texture's own natural signal.
     const pitchIndex = Math.min(EDGE_TONE_SCALE_HZ.length - 1, Math.floor(density * EDGE_TONE_SCALE_HZ.length));
-    playEdgeTexTick(density * accent, EDGE_TONE_SCALE_HZ[pitchIndex]);
+    let playedPitchIndex = pitchIndex;
+    if (edgeTonePattern === "random_walk") {
+      // Wanders the scale one step at a time instead of jumping straight to
+      // the density-picked note -- biased back toward that note (so it
+      // still tracks density over time), with Randomness loosening the
+      // bias -- identical shape to chime's/dominant tone's own Random walk.
+      if (edgeToneWalkIndex == null) edgeToneWalkIndex = pitchIndex;
+      const towardBias = 0.9 - (edgeToneRandomness / 100) * 0.6;
+      let step;
+      if (Math.random() < towardBias) {
+        step = edgeToneWalkIndex < pitchIndex ? 1 : edgeToneWalkIndex > pitchIndex ? -1 : (Math.random() < 0.5 ? -1 : 1);
+      } else {
+        step = Math.random() < 0.5 ? -1 : 1;
+      }
+      edgeToneWalkIndex = Math.max(0, Math.min(EDGE_TONE_SCALE_HZ.length - 1, edgeToneWalkIndex + step));
+      playedPitchIndex = edgeToneWalkIndex;
+    }
+    playEdgeTexTick(density * accent, EDGE_TONE_SCALE_HZ[playedPitchIndex]);
   }
 
   function updateEdgeToneSamplingTimer() {
@@ -4429,6 +4495,7 @@
       edgeToneStepIndex = 0;
       edgeToneStepElapsedMs = 0;
       edgeToneBarIndex = 0;
+      edgeToneWalkIndex = null;
       if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -4521,7 +4588,7 @@
   }
 
   function setEdgeToneInstrument(next) {
-    if (!GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === next)) return;
+    if (!GM_ALL_INSTRUMENTS.some((i) => i.folder === next)) return;
     edgeToneInstrument = next;
     saveEdgeToneInstrumentPref();
   }
@@ -4564,11 +4631,12 @@
   }
 
   function setEdgeTonePattern(next) {
-    if (next !== "euclidean" && next !== "steady_pulse" && next !== "swing") return;
+    if (next !== "euclidean" && next !== "steady_pulse" && next !== "swing" && next !== "random_walk") return;
     edgeTonePattern = next;
     edgeToneStepIndex = 0;
     edgeToneStepElapsedMs = 0;
     edgeToneBarIndex = 0;
+    edgeToneWalkIndex = null;
     saveEdgeTonePatternPref();
   }
 
@@ -5085,7 +5153,7 @@
       setChimeOutput(s.chimeOutput);
       chimeOutputSelect.value = chimeOutput;
     }
-    if (typeof s.chimeInstrument === "string" && GM_INSTRUMENTS.some((i) => i.folder === s.chimeInstrument)) {
+    if (typeof s.chimeInstrument === "string" && GM_ALL_INSTRUMENTS.some((i) => i.folder === s.chimeInstrument)) {
       setChimeInstrument(s.chimeInstrument);
       chimeInstrumentSelect.value = chimeInstrument;
     }
@@ -5134,7 +5202,7 @@
       setDomToneOutput(s.domToneOutput);
       domToneOutputSelect.value = domToneOutput;
     }
-    if (typeof s.domToneInstrument === "string" && GM_INSTRUMENTS.some((i) => i.folder === s.domToneInstrument)) {
+    if (typeof s.domToneInstrument === "string" && GM_ALL_INSTRUMENTS.some((i) => i.folder === s.domToneInstrument)) {
       setDomToneInstrument(s.domToneInstrument);
       domToneInstrumentSelect.value = domToneInstrument;
     }
@@ -5179,7 +5247,7 @@
       setEdgeToneOutput(s.edgeToneOutput);
       edgeToneOutputSelect.value = edgeToneOutput;
     }
-    if (typeof s.edgeToneInstrument === "string" && GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === s.edgeToneInstrument)) {
+    if (typeof s.edgeToneInstrument === "string" && GM_ALL_INSTRUMENTS.some((i) => i.folder === s.edgeToneInstrument)) {
       setEdgeToneInstrument(s.edgeToneInstrument);
       edgeToneInstrumentSelect.value = edgeToneInstrument;
     }
@@ -5218,7 +5286,7 @@
       edgeToneBarsSlider.value = String(edgeToneBars);
       edgeToneBarsLabel.textContent = String(edgeToneBars);
     }
-    if (s.edgeTonePattern === "euclidean" || s.edgeTonePattern === "steady_pulse" || s.edgeTonePattern === "swing") {
+    if (s.edgeTonePattern === "euclidean" || s.edgeTonePattern === "steady_pulse" || s.edgeTonePattern === "swing" || s.edgeTonePattern === "random_walk") {
       setEdgeTonePattern(s.edgeTonePattern);
       edgeTonePatternSelect.value = edgeTonePattern;
     }
