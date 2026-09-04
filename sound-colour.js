@@ -3411,10 +3411,37 @@
   let edgeToneFilter = null;
   let edgeToneGainNode = null;
   let edgeToneTimerId = null;
-  // Rhythmic mode's groove: time (ms) since the last percussive tick,
-  // ticked forward every 150ms sampling pass; tempo itself is derived live
-  // from density in updateEdgeTexture (busier = faster).
-  let edgeToneTickElapsedMs = 0;
+  // Rhythmic mode's groove: a steady 16th-note step clock (one step per
+  // 150ms sampling pass, ~100 BPM) -- a fixed tempo is what makes this
+  // read as an actual pulse to lock onto, rather than a click that just
+  // speeds up and slows down with density. What density actually changes
+  // is the PATTERN: how many of those 16 steps get struck, spread out via
+  // a Euclidean rhythm (see euclideanHitPattern below) -- a busier/edgier
+  // scene produces a busier, more syncopated pattern, not the same single
+  // beat sped up.
+  const EDGE_TONE_STEPS = 16;
+  let edgeToneStepIndex = 0;
+
+  // The standard "bucket"/error-diffusion method for spreading N hits as
+  // evenly as possible across `steps` slots -- musically equivalent to a
+  // true Euclidean rhythm (Bjorklund's algorithm) for this purpose, and
+  // the same technique real step-sequencer hardware and software use to
+  // turn a plain hit-count into an actual rhythmic pattern rather than a
+  // run of consecutive hits.
+  function euclideanHitPattern(hits, steps) {
+    const pattern = new Array(steps).fill(false);
+    if (hits <= 0) return pattern;
+    if (hits >= steps) return pattern.fill(true);
+    let bucket = 0;
+    for (let i = 0; i < steps; i++) {
+      bucket += hits;
+      if (bucket >= steps) {
+        bucket -= steps;
+        pattern[i] = true;
+      }
+    }
+    return pattern;
+  }
 
   function sampleEdgeDensity() {
     if (!gl || !stage.width || !stage.height) return null;
@@ -3515,22 +3542,21 @@
       edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
       return;
     }
-    // Rhythmic: a percussive tick whose tempo speeds up with density --
-    // busier scenes tick faster (down to 150ms apart), near-flat scenes
-    // tick slowly/rarely, same "near-silent on a flat wall" spirit as the
-    // continuous mode's gain fading to 0. Gated at a low floor, not the
-    // continuous mode's own perceptual scale -- a genuinely flat wall reads
-    // as ~0 density and stays silent, but this shouldn't cut off well
-    // before that the way a higher floor would.
-    edgeToneTickElapsedMs += 150;
-    if (density == null || density < 0.008) {
-      edgeToneTickElapsedMs = 0;
-      return;
-    }
-    const tickIntervalMs = 650 - density * 500;
-    if (edgeToneTickElapsedMs < tickIntervalMs) return;
-    edgeToneTickElapsedMs = 0;
-    playEdgeTexTick(density);
+    // Rhythmic: the step clock always advances (a real drum machine's
+    // clock keeps running through quiet passages too) -- density decides
+    // whether this step is actually struck, via the Euclidean pattern for
+    // however many hits the current density calls for, and how hard the
+    // accented (on-the-quarter-note) steps land relative to the rest.
+    edgeToneStepIndex = (edgeToneStepIndex + 1) % EDGE_TONE_STEPS;
+    // Gated at a low floor, not the continuous mode's own perceptual scale
+    // -- a genuinely flat wall reads as ~0 density and stays silent, but
+    // this shouldn't cut off well before that the way a higher floor would.
+    if (density == null || density < 0.008) return;
+    const hits = Math.max(2, Math.min(12, Math.round(2 + density * 10)));
+    const pattern = euclideanHitPattern(hits, EDGE_TONE_STEPS);
+    if (!pattern[edgeToneStepIndex]) return;
+    const accent = edgeToneStepIndex % 4 === 0 ? 1 : 0.7;
+    playEdgeTexTick(density * accent);
   }
 
   function updateEdgeToneSamplingTimer() {
@@ -3541,7 +3567,7 @@
     } else if (!edgeToneEnabled && edgeToneTimerId) {
       clearInterval(edgeToneTimerId);
       edgeToneTimerId = null;
-      edgeToneTickElapsedMs = 0;
+      edgeToneStepIndex = 0;
       if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -3586,7 +3612,7 @@
     if (edgeToneStyle === "melodic" && edgeToneGainNode && edgeToneAudioCtx) {
       edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
-    edgeToneTickElapsedMs = 0;
+    edgeToneStepIndex = 0;
     updateEdgeToneOutputControlsVisibility();
     saveEdgeToneStylePref();
   }
