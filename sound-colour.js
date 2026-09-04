@@ -2737,20 +2737,39 @@
   // nears whichever saved calibration colour it's closest to in Lab space
   // -- the same colour-distance space this file's correction spread
   // already reasons in, not a naive RGB difference. Silent whenever
-  // nothing is close or no colours are saved yet, so it never drones.
+  // nothing is close or NO COLOURS ARE SAVED YET -- there's nothing to
+  // chime near until at least one is calibrated (see Calibrate a colour),
+  // by design, so it never drones -- but that also means it can look like
+  // it "does nothing" if you turn it on before saving a colour.
+  //
+  // Actually melodic, not a single tone sliding in pitch: proximity steps
+  // through a pentatonic scale (the same "no wrong notes" scale real wind
+  // chimes use) and plucks a short, separate bell-like note each time it
+  // crosses into a new step -- closer plays a higher note in the scale --
+  // rather than one continuous drone bending frequency.
   //
   // Runs on its own AudioContext with nothing feeding INTO it -- it only
-  // ever plays an oscillator tone out, never reads from the microphone --
+  // ever plays oscillator notes out, never reads from the microphone --
   // so there's no risk of it looping back into Audio colour tint's or
   // Sound Nebula's analyser input.
+  // A pentatonic major scale (root + whole/whole/minor-third/whole steps),
+  // spanning two octaves so proximity has real melodic room to climb
+  // through rather than a narrow handful of notes.
+  const CHIME_SCALE_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+  const CHIME_ROOT_HZ = 261.63; // C4
+  const CHIME_SCALE_HZ = CHIME_SCALE_SEMITONES.map((st) => CHIME_ROOT_HZ * Math.pow(2, st / 12));
   let chimeEnabled = (() => {
     try { return localStorage.getItem(CHIME_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let chimeVolume = loadOutlineNumberPref(CHIME_VOLUME_KEY, CHIME_DEFAULT_VOLUME);
   let chimeAudioCtx = null;
-  let chimeOsc = null;
-  let chimeGainNode = null;
   let chimeTimerId = null;
+  // Which scale step last actually played a note, and how many sampling
+  // ticks since -- lets a held-steady "right on the colour" position keep
+  // gently re-chiming (see updateProximityChime) instead of playing one
+  // note and then going quiet while you're still matched.
+  let chimeLastNoteIndex = -1;
+  let chimeTicksSinceLastNote = 0;
 
   // Lab-space distance at which the chime is essentially "on the exact
   // colour" (full volume/pitch) vs. fully faded out to silence.
@@ -2774,33 +2793,53 @@
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     chimeAudioCtx = new Ctx();
-    chimeOsc = chimeAudioCtx.createOscillator();
-    chimeOsc.type = "sine";
-    chimeOsc.frequency.value = 220;
-    chimeGainNode = chimeAudioCtx.createGain();
-    chimeGainNode.gain.value = 0;
-    chimeOsc.connect(chimeGainNode);
-    chimeGainNode.connect(chimeAudioCtx.destination);
-    chimeOsc.start();
+  }
+
+  // Plucks one short bell-like note -- its own oscillator + gain envelope,
+  // created and discarded per note (the standard Web Audio way to play a
+  // percussive/melodic hit), instead of one continuous tone bending pitch.
+  // A quick attack (it's a pluck, not a fade-in) into a slow exponential
+  // decay is what makes it read as a struck note rather than a beep.
+  function playChimeNote(freq, velocity) {
+    const now = chimeAudioCtx.currentTime;
+    const osc = chimeAudioCtx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    const gain = chimeAudioCtx.createGain();
+    const peak = Math.max(0.001, velocity * (chimeVolume / 100) * 0.5);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+    osc.connect(gain);
+    gain.connect(chimeAudioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 1.2);
   }
 
   function updateProximityChime() {
-    if (!chimeGainNode) return;
-    const now = chimeAudioCtx.currentTime;
-    if (video.readyState < video.HAVE_CURRENT_DATA) {
-      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
-      return;
-    }
+    if (!chimeAudioCtx) return;
+    chimeTicksSinceLastNote++;
+    if (video.readyState < video.HAVE_CURRENT_DATA) return;
     const dist = nearestSavedPointLabDistance(sampleCenterColor());
     if (dist == null) {
-      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
+      chimeLastNoteIndex = -1;
       return;
     }
     const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (CHIME_FAR_LAB_DISTANCE - CHIME_CLOSE_LAB_DISTANCE)));
-    const targetGain = closeness > 0.02 ? closeness * (chimeVolume / 100) * 0.3 : 0;
-    const targetFreq = 220 + closeness * 440;
-    chimeGainNode.gain.setTargetAtTime(targetGain, now, 0.08);
-    chimeOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
+    if (closeness <= 0.02) {
+      chimeLastNoteIndex = -1;
+      return;
+    }
+    const noteIndex = Math.min(CHIME_SCALE_HZ.length - 1, Math.floor(closeness * CHIME_SCALE_HZ.length));
+    const steppedToNewNote = noteIndex !== chimeLastNoteIndex;
+    // Right at the top of the scale (as close as the mapping distinguishes)
+    // is the one place a held-steady match would otherwise go silent after
+    // its first note -- keep it gently re-chiming instead.
+    const heldAtTopNote = noteIndex === CHIME_SCALE_HZ.length - 1 && chimeTicksSinceLastNote >= 4;
+    if (!steppedToNewNote && !heldAtTopNote) return;
+    chimeLastNoteIndex = noteIndex;
+    chimeTicksSinceLastNote = 0;
+    playChimeNote(CHIME_SCALE_HZ[noteIndex], closeness);
   }
 
   function updateChimeSamplingTimer() {
@@ -2811,7 +2850,7 @@
     } else if (!chimeEnabled && chimeTimerId) {
       clearInterval(chimeTimerId);
       chimeTimerId = null;
-      if (chimeGainNode) chimeGainNode.gain.setTargetAtTime(0, chimeAudioCtx.currentTime, 0.05);
+      chimeLastNoteIndex = -1;
     }
   }
 

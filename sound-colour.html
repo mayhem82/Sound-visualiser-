@@ -18,7 +18,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Sound Colour</h1>
-    <p>The correction engine from Colour Vision Extreme, dedicated to one question: what if sight and sound talked to each other? Sound &rarr; Colour: bass/mid/treble reach into the live correction itself (blend, spread, outline strength), on top of Audio colour tint's existing hue wash. Colour &rarr; Sound: the corrected view plays back as tone -- a chime near a saved colour, an ambient drone from the scene's dominant hue, a filtered-noise texture from how busy/edgy the view is.</p>
+    <p>The correction engine from Colour Vision Extreme, dedicated to one question: what if sight and sound talked to each other? Sound &rarr; Colour: bass/mid/treble reach into the live correction itself (blend, spread, outline strength), on top of Audio colour tint's existing hue wash. Colour &rarr; Sound: the corrected view plays back as tone -- a melodic chime near a saved colour, an ambient drone from the scene's dominant hue, a filtered-noise texture from how busy/edgy the view is.</p>
     <button id="startBtn">Enable camera &amp; start</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="index.html">&larr; Back to suite home</a></p>
@@ -276,7 +276,7 @@
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
-  <button id="chimeBtn" class="hud-btn" aria-pressed="false" title="A soft tone that rises in pitch as the camera nears a saved calibration colour -- an audible second channel alongside the visual correction, silent when nothing matches.">Colour proximity chime: Off</button>
+  <button id="chimeBtn" class="hud-btn" aria-pressed="false" title="Plucks a short melodic note (up a pentatonic scale, higher = closer) as the camera nears a saved calibration colour -- an audible second channel alongside the visual correction. Needs at least one saved colour first (Calibrate a colour below) -- silent until then, since there's nothing yet to chime near.">Colour proximity chime: Off</button>
   <label id="chimeVolumeWrap" class="hud-slider hide" title="How loud the proximity chime plays, independent of your device's system volume.">
     Chime volume: <span id="chimeVolumeLabel">50%</span>
     <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
