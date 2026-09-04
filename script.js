@@ -454,6 +454,7 @@
   }
 
   let cameraStream = null;
+  let switchingCamera = false;
   const CAMERA_DEVICE_KEY = "cameraDeviceId_v1";
   let selectedCameraId = localStorage.getItem(CAMERA_DEVICE_KEY) || "";
   // Declared up here (not down with the rest of the colour-vision state,
@@ -1341,14 +1342,21 @@
     selectedCameraId = deviceId;
     localStorage.setItem(CAMERA_DEVICE_KEY, selectedCameraId);
     if (!cameraBackgroundEnabled) return; // applies next time the camera starts
+    if (switchingCamera) return;
+    switchingCamera = true;
 
     cameraSelect.disabled = true;
+    // Release the current camera before requesting the next one. Many
+    // phones — especially with several rear lenses (wide/ultra-wide/tele) —
+    // refuse or silently fail a second concurrent camera open, so grabbing
+    // the new stream while the old one is still held can fail on real
+    // hardware even though it works fine against a single mocked device.
+    cameraStream.getTracks().forEach((t) => t.stop());
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: cameraConstraints(),
         audio: false
       });
-      cameraStream.getTracks().forEach((t) => t.stop());
       cameraStream = newStream;
       cameraFeed.srcObject = cameraStream;
       await cameraFeed.play();
@@ -1356,8 +1364,23 @@
     } catch (err) {
       appendFlashStatus("Couldn't switch camera: " + (err.message || err.name || "unknown error"));
       flashStatus.classList.remove("hide");
+      // The old camera is already released at this point — try to recover
+      // some feed rather than leave the background dark.
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        cameraStream = fallback;
+        cameraFeed.srcObject = cameraStream;
+        await cameraFeed.play();
+        cameraStream.getVideoTracks()[0].addEventListener("ended", onCameraTrackEnded);
+      } catch (err2) {
+        disableCameraBackground();
+      }
     } finally {
       cameraSelect.disabled = false;
+      switchingCamera = false;
     }
   }
 
