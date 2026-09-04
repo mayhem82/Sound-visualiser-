@@ -105,6 +105,13 @@
   const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
   const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
   const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
+  // Audio -> Correction: the "Sight <-> Sound" direction reaching further
+  // than Audio colour tint's hue-only wash -- bass/mid/treble instead boost
+  // the correction blend / spread / outline strength themselves. Shares
+  // Audio colour tint's microphone/analyser (see audioAnalysisNeeded).
+  const AUDIO_REACT_ENABLED_KEY = "audioReactEnabled_colorVision_v1";
+  const AUDIO_REACT_STRENGTH_KEY = "audioReactStrength_colorVision_v1";
+  const AUDIO_REACT_DEFAULT_STRENGTH = 40;
   // A second, artistic source of colour besides the camera: live mic
   // input, split into bands (and hues) similar to Sound Nebula's particle
   // visualiser, so the "mood" of whatever's playing can nudge the corrected
@@ -209,6 +216,10 @@
   const spreadLabel = document.getElementById("spreadLabel");
   const audioTintBtn = document.getElementById("audioTintBtn");
   const audioTintResetBtn = document.getElementById("audioTintResetBtn");
+  const audioReactBtn = document.getElementById("audioReactBtn");
+  const audioReactStrengthWrap = document.getElementById("audioReactStrengthWrap");
+  const audioReactStrengthSlider = document.getElementById("audioReactStrengthSlider");
+  const audioReactStrengthLabel = document.getElementById("audioReactStrengthLabel");
   const particlesBtn = document.getElementById("particlesBtn");
   const particleOpacityWrap = document.getElementById("particleOpacityWrap");
   const particleOpacitySlider = document.getElementById("particleOpacitySlider");
@@ -563,6 +574,10 @@
   let audioTintEnabled = (() => {
     try { return localStorage.getItem(AUDIO_TINT_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
+  let audioReactEnabled = (() => {
+    try { return localStorage.getItem(AUDIO_REACT_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let audioReactStrength = loadOutlineNumberPref(AUDIO_REACT_STRENGTH_KEY, AUDIO_REACT_DEFAULT_STRENGTH);
   let audioTintStrength = loadOutlineNumberPref(AUDIO_TINT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_STRENGTH);
   let audioTintSatStrength = loadOutlineNumberPref(AUDIO_TINT_SAT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_SAT_STRENGTH);
   let audioTintLightStrength = loadOutlineNumberPref(AUDIO_TINT_LIGHT_STRENGTH_KEY, AUDIO_TINT_DEFAULT_LIGHT_STRENGTH);
@@ -868,6 +883,8 @@
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
       chimeEnabled: false,
       chimeVolume: CHIME_DEFAULT_VOLUME,
+      audioReactEnabled: false,
+      audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -1043,6 +1060,12 @@
   function saveAudioTintEnabledPref() {
     try { localStorage.setItem(AUDIO_TINT_ENABLED_KEY, audioTintEnabled ? "1" : "0"); } catch (e) {}
   }
+  function saveAudioReactEnabledPref() {
+    try { localStorage.setItem(AUDIO_REACT_ENABLED_KEY, audioReactEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveAudioReactStrengthPref() {
+    try { localStorage.setItem(AUDIO_REACT_STRENGTH_KEY, String(audioReactStrength)); } catch (e) {}
+  }
   function saveAudioTintStrengthPref() {
     try { localStorage.setItem(AUDIO_TINT_STRENGTH_KEY, String(audioTintStrength)); } catch (e) {}
   }
@@ -1158,7 +1181,35 @@
   }
 
   function audioAnalysisNeeded() {
-    return (audioTintEnabled || beatFlashEnabled || (particlesEnabled && particleSource === "audio"));
+    return (audioTintEnabled || beatFlashEnabled || audioReactEnabled || (particlesEnabled && particleSource === "audio"));
+  }
+
+  function updateAudioReactUi() {
+    audioReactBtn.textContent = `Audio → Correction: ${audioReactEnabled ? "On" : "Off"}`;
+    audioReactBtn.classList.toggle("active", audioReactEnabled);
+    audioReactBtn.setAttribute("aria-pressed", String(audioReactEnabled));
+    audioReactStrengthWrap.classList.toggle("hide", !audioReactEnabled);
+  }
+
+  // Bass boosts the correction blend, mid boosts spread, treble boosts
+  // outline blend -- each on top of (never replacing) that control's own
+  // slider value, easing back down as the energy that drove it fades
+  // (rawEnergy itself already comes back from computeAudioTintHue() smoothed
+  // by the analyser's own smoothingTimeConstant, so no separate decay is
+  // needed here). Silently no-ops back to the plain slider values whenever
+  // the toggle is off or no analyser is running yet (rawEnergy stays 0).
+  function computeReactiveUniforms() {
+    const baseBlend = parseFloat(blendSlider.value) / 100;
+    if (!audioReactEnabled) return { blend: baseBlend, spread, outlineBlend };
+    const bass = AUDIO_TINT_BANDS[0].rawEnergy;
+    const mid = AUDIO_TINT_BANDS[1].rawEnergy;
+    const treble = AUDIO_TINT_BANDS[2].rawEnergy;
+    const k = audioReactStrength / 100;
+    return {
+      blend: Math.min(1, baseBlend + bass * k * 0.6),
+      spread: spread * (1 + mid * k * 4),
+      outlineBlend: Math.min(1, outlineBlend + treble * k * 0.7)
+    };
   }
 
   // ---- Particle effects (ported from Sound Nebula's particle swarm) ----
@@ -1749,6 +1800,21 @@
     audioTintEnabled = true;
     saveAudioTintEnabledPref();
     updateAudioTintUi();
+  }
+
+  async function toggleAudioReact() {
+    if (audioReactEnabled) {
+      audioReactEnabled = false;
+      saveAudioReactEnabledPref();
+      updateAudioReactUi();
+      maybeStopAudioAnalysis();
+      return;
+    }
+    const started = audioTintCtx ? true : await startAudioTint();
+    if (!started) return;
+    audioReactEnabled = true;
+    saveAudioReactEnabledPref();
+    updateAudioReactUi();
   }
 
   // ---- Beat flash (ported from Sound Nebula) ----
@@ -2722,14 +2788,15 @@
   function renderLoop() {
     if (!paused && video.readyState >= video.HAVE_CURRENT_DATA) {
       const cover = computeCoverUv(video.videoWidth, video.videoHeight, stage.width, stage.height);
+      const reactive = computeReactiveUniforms();
 
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.uniform1i(uniforms.uTex, 0);
-      gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
+      gl.uniform1f(uniforms.uBlend, reactive.blend);
       gl.uniform1f(uniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
       gl.uniform1f(uniforms.uOutlineThickness, outlineThickness);
-      gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
+      gl.uniform1f(uniforms.uOutlineBlend, reactive.outlineBlend);
       gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
       gl.uniform3f(uniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
       gl.uniform1f(uniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
@@ -2747,7 +2814,7 @@
       gl.uniform3f(uniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
       gl.uniform3f(uniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
       gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-      gl.uniform1f(uniforms.uSpread, spread);
+      gl.uniform1f(uniforms.uSpread, reactive.spread);
       gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
       gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
       gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
@@ -2796,7 +2863,7 @@
         fixedGl.uniform1f(fixedUniforms.uBlend, 1);
         fixedGl.uniform1f(fixedUniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
         fixedGl.uniform1f(fixedUniforms.uOutlineThickness, outlineThickness);
-        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
+        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, reactive.outlineBlend);
         fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
         fixedGl.uniform3f(fixedUniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
         fixedGl.uniform1f(fixedUniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
@@ -2814,7 +2881,7 @@
         fixedGl.uniform3f(fixedUniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
         fixedGl.uniform3f(fixedUniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
         fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-        fixedGl.uniform1f(fixedUniforms.uSpread, spread);
+        fixedGl.uniform1f(fixedUniforms.uSpread, reactive.spread);
         fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
         fixedGl.uniform2f(fixedUniforms.uUvScale, cover.sx, cover.sy);
         fixedGl.uniform2f(fixedUniforms.uUvOffset, cover.ox, cover.oy);
@@ -4481,6 +4548,8 @@
       particleSizeScale,
       chimeEnabled,
       chimeVolume,
+      audioReactEnabled,
+      audioReactStrength,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4753,6 +4822,12 @@
       chimeVolumeLabel.textContent = `${chimeVolume}%`;
       saveChimeVolumePref();
     }
+    if (Number.isFinite(s.audioReactStrength)) {
+      audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
+      audioReactStrengthSlider.value = String(audioReactStrength);
+      audioReactStrengthLabel.textContent = `${audioReactStrength}%`;
+      saveAudioReactStrengthPref();
+    }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
       audioTintStrengthSlider.value = String(Math.round(audioTintStrength * 100));
@@ -4879,6 +4954,9 @@
     // tuning was just restored above, not stale values from before the load.
     if (typeof s.audioTintEnabled === "boolean" && s.audioTintEnabled !== audioTintEnabled) {
       toggleAudioTint();
+    }
+    if (typeof s.audioReactEnabled === "boolean" && s.audioReactEnabled !== audioReactEnabled) {
+      toggleAudioReact();
     }
     if (typeof s.beatFlashEnabled === "boolean" && s.beatFlashEnabled !== beatFlashEnabled) {
       toggleBeatFlash();
@@ -5216,6 +5294,16 @@
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);
+
+  audioReactBtn.addEventListener("click", toggleAudioReact);
+  updateAudioReactUi();
+  audioReactStrengthSlider.addEventListener("input", () => {
+    audioReactStrength = parseFloat(audioReactStrengthSlider.value);
+    audioReactStrengthLabel.textContent = `${audioReactStrengthSlider.value}%`;
+    saveAudioReactStrengthPref();
+  });
+  audioReactStrengthSlider.value = String(audioReactStrength);
+  audioReactStrengthLabel.textContent = `${audioReactStrength}%`;
   audioTintStrengthSlider.addEventListener("input", () => {
     audioTintStrength = parseFloat(audioTintStrengthSlider.value) / 100;
     audioTintStrengthLabel.textContent = `${audioTintStrengthSlider.value}%`;

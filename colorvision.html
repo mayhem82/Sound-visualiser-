@@ -77,6 +77,11 @@
   </label>
   <button id="audioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone as a second, artistic source of colour: live bass/mid/treble energy (same violet/cyan/pink mapping as Sound Nebula) nudges the corrected view's hue toward whatever's playing, instead of relying only on the camera.">Audio colour tint: Off</button>
   <button id="audioTintResetBtn" class="hud-btn reticle-btn-secondary hide" title="Resets every audio colour tint slider below back to its shipped default (strength, saturation/lightness push, smoothing, resolution, update rate, and all 6 bands). Doesn't turn audio colour tint off.">Reset audio tint</button>
+  <button id="audioReactBtn" class="hud-btn" aria-pressed="false" title="Sound reaching further than just tint colour: live bass boosts how strong the correction blend is, mid boosts how far a calibrated colour spreads, and treble boosts outline strength -- on top of whatever those sliders are already set to, easing back down between hits. Uses the same microphone as Audio colour tint / beat flash, so turning this on alone still needs mic permission.">Audio &rarr; Correction: Off</button>
+  <label id="audioReactStrengthWrap" class="hud-slider hide" title="How much the live audio is allowed to push the correction blend / spread / outline strength above their sliders' own settings.">
+    Reactive correction strength: <span id="audioReactStrengthLabel">40%</span>
+    <input id="audioReactStrengthSlider" type="range" min="0" max="100" value="40">
+  </label>
   <button id="particlesBtn" class="hud-btn" aria-pressed="false" title="A swarm of glowing particles over the corrected view -- same idea as Sound Nebula's particle swarm, layered on top of your colour correction instead of a plain background. Driven by sound or by Tone, depending on the Source below.">Particle effects: Off</button>
   <label id="particleSourceWrap" class="hud-slider hide" title="Audio: coloured particles (violet/cyan/pink) driven by the microphone's live bass/mid/treble energy -- needs mic permission. Tone: a single white/grey swarm driven by Freeze isolate's own Tone slider instead -- no microphone needed at all. Custom: same no-mic Tone energy, but with a hue you pick yourself below.">
     Source:
