@@ -461,6 +461,14 @@
     Chime randomness: <span id="chimeRandomnessLabel">0%</span>
     <input id="chimeRandomnessSlider" type="range" min="0" max="100" step="1" value="0">
   </label>
+  <label id="chimePatternWrap" class="hud-slider hide" title="Proximity: the original behaviour -- closeness maps straight to a scale step. Random walk: wanders the scale instead, biased back toward the closeness target (Randomness loosens the bias). Chord cluster: plays the proximity note plus its third together, a fuller two-note pluck.">
+    Pattern:
+    <select id="chimePatternSelect">
+      <option value="proximity">Proximity</option>
+      <option value="random_walk">Random walk</option>
+      <option value="chord_cluster">Chord cluster</option>
+    </select>
+  </label>
   <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
     Tone volume: <span id="domToneVolumeLabel">40%</span>
@@ -642,6 +650,14 @@
     Tone randomness: <span id="domToneRandomnessLabel">0%</span>
     <input id="domToneRandomnessSlider" type="range" min="0" max="100" step="1" value="0">
   </label>
+  <label id="domTonePatternWrap" class="hud-slider hide" title="Arpeggio: the original behaviour -- cycles a fixed chord-offset sequence off the hue-picked root. Random walk: wanders the whole scale instead, biased toward the root (Randomness loosens the bias). Drone pulse: repeats the root note rhythmically instead of cycling. Only applies to Melodic.">
+    Pattern:
+    <select id="domTonePatternSelect">
+      <option value="arpeggio">Arpeggio</option>
+      <option value="random_walk">Random walk</option>
+      <option value="drone_pulse">Drone pulse</option>
+    </select>
+  </label>
   <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="Tracks structural complexity in the scene -- busier, edgier views sound rougher; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
   <label id="edgeToneVolumeWrap" class="hud-slider hide" title="How loud the edge texture tone plays, independent of your device's system volume.">
     Texture volume: <span id="edgeToneVolumeLabel">35%</span>
@@ -709,6 +725,14 @@
   <label id="edgeToneBarsWrap" class="hud-slider hide" title="How many 16-step bars the rhythm cycles through before repeating exactly -- each bar rotates the same pattern by a fixed offset (a real rhythm technique), so more than 1 bar means the groove actually progresses instead of looping one identical bar forever.">
     Bars: <span id="edgeToneBarsLabel">1</span>
     <input id="edgeToneBarsSlider" type="range" min="1" max="4" step="1" value="1">
+  </label>
+  <label id="edgeTonePatternWrap" class="hud-slider hide" title="Euclidean: the original behaviour -- a syncopated spread from the bucket algorithm. Steady pulse: hits fall on an evenly-spaced subdivision instead (a four-on-the-floor feel at busier densities) -- density picks the subdivision, not where within it the hits fall. Swing: keeps Euclidean's hit placement, but alternates long/short 16th-note timing for a classic swung feel. Only applies to Melodic.">
+    Pattern:
+    <select id="edgeTonePatternSelect">
+      <option value="euclidean">Euclidean</option>
+      <option value="steady_pulse">Steady pulse</option>
+      <option value="swing">Swing</option>
+    </select>
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>

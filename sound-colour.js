@@ -115,6 +115,28 @@
   // so a busy scene doesn't just loop one identical bar forever.
   const EDGE_TONE_BARS_KEY = "edgeToneBars_colorVision_v1";
   const EDGE_TONE_DEFAULT_BARS = 1;
+  // Pattern: which actual note/rhythm-generation algorithm each feature
+  // uses -- previously each one only ever had a single fixed generator, and
+  // Detune/Randomness/Bars above only ever varied that one generator's
+  // output. This is the genuinely different-behavior switch. Every
+  // feature's original generator is kept as its default value, so nothing
+  // already shipped changes unless this is touched.
+  //   Chime: "proximity" (original: closeness maps straight to a scale
+  //   step), "random_walk" (wanders the scale, biased back toward the
+  //   closeness target -- Randomness loosens the bias), "chord_cluster"
+  //   (plays the proximity note plus its third together).
+  //   Dominant tone (Melodic only): "arpeggio" (original: cycles a fixed
+  //   chord-offset sequence off the hue-picked root), "random_walk" (wanders
+  //   the whole scale, biased toward the root), "drone_pulse" (repeats the
+  //   root note rhythmically instead of cycling).
+  //   Edge texture (Melodic only): "euclidean" (original: the bucket
+  //   algorithm), "steady_pulse" (hits fall on an evenly-spaced subdivision
+  //   instead of a syncopated spread -- density picks the subdivision, not
+  //   the spacing), "swing" (euclidean hit placement, but alternating long/
+  //   short 16th-note timing instead of a straight grid).
+  const CHIME_PATTERN_KEY = "chimePattern_colorVision_v1";
+  const DOM_TONE_PATTERN_KEY = "domTonePattern_colorVision_v1";
+  const EDGE_TONE_PATTERN_KEY = "edgeTonePattern_colorVision_v1";
   // Dominant colour tone -- a second, more ambient sonification: rather
   // than reacting to a saved calibration colour specifically, a soft
   // continuous tone tracks the whole scene's average colour every ~150ms --
@@ -402,6 +424,8 @@
   const chimeRandomnessWrap = document.getElementById("chimeRandomnessWrap");
   const chimeRandomnessSlider = document.getElementById("chimeRandomnessSlider");
   const chimeRandomnessLabel = document.getElementById("chimeRandomnessLabel");
+  const chimePatternWrap = document.getElementById("chimePatternWrap");
+  const chimePatternSelect = document.getElementById("chimePatternSelect");
   const domToneBtn = document.getElementById("domToneBtn");
   const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
   const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
@@ -424,6 +448,8 @@
   const domToneRandomnessWrap = document.getElementById("domToneRandomnessWrap");
   const domToneRandomnessSlider = document.getElementById("domToneRandomnessSlider");
   const domToneRandomnessLabel = document.getElementById("domToneRandomnessLabel");
+  const domTonePatternWrap = document.getElementById("domTonePatternWrap");
+  const domTonePatternSelect = document.getElementById("domTonePatternSelect");
   const edgeToneBtn = document.getElementById("edgeToneBtn");
   const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
   const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
@@ -452,6 +478,8 @@
   const edgeToneBarsWrap = document.getElementById("edgeToneBarsWrap");
   const edgeToneBarsSlider = document.getElementById("edgeToneBarsSlider");
   const edgeToneBarsLabel = document.getElementById("edgeToneBarsLabel");
+  const edgeTonePatternWrap = document.getElementById("edgeTonePatternWrap");
+  const edgeTonePatternSelect = document.getElementById("edgeTonePatternSelect");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -955,6 +983,7 @@
       chimeTempo: CHIME_DEFAULT_TEMPO_MS,
       chimeDetune: 0,
       chimeRandomness: 0,
+      chimePattern: "proximity",
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       domToneStyle: "continuous",
@@ -964,6 +993,7 @@
       domToneTempo: DOM_TONE_DEFAULT_TEMPO_MS,
       domToneDetune: 0,
       domToneRandomness: 0,
+      domTonePattern: "arpeggio",
       edgeToneEnabled: false,
       edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
       edgeToneStyle: "continuous",
@@ -975,6 +1005,7 @@
       edgeToneDetune: 0,
       edgeToneRandomness: 0,
       edgeToneBars: EDGE_TONE_DEFAULT_BARS,
+      edgeTonePattern: "euclidean",
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -3301,6 +3332,17 @@
   // 0, matching the original deterministic behaviour exactly.
   let chimeDetuneCents = loadOutlineNumberPref(CHIME_DETUNE_KEY, 0);
   let chimeRandomness = loadOutlineNumberPref(CHIME_RANDOMNESS_KEY, 0);
+  // Pattern: which note-choice generator actually plays -- see the big
+  // comment above CHIME_PATTERN_KEY. chimeWalkIndex is Random walk's own
+  // runtime-only position (not persisted -- it's a live wander, not a
+  // setting), reset whenever the pattern changes or chime turns off.
+  let chimePattern = (() => {
+    try {
+      const raw = localStorage.getItem(CHIME_PATTERN_KEY);
+      return raw === "random_walk" || raw === "chord_cluster" ? raw : "proximity";
+    } catch (e) { return "proximity"; }
+  })();
+  let chimeWalkIndex = null;
   let chimeAudioCtx = null;
   let chimeTimerId = null;
   // Which scale step last actually played a note, and how many sampling
@@ -3412,10 +3454,35 @@
     chimeLastNoteIndex = noteIndex;
     chimeTicksSinceLastNote = 0;
     let playedIndex = noteIndex;
-    if (chimeRandomness > 0 && Math.random() * 100 < chimeRandomness * 0.6) {
+    if (chimePattern === "random_walk") {
+      // Wanders the scale one step at a time instead of jumping straight to
+      // the closeness-driven note -- biased back toward that note (so it
+      // still tracks proximity over time), with Randomness loosening the
+      // bias: 0% stays a fairly direct, mostly-toward-target walk; 100%
+      // wanders much more freely.
+      if (chimeWalkIndex == null) chimeWalkIndex = noteIndex;
+      const towardBias = 0.9 - (chimeRandomness / 100) * 0.6;
+      let step;
+      if (Math.random() < towardBias) {
+        step = chimeWalkIndex < noteIndex ? 1 : chimeWalkIndex > noteIndex ? -1 : (Math.random() < 0.5 ? -1 : 1);
+      } else {
+        step = Math.random() < 0.5 ? -1 : 1;
+      }
+      chimeWalkIndex = Math.max(0, Math.min(CHIME_SCALE_HZ.length - 1, chimeWalkIndex + step));
+      playedIndex = chimeWalkIndex;
+    } else if (chimeRandomness > 0 && Math.random() * 100 < chimeRandomness * 0.6) {
       playedIndex = Math.max(0, Math.min(CHIME_SCALE_HZ.length - 1, noteIndex + (Math.random() < 0.5 ? -1 : 1)));
     }
     playChimeNote(CHIME_SCALE_HZ[playedIndex], closeness);
+    if (chimePattern === "chord_cluster") {
+      // Plays the proximity note's third alongside it -- a real second
+      // simultaneous note (not a substitute), so this pattern is genuinely
+      // fuller/chordal rather than single-note, at every output (synth
+      // layers a second oscillator, MIDI sends a second Note On on the same
+      // channel, Instrument plays a second overlapping sample).
+      const clusterIndex = Math.min(CHIME_SCALE_HZ.length - 1, playedIndex + 2);
+      if (clusterIndex !== playedIndex) playChimeNote(CHIME_SCALE_HZ[clusterIndex], closeness * 0.8);
+    }
   }
 
   function updateChimeSamplingTimer() {
@@ -3427,6 +3494,7 @@
       clearInterval(chimeTimerId);
       chimeTimerId = null;
       chimeLastNoteIndex = -1;
+      chimeWalkIndex = null;
     }
   }
 
@@ -3457,6 +3525,9 @@
   function saveChimeRandomnessPref() {
     try { localStorage.setItem(CHIME_RANDOMNESS_KEY, String(chimeRandomness)); } catch (e) {}
   }
+  function saveChimePatternPref() {
+    try { localStorage.setItem(CHIME_PATTERN_KEY, chimePattern); } catch (e) {}
+  }
 
   // Range only applies to Saved (a Lab-distance threshold) -- Live has
   // nothing to measure distance from, so it's hidden in that mode.
@@ -3477,6 +3548,7 @@
     chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
     chimeDetuneWrap.classList.toggle("hide", !chimeEnabled);
     chimeRandomnessWrap.classList.toggle("hide", !chimeEnabled);
+    chimePatternWrap.classList.toggle("hide", !chimeEnabled);
     saveChimeEnabledPref();
     updateChimeSamplingTimer();
   }
@@ -3521,6 +3593,13 @@
   function setChimeRandomness(next) {
     chimeRandomness = Math.max(0, Math.min(100, next));
     saveChimeRandomnessPref();
+  }
+
+  function setChimePattern(next) {
+    if (next !== "proximity" && next !== "random_walk" && next !== "chord_cluster") return;
+    chimePattern = next;
+    chimeWalkIndex = null;
+    saveChimePatternPref();
   }
 
   // ---- Dominant colour tone ----
@@ -3593,6 +3672,17 @@
   // applies to Melodic's discrete note choice (see updateDominantColorTone).
   let domToneDetuneCents = loadOutlineNumberPref(DOM_TONE_DETUNE_KEY, 0);
   let domToneRandomness = loadOutlineNumberPref(DOM_TONE_RANDOMNESS_KEY, 0);
+  // Pattern (Melodic only): which note-choice generator actually plays --
+  // see the big comment above CHIME_PATTERN_KEY. domToneWalkIndex is Random
+  // walk's own runtime-only position, reset whenever the pattern changes or
+  // dominant tone turns off.
+  let domTonePattern = (() => {
+    try {
+      const raw = localStorage.getItem(DOM_TONE_PATTERN_KEY);
+      return raw === "random_walk" || raw === "drone_pulse" ? raw : "arpeggio";
+    } catch (e) { return "arpeggio"; }
+  })();
+  let domToneWalkIndex = null;
   let domToneArpTickCount = 0;
   let domToneArpStep = 0;
 
@@ -3686,18 +3776,43 @@
     // of the naive division going negative and producing a NaN frequency.
     const maxRootIndex = Math.max(0, DOM_TONE_SCALE_HZ.length - 1 - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]);
     const rootIndex = Math.min(maxRootIndex, Math.floor((h / 360) * (maxRootIndex + 1)));
-    const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
-    domToneArpStep++;
-    const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
-    // Randomness (0 by default -- deterministic, unchanged) can substitute
-    // the arpeggio's fixed chord-offset sequence with any other tone from
-    // the same chord shape, at up to a 60% chance scaled by the Randomness
-    // percentage -- domToneArpStep itself still always advances on its own
-    // regular schedule, so the tempo/step logic is unaffected.
-    let playedIndex = noteIndex;
-    if (domToneRandomness > 0 && Math.random() * 100 < domToneRandomness * 0.6) {
-      const randOffset = DOM_TONE_CHORD_OFFSETS[Math.floor(Math.random() * DOM_TONE_CHORD_OFFSETS.length)];
-      playedIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + randOffset);
+    let playedIndex;
+    if (domTonePattern === "drone_pulse") {
+      // Repeats the hue-picked root note rhythmically instead of cycling
+      // through the chord -- a pulse on one pitch rather than a moving line.
+      playedIndex = rootIndex;
+      domToneArpStep++;
+    } else if (domTonePattern === "random_walk") {
+      // Wanders the FULL scale (not just the fixed chord shape) one step at
+      // a time, biased back toward the hue-picked root -- Randomness
+      // loosens the bias, same shape as the chime's Random walk.
+      if (domToneWalkIndex == null) domToneWalkIndex = rootIndex;
+      const towardBias = 0.9 - (domToneRandomness / 100) * 0.6;
+      let step;
+      if (Math.random() < towardBias) {
+        step = domToneWalkIndex < rootIndex ? 1 : domToneWalkIndex > rootIndex ? -1 : (Math.random() < 0.5 ? -1 : 1);
+      } else {
+        step = Math.random() < 0.5 ? -1 : 1;
+      }
+      domToneWalkIndex = Math.max(0, Math.min(DOM_TONE_SCALE_HZ.length - 1, domToneWalkIndex + step));
+      playedIndex = domToneWalkIndex;
+      domToneArpStep++;
+    } else {
+      // Arpeggio (default): cycles a fixed chord-offset sequence off the
+      // hue-picked root -- the original behaviour, bit-for-bit unchanged.
+      const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
+      domToneArpStep++;
+      const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
+      // Randomness (0 by default -- deterministic, unchanged) can substitute
+      // the arpeggio's fixed chord-offset sequence with any other tone from
+      // the same chord shape, at up to a 60% chance scaled by the Randomness
+      // percentage -- domToneArpStep itself still always advances on its own
+      // regular schedule, so the tempo/step logic is unaffected.
+      playedIndex = noteIndex;
+      if (domToneRandomness > 0 && Math.random() * 100 < domToneRandomness * 0.6) {
+        const randOffset = DOM_TONE_CHORD_OFFSETS[Math.floor(Math.random() * DOM_TONE_CHORD_OFFSETS.length)];
+        playedIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + randOffset);
+      }
     }
     playDomTonePadNote(DOM_TONE_SCALE_HZ[playedIndex], Math.min(1, l * 1.3));
   }
@@ -3742,13 +3857,17 @@
   function saveDomToneRandomnessPref() {
     try { localStorage.setItem(DOM_TONE_RANDOMNESS_KEY, String(domToneRandomness)); } catch (e) {}
   }
+  function saveDomTonePatternPref() {
+    try { localStorage.setItem(DOM_TONE_PATTERN_KEY, domTonePattern); } catch (e) {}
+  }
 
   // MIDI/Instrument output only makes sense for Melodic's discrete notes --
   // Continuous is a persistent oscillator bending pitch, no clean
   // equivalent as separate MIDI notes or looped one-shot samples -- so
-  // these two controls only ever show up alongside Melodic. Randomness is
-  // the same (a note-choice effect, meaningless for one continuous tone);
-  // Detune applies to both styles, so it's gated on domToneEnabled alone.
+  // these two controls only ever show up alongside Melodic. Randomness and
+  // Pattern are the same (a note-choice effect, meaningless for one
+  // continuous tone); Detune applies to both styles, so it's gated on
+  // domToneEnabled alone.
   function updateDomToneOutputControlsVisibility() {
     const show = domToneEnabled && domToneStyle === "melodic";
     domToneOutputWrap.classList.toggle("hide", !show);
@@ -3756,6 +3875,7 @@
     domToneRangeWrap.classList.toggle("hide", !show);
     domToneTempoWrap.classList.toggle("hide", !show);
     domToneRandomnessWrap.classList.toggle("hide", !show);
+    domTonePatternWrap.classList.toggle("hide", !show);
     domToneDetuneWrap.classList.toggle("hide", !domToneEnabled);
   }
 
@@ -3778,6 +3898,7 @@
       domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
     }
     domToneArpTickCount = 0;
+    domToneWalkIndex = null;
     updateDomToneOutputControlsVisibility();
     saveDomToneStylePref();
   }
@@ -3817,6 +3938,13 @@
   function setDomToneRandomness(next) {
     domToneRandomness = Math.max(0, Math.min(100, next));
     saveDomToneRandomnessPref();
+  }
+
+  function setDomTonePattern(next) {
+    if (next !== "arpeggio" && next !== "random_walk" && next !== "drone_pulse") return;
+    domTonePattern = next;
+    domToneWalkIndex = null;
+    saveDomTonePatternPref();
   }
 
   // ---- Edge texture tone ----
@@ -3885,6 +4013,14 @@
   let edgeToneRandomness = loadOutlineNumberPref(EDGE_TONE_RANDOMNESS_KEY, 0);
   let edgeToneBars = loadOutlineNumberPref(EDGE_TONE_BARS_KEY, EDGE_TONE_DEFAULT_BARS);
   let edgeToneBarIndex = 0;
+  // Pattern (Melodic only): which rhythm generator actually decides hit
+  // placement/timing -- see the big comment above CHIME_PATTERN_KEY.
+  let edgeTonePattern = (() => {
+    try {
+      const raw = localStorage.getItem(EDGE_TONE_PATTERN_KEY);
+      return raw === "steady_pulse" || raw === "swing" ? raw : "euclidean";
+    } catch (e) { return "euclidean"; }
+  })();
 
   // The standard "bucket"/error-diffusion method for spreading N hits as
   // evenly as possible across `steps` slots -- musically equivalent to a
@@ -3904,6 +4040,23 @@
         pattern[i] = true;
       }
     }
+    return pattern;
+  }
+
+  // Steady pulse: rather than a syncopated Euclidean spread, hits fall on a
+  // perfectly even subdivision of the bar (the classic "four on the floor"
+  // feel at subdivision=4) -- `hits` still picks how busy it is, just
+  // rounded to the nearest power-of-two subdivision that actually divides
+  // the bar evenly, instead of picking WHERE among 16 steps those hits go.
+  function steadyPulsePattern(hits, steps) {
+    const divisors = [1, 2, 4, 8, 16].filter((d) => d <= steps);
+    let subdivision = divisors[0];
+    for (const d of divisors) {
+      if (Math.abs(d - hits) < Math.abs(subdivision - hits)) subdivision = d;
+    }
+    const pattern = new Array(steps).fill(false);
+    const stepSize = steps / subdivision;
+    for (let i = 0; i < steps; i += stepSize) pattern[Math.round(i)] = true;
     return pattern;
   }
 
@@ -4017,7 +4170,15 @@
     // density itself gets resampled. A real drum machine's clock keeps
     // running through quiet passages too.
     edgeToneStepElapsedMs += 150;
-    const msPerStep = 60000 / edgeToneTempoBpm / 4;
+    const baseMsPerStep = 60000 / edgeToneTempoBpm / 4;
+    // Swing: alternates long/short hold times for even/odd steps (a classic
+    // ~2:1 ratio) instead of a straight grid -- the two durations average
+    // back to the same overall tempo across each pair of steps, so Swing
+    // changes the FEEL, not the speed. Any other Pattern uses a plain, even
+    // step duration -- exactly the original formula, unchanged.
+    const msPerStep = edgeTonePattern === "swing"
+      ? baseMsPerStep * (edgeToneStepIndex % 2 === 0 ? 1.33 : 0.67)
+      : baseMsPerStep;
     if (edgeToneStepElapsedMs < msPerStep) return;
     edgeToneStepElapsedMs -= msPerStep;
     edgeToneStepIndex = (edgeToneStepIndex + 1) % EDGE_TONE_STEPS;
@@ -4032,7 +4193,12 @@
     // the pattern this sparse or this busy -- density itself decides where
     // in between that range the current bar's pattern actually sits.
     const hits = Math.max(edgeToneMinHits, Math.min(edgeToneMaxHits, Math.round(edgeToneMinHits + density * (edgeToneMaxHits - edgeToneMinHits))));
-    const pattern = euclideanHitPattern(hits, EDGE_TONE_STEPS);
+    // Pattern picks which generator decides hit placement -- Steady pulse's
+    // even subdivision instead of Euclidean's syncopated spread. Swing
+    // reuses Euclidean placement (it only changes the timing above).
+    const pattern = edgeTonePattern === "steady_pulse"
+      ? steadyPulsePattern(hits, EDGE_TONE_STEPS)
+      : euclideanHitPattern(hits, EDGE_TONE_STEPS);
     // Bars: each bar of the loop reads the same Euclidean pattern rotated
     // by a fixed offset -- rotating a Euclidean rhythm is a real, standard
     // technique that gives a genuinely different-sounding groove at the
@@ -4103,6 +4269,9 @@
   function saveEdgeToneBarsPref() {
     try { localStorage.setItem(EDGE_TONE_BARS_KEY, String(edgeToneBars)); } catch (e) {}
   }
+  function saveEdgeTonePatternPref() {
+    try { localStorage.setItem(EDGE_TONE_PATTERN_KEY, edgeTonePattern); } catch (e) {}
+  }
 
   function updateEdgeToneOutputControlsVisibility() {
     const show = edgeToneEnabled && edgeToneStyle === "melodic";
@@ -4114,6 +4283,7 @@
     edgeToneDetuneWrap.classList.toggle("hide", !show);
     edgeToneRandomnessWrap.classList.toggle("hide", !show);
     edgeToneBarsWrap.classList.toggle("hide", !show);
+    edgeTonePatternWrap.classList.toggle("hide", !show);
   }
 
   function setEdgeToneEnabled(next) {
@@ -4184,6 +4354,15 @@
     edgeToneBars = Math.max(1, Math.min(4, Math.round(next)));
     edgeToneBarIndex = 0;
     saveEdgeToneBarsPref();
+  }
+
+  function setEdgeTonePattern(next) {
+    if (next !== "euclidean" && next !== "steady_pulse" && next !== "swing") return;
+    edgeTonePattern = next;
+    edgeToneStepIndex = 0;
+    edgeToneStepElapsedMs = 0;
+    edgeToneBarIndex = 0;
+    saveEdgeTonePatternPref();
   }
 
   // Converts a tap position (viewport CSS pixels) into a fraction of the
@@ -4491,6 +4670,7 @@
       chimeTempo: chimeTempoMs,
       chimeDetune: chimeDetuneCents,
       chimeRandomness,
+      chimePattern,
       domToneEnabled,
       domToneVolume,
       domToneStyle,
@@ -4500,6 +4680,7 @@
       domToneTempo: domToneTempoMs,
       domToneDetune: domToneDetuneCents,
       domToneRandomness,
+      domTonePattern,
       edgeToneEnabled,
       edgeToneVolume,
       edgeToneStyle,
@@ -4511,6 +4692,7 @@
       edgeToneDetune: edgeToneDetuneCents,
       edgeToneRandomness,
       edgeToneBars,
+      edgeTonePattern,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -4723,6 +4905,10 @@
       chimeRandomnessSlider.value = String(chimeRandomness);
       chimeRandomnessLabel.textContent = `${chimeRandomness}%`;
     }
+    if (s.chimePattern === "proximity" || s.chimePattern === "random_walk" || s.chimePattern === "chord_cluster") {
+      setChimePattern(s.chimePattern);
+      chimePatternSelect.value = chimePattern;
+    }
     if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
       setDomToneEnabled(s.domToneEnabled);
     }
@@ -4763,6 +4949,10 @@
       setDomToneRandomness(s.domToneRandomness);
       domToneRandomnessSlider.value = String(domToneRandomness);
       domToneRandomnessLabel.textContent = `${domToneRandomness}%`;
+    }
+    if (s.domTonePattern === "arpeggio" || s.domTonePattern === "random_walk" || s.domTonePattern === "drone_pulse") {
+      setDomTonePattern(s.domTonePattern);
+      domTonePatternSelect.value = domTonePattern;
     }
     if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
       setEdgeToneEnabled(s.edgeToneEnabled);
@@ -4814,6 +5004,10 @@
       setEdgeToneBars(s.edgeToneBars);
       edgeToneBarsSlider.value = String(edgeToneBars);
       edgeToneBarsLabel.textContent = String(edgeToneBars);
+    }
+    if (s.edgeTonePattern === "euclidean" || s.edgeTonePattern === "steady_pulse" || s.edgeTonePattern === "swing") {
+      setEdgeTonePattern(s.edgeTonePattern);
+      edgeTonePatternSelect.value = edgeTonePattern;
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -5272,6 +5466,7 @@
   chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
   chimeDetuneWrap.classList.toggle("hide", !chimeEnabled);
   chimeRandomnessWrap.classList.toggle("hide", !chimeEnabled);
+  chimePatternWrap.classList.toggle("hide", !chimeEnabled);
   chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
   chimeVolumeSlider.addEventListener("input", () => {
     chimeVolume = parseFloat(chimeVolumeSlider.value);
@@ -5310,6 +5505,8 @@
   });
   chimeRandomnessSlider.value = String(chimeRandomness);
   chimeRandomnessLabel.textContent = `${chimeRandomness}%`;
+  chimePatternSelect.addEventListener("change", () => setChimePattern(chimePatternSelect.value));
+  chimePatternSelect.value = chimePattern;
   updateChimeSamplingTimer();
 
   domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
@@ -5355,6 +5552,8 @@
   });
   domToneRandomnessSlider.value = String(domToneRandomness);
   domToneRandomnessLabel.textContent = `${domToneRandomness}%`;
+  domTonePatternSelect.addEventListener("change", () => setDomTonePattern(domTonePatternSelect.value));
+  domTonePatternSelect.value = domTonePattern;
   updateDomToneSamplingTimer();
 
   edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
@@ -5412,6 +5611,8 @@
   });
   edgeToneBarsSlider.value = String(edgeToneBars);
   edgeToneBarsLabel.textContent = String(edgeToneBars);
+  edgeTonePatternSelect.addEventListener("change", () => setEdgeTonePattern(edgeTonePatternSelect.value));
+  edgeTonePatternSelect.value = edgeTonePattern;
   updateEdgeToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
