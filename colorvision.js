@@ -83,6 +83,14 @@
   const CHIME_ENABLED_KEY = "chimeEnabled_colorVision_v1";
   const CHIME_VOLUME_KEY = "chimeVolume_colorVision_v1";
   const CHIME_DEFAULT_VOLUME = 50;
+  // Dominant colour tone -- a second, more ambient sonification: rather
+  // than reacting to a saved calibration colour specifically, a soft
+  // continuous tone tracks the whole scene's average colour every ~150ms --
+  // hue drives pitch, lightness drives volume. A different, more general
+  // "hearing the colour" channel than the chime's proximity-to-a-point one.
+  const DOM_TONE_ENABLED_KEY = "domToneEnabled_colorVision_v1";
+  const DOM_TONE_VOLUME_KEY = "domToneVolume_colorVision_v1";
+  const DOM_TONE_DEFAULT_VOLUME = 40;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -369,6 +377,10 @@
   const chimeVolumeWrap = document.getElementById("chimeVolumeWrap");
   const chimeVolumeSlider = document.getElementById("chimeVolumeSlider");
   const chimeVolumeLabel = document.getElementById("chimeVolumeLabel");
+  const domToneBtn = document.getElementById("domToneBtn");
+  const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
+  const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
+  const domToneVolumeLabel = document.getElementById("domToneVolumeLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -883,6 +895,8 @@
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
       chimeEnabled: false,
       chimeVolume: CHIME_DEFAULT_VOLUME,
+      domToneEnabled: false,
+      domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -2908,6 +2922,7 @@
     // this click is a real gesture, so resume it here rather than leaving
     // the chime silently non-functional for the rest of the session.
     if (chimeAudioCtx && chimeAudioCtx.state === "suspended") chimeAudioCtx.resume().catch(() => {});
+    if (domToneAudioCtx && domToneAudioCtx.state === "suspended") domToneAudioCtx.resume().catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
@@ -4235,6 +4250,99 @@
     updateChimeSamplingTimer();
   }
 
+  // ---- Dominant colour tone ----
+  // A second, more ambient sonification, alongside the proximity chime
+  // above: a soft continuous tone tracking the whole corrected scene's
+  // average colour, not any one saved point specifically -- hue drives
+  // pitch, lightness drives volume. "Very cheap" per this feature's own
+  // design goal (see index.html's "What's next" section) -- reuses the
+  // existing low-res scene-sampling canvas (already drawn from `stage`,
+  // the corrected output, for particle scene-attraction) and just averages
+  // every cell's colour directly, rather than a real k-means clustering
+  // pass. Own AudioContext, same "only ever plays out, never reads in"
+  // shape as the chime.
+  let domToneEnabled = (() => {
+    try { return localStorage.getItem(DOM_TONE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let domToneVolume = loadOutlineNumberPref(DOM_TONE_VOLUME_KEY, DOM_TONE_DEFAULT_VOLUME);
+  let domToneAudioCtx = null;
+  let domToneOsc = null;
+  let domToneGainNode = null;
+  let domToneTimerId = null;
+
+  function sampleDominantColor() {
+    if (!gl || !stage.width || !stage.height) return null;
+    sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    return [r / n / 255, g / n / 255, b / n / 255];
+  }
+
+  function ensureDomToneAudio() {
+    if (domToneAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    domToneAudioCtx = new Ctx();
+    domToneOsc = domToneAudioCtx.createOscillator();
+    domToneOsc.type = "sine";
+    domToneOsc.frequency.value = 220;
+    domToneGainNode = domToneAudioCtx.createGain();
+    domToneGainNode.gain.value = 0;
+    domToneOsc.connect(domToneGainNode);
+    domToneGainNode.connect(domToneAudioCtx.destination);
+    domToneOsc.start();
+  }
+
+  function updateDominantColorTone() {
+    if (!domToneGainNode) return;
+    const now = domToneAudioCtx.currentTime;
+    const rgb = sampleDominantColor();
+    if (!rgb) {
+      domToneGainNode.gain.setTargetAtTime(0, now, 0.15);
+      return;
+    }
+    const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+    // Hue mapped across one octave (220-440Hz) rather than the chime's
+    // wider proximity range -- this tone is meant to sit in the background
+    // as a continuous drone, not compete for attention.
+    const targetFreq = 220 + (h / 360) * 220;
+    const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
+    domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
+    domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
+  }
+
+  function updateDomToneSamplingTimer() {
+    if (domToneEnabled && !domToneTimerId) {
+      ensureDomToneAudio();
+      if (domToneAudioCtx && domToneAudioCtx.state === "suspended") domToneAudioCtx.resume().catch(() => {});
+      domToneTimerId = setInterval(updateDominantColorTone, 150);
+    } else if (!domToneEnabled && domToneTimerId) {
+      clearInterval(domToneTimerId);
+      domToneTimerId = null;
+      if (domToneGainNode) domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
+    }
+  }
+
+  function saveDomToneEnabledPref() {
+    try { localStorage.setItem(DOM_TONE_ENABLED_KEY, domToneEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveDomToneVolumePref() {
+    try { localStorage.setItem(DOM_TONE_VOLUME_KEY, String(domToneVolume)); } catch (e) {}
+  }
+
+  function setDomToneEnabled(next) {
+    if (next === domToneEnabled) return;
+    domToneEnabled = next;
+    domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
+    domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
+    domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+    saveDomToneEnabledPref();
+    updateDomToneSamplingTimer();
+  }
+
   // Converts a tap position (viewport CSS pixels) into a fraction of the
   // raw video frame (0,0 top-left .. 1,1 bottom-right) — the same
   // object-fit:cover cropping and rotate180 flip the correction shader
@@ -4548,6 +4656,8 @@
       particleSizeScale,
       chimeEnabled,
       chimeVolume,
+      domToneEnabled,
+      domToneVolume,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -4821,6 +4931,15 @@
       chimeVolumeSlider.value = String(chimeVolume);
       chimeVolumeLabel.textContent = `${chimeVolume}%`;
       saveChimeVolumePref();
+    }
+    if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
+      setDomToneEnabled(s.domToneEnabled);
+    }
+    if (Number.isFinite(s.domToneVolume)) {
+      domToneVolume = Math.max(0, Math.min(100, s.domToneVolume));
+      domToneVolumeSlider.value = String(domToneVolume);
+      domToneVolumeLabel.textContent = `${domToneVolume}%`;
+      saveDomToneVolumePref();
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -5291,6 +5410,19 @@
   chimeVolumeSlider.value = String(chimeVolume);
   chimeVolumeLabel.textContent = `${chimeVolume}%`;
   updateChimeSamplingTimer();
+
+  domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
+  domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
+  domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
+  domToneBtn.addEventListener("click", () => setDomToneEnabled(!domToneEnabled));
+  domToneVolumeSlider.addEventListener("input", () => {
+    domToneVolume = parseFloat(domToneVolumeSlider.value);
+    domToneVolumeLabel.textContent = `${domToneVolumeSlider.value}%`;
+    saveDomToneVolumePref();
+  });
+  domToneVolumeSlider.value = String(domToneVolume);
+  domToneVolumeLabel.textContent = `${domToneVolume}%`;
+  updateDomToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);

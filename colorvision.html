@@ -381,6 +381,11 @@
     Chime volume: <span id="chimeVolumeLabel">50%</span>
     <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
   </label>
+  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="A soft continuous tone tracking the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
+  <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
+    Tone volume: <span id="domToneVolumeLabel">40%</span>
+    <input id="domToneVolumeSlider" type="range" min="0" max="100" value="40">
+  </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
