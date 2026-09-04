@@ -62,6 +62,30 @@
   const DOM_TONE_INSTRUMENT_KEY = "domToneInstrument_colorVision_v1";
   const EDGE_TONE_OUTPUT_KEY = "edgeToneOutput_colorVision_v1";
   const EDGE_TONE_INSTRUMENT_KEY = "edgeToneInstrument_colorVision_v1";
+  // Range/Tempo controls -- what "range" and "tempo" actually mean is
+  // different for each of the three, since each reacts to something
+  // different (a distance, a hue, a density):
+  //   Chime: Range is how far away (in Lab colour distance) it starts
+  //   responding at all; Tempo is how often it re-chimes while held
+  //   steady on an exact match (it would otherwise only ever play once).
+  //   Dominant tone: Range is how many octaves the scale/pitch spans;
+  //   Tempo is the arpeggio's own speed (Melodic only).
+  //   Edge texture: Range is how sparse/dense the rhythm pattern can get
+  //   (min/max hits per bar); Tempo is the step clock's own BPM.
+  const CHIME_RANGE_KEY = "chimeRange_colorVision_v1";
+  const CHIME_DEFAULT_RANGE = 32;
+  const CHIME_TEMPO_KEY = "chimeTempo_colorVision_v1";
+  const CHIME_DEFAULT_TEMPO_MS = 600;
+  const DOM_TONE_RANGE_KEY = "domToneRange_colorVision_v1";
+  const DOM_TONE_DEFAULT_RANGE_OCTAVES = 2;
+  const DOM_TONE_TEMPO_KEY = "domToneTempo_colorVision_v1";
+  const DOM_TONE_DEFAULT_TEMPO_MS = 450;
+  const EDGE_TONE_MIN_HITS_KEY = "edgeToneMinHits_colorVision_v1";
+  const EDGE_TONE_DEFAULT_MIN_HITS = 2;
+  const EDGE_TONE_MAX_HITS_KEY = "edgeToneMaxHits_colorVision_v1";
+  const EDGE_TONE_DEFAULT_MAX_HITS = 12;
+  const EDGE_TONE_TEMPO_KEY = "edgeToneTempo_colorVision_v1";
+  const EDGE_TONE_DEFAULT_TEMPO_BPM = 100;
   // Dominant colour tone -- a second, more ambient sonification: rather
   // than reacting to a saved calibration colour specifically, a soft
   // continuous tone tracks the whole scene's average colour every ~150ms --
@@ -335,6 +359,12 @@
   const chimeOutputSelect = document.getElementById("chimeOutputSelect");
   const chimeInstrumentWrap = document.getElementById("chimeInstrumentWrap");
   const chimeInstrumentSelect = document.getElementById("chimeInstrumentSelect");
+  const chimeRangeWrap = document.getElementById("chimeRangeWrap");
+  const chimeRangeSlider = document.getElementById("chimeRangeSlider");
+  const chimeRangeLabel = document.getElementById("chimeRangeLabel");
+  const chimeTempoWrap = document.getElementById("chimeTempoWrap");
+  const chimeTempoSlider = document.getElementById("chimeTempoSlider");
+  const chimeTempoLabel = document.getElementById("chimeTempoLabel");
   const domToneBtn = document.getElementById("domToneBtn");
   const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
   const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
@@ -345,6 +375,12 @@
   const domToneOutputSelect = document.getElementById("domToneOutputSelect");
   const domToneInstrumentWrap = document.getElementById("domToneInstrumentWrap");
   const domToneInstrumentSelect = document.getElementById("domToneInstrumentSelect");
+  const domToneRangeWrap = document.getElementById("domToneRangeWrap");
+  const domToneRangeSlider = document.getElementById("domToneRangeSlider");
+  const domToneRangeLabel = document.getElementById("domToneRangeLabel");
+  const domToneTempoWrap = document.getElementById("domToneTempoWrap");
+  const domToneTempoSlider = document.getElementById("domToneTempoSlider");
+  const domToneTempoLabel = document.getElementById("domToneTempoLabel");
   const edgeToneBtn = document.getElementById("edgeToneBtn");
   const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
   const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
@@ -355,6 +391,15 @@
   const edgeToneOutputSelect = document.getElementById("edgeToneOutputSelect");
   const edgeToneInstrumentWrap = document.getElementById("edgeToneInstrumentWrap");
   const edgeToneInstrumentSelect = document.getElementById("edgeToneInstrumentSelect");
+  const edgeToneMinHitsWrap = document.getElementById("edgeToneMinHitsWrap");
+  const edgeToneMinHitsSlider = document.getElementById("edgeToneMinHitsSlider");
+  const edgeToneMinHitsLabel = document.getElementById("edgeToneMinHitsLabel");
+  const edgeToneMaxHitsWrap = document.getElementById("edgeToneMaxHitsWrap");
+  const edgeToneMaxHitsSlider = document.getElementById("edgeToneMaxHitsSlider");
+  const edgeToneMaxHitsLabel = document.getElementById("edgeToneMaxHitsLabel");
+  const edgeToneTempoWrap = document.getElementById("edgeToneTempoWrap");
+  const edgeToneTempoSlider = document.getElementById("edgeToneTempoSlider");
+  const edgeToneTempoLabel = document.getElementById("edgeToneTempoLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -852,17 +897,24 @@
       chimeEnabled: false,
       chimeVolume: CHIME_DEFAULT_VOLUME,
       chimeOutput: "synth",
-      chimeInstrument: GM_INSTRUMENTS[1].folder,
+      chimeInstrument: "music_box",
+      chimeRange: CHIME_DEFAULT_RANGE,
+      chimeTempo: CHIME_DEFAULT_TEMPO_MS,
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       domToneStyle: "continuous",
       domToneOutput: "synth",
-      domToneInstrument: GM_INSTRUMENTS[3].folder,
+      domToneInstrument: "marimba",
+      domToneRange: DOM_TONE_DEFAULT_RANGE_OCTAVES,
+      domToneTempo: DOM_TONE_DEFAULT_TEMPO_MS,
       edgeToneEnabled: false,
       edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
       edgeToneStyle: "continuous",
       edgeToneOutput: "synth",
-      edgeToneInstrument: GM_PERCUSSIVE_INSTRUMENTS[0].folder,
+      edgeToneInstrument: "woodblock",
+      edgeToneMinHits: EDGE_TONE_DEFAULT_MIN_HITS,
+      edgeToneMaxHits: EDGE_TONE_DEFAULT_MAX_HITS,
+      edgeToneTempo: EDGE_TONE_DEFAULT_TEMPO_BPM,
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -2806,21 +2858,32 @@
   // Pitched instruments (chime, dominant colour tone).
   const GM_INSTRUMENTS = [
     { name: "Acoustic Grand Piano", program: 0, folder: "acoustic_grand_piano" },
+    { name: "Celesta", program: 8, folder: "celesta" },
+    { name: "Glockenspiel", program: 9, folder: "glockenspiel" },
     { name: "Music Box", program: 10, folder: "music_box" },
     { name: "Vibraphone", program: 11, folder: "vibraphone" },
     { name: "Marimba", program: 12, folder: "marimba" },
-    { name: "Kalimba", program: 108, folder: "kalimba" },
-    { name: "Flute", program: 73, folder: "flute" }
+    { name: "Xylophone", program: 13, folder: "xylophone" },
+    { name: "Tubular Bells", program: 14, folder: "tubular_bells" },
+    { name: "Orchestral Harp", program: 46, folder: "orchestral_harp" },
+    { name: "Flute", program: 73, folder: "flute" },
+    { name: "Pan Flute", program: 75, folder: "pan_flute" },
+    { name: "Ocarina", program: 79, folder: "ocarina" },
+    { name: "Steel Drums", program: 114, folder: "steel_drums" },
+    { name: "Kalimba", program: 108, folder: "kalimba" }
   ];
   // Percussive-flavoured GM instruments (edge texture) -- real GM program
   // numbers played on a normal channel with a fixed note, NOT the reserved
   // channel-10 drum kit (a program change on channel 10 is ignored by every
-  // GM synth; these three are ordinary pitched-channel instruments that
-  // just happen to sound percussive).
+  // GM synth; these are ordinary pitched-channel instruments that just
+  // happen to sound percussive).
   const GM_PERCUSSIVE_INSTRUMENTS = [
+    { name: "Agogo", program: 113, folder: "agogo" },
     { name: "Woodblock", program: 115, folder: "woodblock" },
     { name: "Taiko Drum", program: 116, folder: "taiko_drum" },
-    { name: "Synth Drum", program: 118, folder: "synth_drum" }
+    { name: "Melodic Tom", program: 117, folder: "melodic_tom" },
+    { name: "Synth Drum", program: 118, folder: "synth_drum" },
+    { name: "Reverse Cymbal", program: 119, folder: "reverse_cymbal" }
   ];
   const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
@@ -3012,9 +3075,16 @@
   let chimeInstrument = (() => {
     try {
       const raw = localStorage.getItem(CHIME_INSTRUMENT_KEY);
-      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_INSTRUMENTS[1].folder; // Music Box
-    } catch (e) { return GM_INSTRUMENTS[1].folder; }
+      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "music_box";
+    } catch (e) { return "music_box"; }
   })();
+  // Range: how far away (in Lab colour distance) the chime starts
+  // responding at all -- wider reaches from farther off, narrower means
+  // only a near-exact match triggers it.
+  let chimeRange = loadOutlineNumberPref(CHIME_RANGE_KEY, CHIME_DEFAULT_RANGE);
+  // Tempo: how often it re-chimes (ms) while held steady on an exact
+  // match -- otherwise it would only ever play once and go quiet.
+  let chimeTempoMs = loadOutlineNumberPref(CHIME_TEMPO_KEY, CHIME_DEFAULT_TEMPO_MS);
   let chimeAudioCtx = null;
   let chimeTimerId = null;
   // Which scale step last actually played a note, and how many sampling
@@ -3025,9 +3095,9 @@
   let chimeTicksSinceLastNote = 0;
 
   // Lab-space distance at which the chime is essentially "on the exact
-  // colour" (full volume/pitch) vs. fully faded out to silence.
+  // colour" (full volume/pitch) -- the far end (fully faded to silence)
+  // is chimeRange above, now user-adjustable.
   const CHIME_CLOSE_LAB_DISTANCE = 6;
-  const CHIME_FAR_LAB_DISTANCE = 32;
 
   function nearestSavedPointLabDistance(rgb) {
     if (!points.length) return null;
@@ -3055,7 +3125,7 @@
   // decay is what makes it read as a struck note rather than a beep.
   function playChimeNote(freq, velocity) {
     if (chimeOutput === "midi") {
-      const inst = GM_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_INSTRUMENTS[1];
+      const inst = GM_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "music_box");
       playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100);
       return;
     }
@@ -3087,7 +3157,7 @@
       chimeLastNoteIndex = -1;
       return;
     }
-    const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (CHIME_FAR_LAB_DISTANCE - CHIME_CLOSE_LAB_DISTANCE)));
+    const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (chimeRange - CHIME_CLOSE_LAB_DISTANCE)));
     if (closeness <= 0.02) {
       chimeLastNoteIndex = -1;
       return;
@@ -3097,7 +3167,8 @@
     // Right at the top of the scale (as close as the mapping distinguishes)
     // is the one place a held-steady match would otherwise go silent after
     // its first note -- keep it gently re-chiming instead.
-    const heldAtTopNote = noteIndex === CHIME_SCALE_HZ.length - 1 && chimeTicksSinceLastNote >= 4;
+    const repeatTicks = Math.max(1, Math.round(chimeTempoMs / 150));
+    const heldAtTopNote = noteIndex === CHIME_SCALE_HZ.length - 1 && chimeTicksSinceLastNote >= repeatTicks;
     if (!steppedToNewNote && !heldAtTopNote) return;
     chimeLastNoteIndex = noteIndex;
     chimeTicksSinceLastNote = 0;
@@ -3128,6 +3199,12 @@
   function saveChimeInstrumentPref() {
     try { localStorage.setItem(CHIME_INSTRUMENT_KEY, chimeInstrument); } catch (e) {}
   }
+  function saveChimeRangePref() {
+    try { localStorage.setItem(CHIME_RANGE_KEY, String(chimeRange)); } catch (e) {}
+  }
+  function saveChimeTempoPref() {
+    try { localStorage.setItem(CHIME_TEMPO_KEY, String(chimeTempoMs)); } catch (e) {}
+  }
 
   function setChimeEnabled(next) {
     if (next === chimeEnabled) return;
@@ -3137,6 +3214,8 @@
     chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
     chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
     chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
+    chimeRangeWrap.classList.toggle("hide", !chimeEnabled);
+    chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
     saveChimeEnabledPref();
     updateChimeSamplingTimer();
   }
@@ -3153,6 +3232,16 @@
     if (!GM_INSTRUMENTS.some((i) => i.folder === next)) return;
     chimeInstrument = next;
     saveChimeInstrumentPref();
+  }
+
+  function setChimeRange(next) {
+    chimeRange = Math.max(CHIME_CLOSE_LAB_DISTANCE + 4, Math.min(80, next));
+    saveChimeRangePref();
+  }
+
+  function setChimeTempo(next) {
+    chimeTempoMs = Math.max(150, Math.min(2000, next));
+    saveChimeTempoPref();
   }
 
   // ---- Dominant colour tone ----
@@ -3182,8 +3271,8 @@
   let domToneInstrument = (() => {
     try {
       const raw = localStorage.getItem(DOM_TONE_INSTRUMENT_KEY);
-      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_INSTRUMENTS[3].folder; // Marimba
-    } catch (e) { return GM_INSTRUMENTS[3].folder; }
+      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "marimba";
+    } catch (e) { return "marimba"; }
   })();
   let domToneAudioCtx = null;
   let domToneOsc = null;
@@ -3199,13 +3288,27 @@
   // different scale, not just a different mode of the same one). Chord
   // degrees (root/third/fifth/octave-ish) roll in a slow arpeggio rather
   // than firing all at once.
-  const DOM_TONE_SCALE_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+  const DOM_TONE_PENTATONIC_DEGREES = [0, 2, 4, 7, 9];
   const DOM_TONE_ROOT_HZ = 185.00; // F#3
-  const DOM_TONE_SCALE_HZ = DOM_TONE_SCALE_SEMITONES.map((st) => DOM_TONE_ROOT_HZ * Math.pow(2, st / 12));
   const DOM_TONE_CHORD_OFFSETS = [0, 2, 4, 7];
-  // Groove tempo: one arpeggio step every 3rd 150ms sampling tick (~450ms) --
-  // slow enough to read as an ambient pad, not a fast melodic run.
-  const DOM_TONE_ARP_TICKS = 3;
+  // Range: how many octaves of the pentatonic scale the arpeggio (and the
+  // chord-root spread) can reach across -- rebuilt whenever the Range
+  // control changes (see setDomToneRange), not a fixed one-time table.
+  let domToneRangeOctaves = loadOutlineNumberPref(DOM_TONE_RANGE_KEY, DOM_TONE_DEFAULT_RANGE_OCTAVES);
+  function buildPentatonicScaleHz(rootHz, rangeOctaves) {
+    const semis = [];
+    for (let oct = 0; oct < rangeOctaves; oct++) {
+      for (const d of DOM_TONE_PENTATONIC_DEGREES) semis.push(d + oct * 12);
+    }
+    semis.push(rangeOctaves * 12); // top root, completing the span
+    return semis.map((st) => rootHz * Math.pow(2, st / 12));
+  }
+  let DOM_TONE_SCALE_HZ = buildPentatonicScaleHz(DOM_TONE_ROOT_HZ, domToneRangeOctaves);
+  // Tempo: ms per arpeggio step, converted to a whole number of the shared
+  // 150ms sampling ticks (so it stays aligned with when density is
+  // actually resampled) -- defaults to every 3rd tick (~450ms), slow
+  // enough to read as an ambient pad, not a fast melodic run.
+  let domToneTempoMs = loadOutlineNumberPref(DOM_TONE_TEMPO_KEY, DOM_TONE_DEFAULT_TEMPO_MS);
   let domToneArpTickCount = 0;
   let domToneArpStep = 0;
 
@@ -3241,7 +3344,7 @@
   // instead of standing apart as separate hits.
   function playDomTonePadNote(freq, velocity) {
     if (domToneOutput === "midi") {
-      const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS[3];
+      const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "marimba");
       playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600);
       return;
     }
@@ -3289,9 +3392,15 @@
     if (!rgb) return;
     const [h, , l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
     if (l < 0.03) return; // near-black scene -- stays silent, same as continuous mode fading to 0
-    if (domToneArpTickCount < DOM_TONE_ARP_TICKS) return;
+    const arpTicks = Math.max(1, Math.round(domToneTempoMs / 150));
+    if (domToneArpTickCount < arpTicks) return;
     domToneArpTickCount = 0;
-    const rootIndex = Math.floor((h / 360) * (DOM_TONE_SCALE_HZ.length - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]));
+    // At Range=1 octave, the scale is short enough that the chord's own
+    // span (offsets up to +7) can't fit above every root position -- clamp
+    // rootIndex so rootIndex+offset always lands inside the scale, instead
+    // of the naive division going negative and producing a NaN frequency.
+    const maxRootIndex = Math.max(0, DOM_TONE_SCALE_HZ.length - 1 - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]);
+    const rootIndex = Math.min(maxRootIndex, Math.floor((h / 360) * (maxRootIndex + 1)));
     const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
     domToneArpStep++;
     const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
@@ -3326,6 +3435,12 @@
   function saveDomToneInstrumentPref() {
     try { localStorage.setItem(DOM_TONE_INSTRUMENT_KEY, domToneInstrument); } catch (e) {}
   }
+  function saveDomToneRangePref() {
+    try { localStorage.setItem(DOM_TONE_RANGE_KEY, String(domToneRangeOctaves)); } catch (e) {}
+  }
+  function saveDomToneTempoPref() {
+    try { localStorage.setItem(DOM_TONE_TEMPO_KEY, String(domToneTempoMs)); } catch (e) {}
+  }
 
   // MIDI/Instrument output only makes sense for Melodic's discrete notes --
   // Continuous is a persistent oscillator bending pitch, no clean
@@ -3335,6 +3450,8 @@
     const show = domToneEnabled && domToneStyle === "melodic";
     domToneOutputWrap.classList.toggle("hide", !show);
     domToneInstrumentWrap.classList.toggle("hide", !show || domToneOutput === "synth");
+    domToneRangeWrap.classList.toggle("hide", !show);
+    domToneTempoWrap.classList.toggle("hide", !show);
   }
 
   function setDomToneEnabled(next) {
@@ -3374,6 +3491,19 @@
     saveDomToneInstrumentPref();
   }
 
+  function setDomToneRange(next) {
+    domToneRangeOctaves = Math.max(1, Math.min(3, Math.round(next)));
+    DOM_TONE_SCALE_HZ = buildPentatonicScaleHz(DOM_TONE_ROOT_HZ, domToneRangeOctaves);
+    domToneArpStep = 0;
+    saveDomToneRangePref();
+  }
+
+  function setDomToneTempo(next) {
+    domToneTempoMs = Math.max(150, Math.min(1500, next));
+    domToneArpTickCount = 0;
+    saveDomToneTempoPref();
+  }
+
   // ---- Edge texture tone ----
   // A third sonification channel: rather than colour, tracks structural
   // complexity -- how much the scene's low-res luminance grid (the same
@@ -3398,8 +3528,8 @@
   let edgeToneInstrument = (() => {
     try {
       const raw = localStorage.getItem(EDGE_TONE_INSTRUMENT_KEY);
-      return GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_PERCUSSIVE_INSTRUMENTS[0].folder; // Woodblock
-    } catch (e) { return GM_PERCUSSIVE_INSTRUMENTS[0].folder; }
+      return GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "woodblock";
+    } catch (e) { return "woodblock"; }
   })();
   // Edge texture's ticks have no inherent pitch of their own (density
   // doesn't map to a note) -- MIDI/Instrument modes always strike this one
@@ -3411,16 +3541,24 @@
   let edgeToneFilter = null;
   let edgeToneGainNode = null;
   let edgeToneTimerId = null;
-  // Rhythmic mode's groove: a steady 16th-note step clock (one step per
-  // 150ms sampling pass, ~100 BPM) -- a fixed tempo is what makes this
-  // read as an actual pulse to lock onto, rather than a click that just
-  // speeds up and slows down with density. What density actually changes
-  // is the PATTERN: how many of those 16 steps get struck, spread out via
-  // a Euclidean rhythm (see euclideanHitPattern below) -- a busier/edgier
-  // scene produces a busier, more syncopated pattern, not the same single
-  // beat sped up.
+  // Rhythmic mode's groove: a steady 16th-note step clock -- a fixed
+  // tempo is what makes this read as an actual pulse to lock onto, rather
+  // than a click that just speeds up and slows down with density. What
+  // density actually changes is the PATTERN: how many of those 16 steps
+  // get struck (between Range's min/max), spread out via a Euclidean
+  // rhythm (see euclideanHitPattern below) -- a busier/edgier scene
+  // produces a busier, more syncopated pattern, not the same single beat
+  // sped up. Tempo (BPM) is independent of the shared 150ms density-
+  // sampling tick -- edgeToneStepElapsedMs accumulates real elapsed time
+  // and the step only actually advances once a full 16th-note's worth
+  // has passed, so changing tempo doesn't change how often density itself
+  // gets resampled.
   const EDGE_TONE_STEPS = 16;
   let edgeToneStepIndex = 0;
+  let edgeToneStepElapsedMs = 0;
+  let edgeToneMinHits = loadOutlineNumberPref(EDGE_TONE_MIN_HITS_KEY, EDGE_TONE_DEFAULT_MIN_HITS);
+  let edgeToneMaxHits = loadOutlineNumberPref(EDGE_TONE_MAX_HITS_KEY, EDGE_TONE_DEFAULT_MAX_HITS);
+  let edgeToneTempoBpm = loadOutlineNumberPref(EDGE_TONE_TEMPO_KEY, EDGE_TONE_DEFAULT_TEMPO_BPM);
 
   // The standard "bucket"/error-diffusion method for spreading N hits as
   // evenly as possible across `steps` slots -- musically equivalent to a
@@ -3497,7 +3635,7 @@
   // lowpass cutoff already is, so louder/busier still means brighter/busier.
   function playEdgeTexTick(density) {
     if (edgeToneOutput === "midi") {
-      const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS[0];
+      const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === "woodblock");
       playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, EDGE_TONE_MIDI_NOTE, density, 150);
       return;
     }
@@ -3542,17 +3680,25 @@
       edgeToneFilter.frequency.setTargetAtTime(targetFreq, now, 0.25);
       return;
     }
-    // Rhythmic: the step clock always advances (a real drum machine's
-    // clock keeps running through quiet passages too) -- density decides
-    // whether this step is actually struck, via the Euclidean pattern for
-    // however many hits the current density calls for, and how hard the
-    // accented (on-the-quarter-note) steps land relative to the rest.
+    // Rhythmic: density is resampled every call regardless (its own thing,
+    // unrelated to tempo), but the step clock only actually advances once
+    // enough real time has passed for one 16th note at the current Tempo
+    // -- so Tempo changes playback speed without changing how often
+    // density itself gets resampled. A real drum machine's clock keeps
+    // running through quiet passages too.
+    edgeToneStepElapsedMs += 150;
+    const msPerStep = 60000 / edgeToneTempoBpm / 4;
+    if (edgeToneStepElapsedMs < msPerStep) return;
+    edgeToneStepElapsedMs -= msPerStep;
     edgeToneStepIndex = (edgeToneStepIndex + 1) % EDGE_TONE_STEPS;
     // Gated at a low floor, not the continuous mode's own perceptual scale
     // -- a genuinely flat wall reads as ~0 density and stays silent, but
     // this shouldn't cut off well before that the way a higher floor would.
     if (density == null || density < 0.008) return;
-    const hits = Math.max(2, Math.min(12, Math.round(2 + density * 10)));
+    // Range (min/max hits per bar) decides whether density can ever make
+    // the pattern this sparse or this busy -- density itself decides where
+    // in between that range the current bar's pattern actually sits.
+    const hits = Math.max(edgeToneMinHits, Math.min(edgeToneMaxHits, Math.round(edgeToneMinHits + density * (edgeToneMaxHits - edgeToneMinHits))));
     const pattern = euclideanHitPattern(hits, EDGE_TONE_STEPS);
     if (!pattern[edgeToneStepIndex]) return;
     const accent = edgeToneStepIndex % 4 === 0 ? 1 : 0.7;
@@ -3568,6 +3714,7 @@
       clearInterval(edgeToneTimerId);
       edgeToneTimerId = null;
       edgeToneStepIndex = 0;
+      edgeToneStepElapsedMs = 0;
       if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -3587,11 +3734,23 @@
   function saveEdgeToneInstrumentPref() {
     try { localStorage.setItem(EDGE_TONE_INSTRUMENT_KEY, edgeToneInstrument); } catch (e) {}
   }
+  function saveEdgeToneMinHitsPref() {
+    try { localStorage.setItem(EDGE_TONE_MIN_HITS_KEY, String(edgeToneMinHits)); } catch (e) {}
+  }
+  function saveEdgeToneMaxHitsPref() {
+    try { localStorage.setItem(EDGE_TONE_MAX_HITS_KEY, String(edgeToneMaxHits)); } catch (e) {}
+  }
+  function saveEdgeToneTempoPref() {
+    try { localStorage.setItem(EDGE_TONE_TEMPO_KEY, String(edgeToneTempoBpm)); } catch (e) {}
+  }
 
   function updateEdgeToneOutputControlsVisibility() {
     const show = edgeToneEnabled && edgeToneStyle === "melodic";
     edgeToneOutputWrap.classList.toggle("hide", !show);
     edgeToneInstrumentWrap.classList.toggle("hide", !show || edgeToneOutput === "synth");
+    edgeToneMinHitsWrap.classList.toggle("hide", !show);
+    edgeToneMaxHitsWrap.classList.toggle("hide", !show);
+    edgeToneTempoWrap.classList.toggle("hide", !show);
   }
 
   function setEdgeToneEnabled(next) {
@@ -3613,6 +3772,7 @@
       edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
     edgeToneStepIndex = 0;
+    edgeToneStepElapsedMs = 0;
     updateEdgeToneOutputControlsVisibility();
     saveEdgeToneStylePref();
   }
@@ -3629,6 +3789,21 @@
     if (!GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === next)) return;
     edgeToneInstrument = next;
     saveEdgeToneInstrumentPref();
+  }
+
+  function setEdgeToneMinHits(next) {
+    edgeToneMinHits = Math.max(1, Math.min(edgeToneMaxHits, Math.round(next)));
+    saveEdgeToneMinHitsPref();
+  }
+
+  function setEdgeToneMaxHits(next) {
+    edgeToneMaxHits = Math.max(edgeToneMinHits, Math.min(EDGE_TONE_STEPS, Math.round(next)));
+    saveEdgeToneMaxHitsPref();
+  }
+
+  function setEdgeToneTempo(next) {
+    edgeToneTempoBpm = Math.max(60, Math.min(200, Math.round(next)));
+    saveEdgeToneTempoPref();
   }
 
   // Converts a tap position (viewport CSS pixels) into a fraction of the
@@ -3931,16 +4106,23 @@
       chimeVolume,
       chimeOutput,
       chimeInstrument,
+      chimeRange,
+      chimeTempo: chimeTempoMs,
       domToneEnabled,
       domToneVolume,
       domToneStyle,
       domToneOutput,
       domToneInstrument,
+      domToneRange: domToneRangeOctaves,
+      domToneTempo: domToneTempoMs,
       edgeToneEnabled,
       edgeToneVolume,
       edgeToneStyle,
       edgeToneOutput,
       edgeToneInstrument,
+      edgeToneMinHits,
+      edgeToneMaxHits,
+      edgeToneTempo: edgeToneTempoBpm,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -4129,6 +4311,16 @@
       setChimeInstrument(s.chimeInstrument);
       chimeInstrumentSelect.value = chimeInstrument;
     }
+    if (Number.isFinite(s.chimeRange)) {
+      setChimeRange(s.chimeRange);
+      chimeRangeSlider.value = String(chimeRange);
+      chimeRangeLabel.textContent = String(chimeRange);
+    }
+    if (Number.isFinite(s.chimeTempo)) {
+      setChimeTempo(s.chimeTempo);
+      chimeTempoSlider.value = String(chimeTempoMs);
+      chimeTempoLabel.textContent = `${chimeTempoMs}ms`;
+    }
     if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
       setDomToneEnabled(s.domToneEnabled);
     }
@@ -4150,6 +4342,16 @@
       setDomToneInstrument(s.domToneInstrument);
       domToneInstrumentSelect.value = domToneInstrument;
     }
+    if (Number.isFinite(s.domToneRange)) {
+      setDomToneRange(s.domToneRange);
+      domToneRangeSlider.value = String(domToneRangeOctaves);
+      domToneRangeLabel.textContent = String(domToneRangeOctaves);
+    }
+    if (Number.isFinite(s.domToneTempo)) {
+      setDomToneTempo(s.domToneTempo);
+      domToneTempoSlider.value = String(domToneTempoMs);
+      domToneTempoLabel.textContent = `${domToneTempoMs}ms`;
+    }
     if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
       setEdgeToneEnabled(s.edgeToneEnabled);
     }
@@ -4170,6 +4372,21 @@
     if (typeof s.edgeToneInstrument === "string" && GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === s.edgeToneInstrument)) {
       setEdgeToneInstrument(s.edgeToneInstrument);
       edgeToneInstrumentSelect.value = edgeToneInstrument;
+    }
+    if (Number.isFinite(s.edgeToneMinHits)) {
+      setEdgeToneMinHits(s.edgeToneMinHits);
+      edgeToneMinHitsSlider.value = String(edgeToneMinHits);
+      edgeToneMinHitsLabel.textContent = String(edgeToneMinHits);
+    }
+    if (Number.isFinite(s.edgeToneMaxHits)) {
+      setEdgeToneMaxHits(s.edgeToneMaxHits);
+      edgeToneMaxHitsSlider.value = String(edgeToneMaxHits);
+      edgeToneMaxHitsLabel.textContent = String(edgeToneMaxHits);
+    }
+    if (Number.isFinite(s.edgeToneTempo)) {
+      setEdgeToneTempo(s.edgeToneTempo);
+      edgeToneTempoSlider.value = String(edgeToneTempoBpm);
+      edgeToneTempoLabel.textContent = `${edgeToneTempoBpm} BPM`;
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -4623,6 +4840,8 @@
   chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
   chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
   chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
+  chimeRangeWrap.classList.toggle("hide", !chimeEnabled);
+  chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
   chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
   chimeVolumeSlider.addEventListener("input", () => {
     chimeVolume = parseFloat(chimeVolumeSlider.value);
@@ -4635,6 +4854,18 @@
   chimeOutputSelect.value = chimeOutput;
   chimeInstrumentSelect.addEventListener("change", () => setChimeInstrument(chimeInstrumentSelect.value));
   chimeInstrumentSelect.value = chimeInstrument;
+  chimeRangeSlider.addEventListener("input", () => {
+    setChimeRange(parseFloat(chimeRangeSlider.value));
+    chimeRangeLabel.textContent = String(chimeRange);
+  });
+  chimeRangeSlider.value = String(chimeRange);
+  chimeRangeLabel.textContent = String(chimeRange);
+  chimeTempoSlider.addEventListener("input", () => {
+    setChimeTempo(parseFloat(chimeTempoSlider.value));
+    chimeTempoLabel.textContent = `${chimeTempoMs}ms`;
+  });
+  chimeTempoSlider.value = String(chimeTempoMs);
+  chimeTempoLabel.textContent = `${chimeTempoMs}ms`;
   updateChimeSamplingTimer();
 
   domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
@@ -4656,6 +4887,18 @@
   domToneOutputSelect.value = domToneOutput;
   domToneInstrumentSelect.addEventListener("change", () => setDomToneInstrument(domToneInstrumentSelect.value));
   domToneInstrumentSelect.value = domToneInstrument;
+  domToneRangeSlider.addEventListener("input", () => {
+    setDomToneRange(parseFloat(domToneRangeSlider.value));
+    domToneRangeLabel.textContent = String(domToneRangeOctaves);
+  });
+  domToneRangeSlider.value = String(domToneRangeOctaves);
+  domToneRangeLabel.textContent = String(domToneRangeOctaves);
+  domToneTempoSlider.addEventListener("input", () => {
+    setDomToneTempo(parseFloat(domToneTempoSlider.value));
+    domToneTempoLabel.textContent = `${domToneTempoMs}ms`;
+  });
+  domToneTempoSlider.value = String(domToneTempoMs);
+  domToneTempoLabel.textContent = `${domToneTempoMs}ms`;
   updateDomToneSamplingTimer();
 
   edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
@@ -4677,6 +4920,24 @@
   edgeToneOutputSelect.value = edgeToneOutput;
   edgeToneInstrumentSelect.addEventListener("change", () => setEdgeToneInstrument(edgeToneInstrumentSelect.value));
   edgeToneInstrumentSelect.value = edgeToneInstrument;
+  edgeToneMinHitsSlider.addEventListener("input", () => {
+    setEdgeToneMinHits(parseFloat(edgeToneMinHitsSlider.value));
+    edgeToneMinHitsLabel.textContent = String(edgeToneMinHits);
+  });
+  edgeToneMinHitsSlider.value = String(edgeToneMinHits);
+  edgeToneMinHitsLabel.textContent = String(edgeToneMinHits);
+  edgeToneMaxHitsSlider.addEventListener("input", () => {
+    setEdgeToneMaxHits(parseFloat(edgeToneMaxHitsSlider.value));
+    edgeToneMaxHitsLabel.textContent = String(edgeToneMaxHits);
+  });
+  edgeToneMaxHitsSlider.value = String(edgeToneMaxHits);
+  edgeToneMaxHitsLabel.textContent = String(edgeToneMaxHits);
+  edgeToneTempoSlider.addEventListener("input", () => {
+    setEdgeToneTempo(parseFloat(edgeToneTempoSlider.value));
+    edgeToneTempoLabel.textContent = `${edgeToneTempoBpm} BPM`;
+  });
+  edgeToneTempoSlider.value = String(edgeToneTempoBpm);
+  edgeToneTempoLabel.textContent = `${edgeToneTempoBpm} BPM`;
   updateEdgeToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);

@@ -297,12 +297,28 @@
     Instrument:
     <select id="chimeInstrumentSelect">
       <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+      <option value="celesta">Celesta</option>
+      <option value="glockenspiel">Glockenspiel</option>
       <option value="music_box">Music Box</option>
       <option value="vibraphone">Vibraphone</option>
       <option value="marimba">Marimba</option>
-      <option value="kalimba">Kalimba</option>
+      <option value="xylophone">Xylophone</option>
+      <option value="tubular_bells">Tubular Bells</option>
+      <option value="orchestral_harp">Orchestral Harp</option>
       <option value="flute">Flute</option>
+      <option value="pan_flute">Pan Flute</option>
+      <option value="ocarina">Ocarina</option>
+      <option value="steel_drums">Steel Drums</option>
+      <option value="kalimba">Kalimba</option>
     </select>
+  </label>
+  <label id="chimeRangeWrap" class="hud-slider hide" title="How close a colour must be to a saved calibration point before the chime starts responding at all, and how far the closeness curve stretches from there -- lower is stricter (must nearly match exactly), higher lets the chime react from further away.">
+    Chime range: <span id="chimeRangeLabel">32</span>
+    <input id="chimeRangeSlider" type="range" min="10" max="80" step="1" value="32">
+  </label>
+  <label id="chimeTempoWrap" class="hud-slider hide" title="The fastest the chime is allowed to repeat while sitting right on top of a saved colour -- lower is a quicker, more insistent repeat; higher spaces the notes out more.">
+    Chime tempo: <span id="chimeTempoLabel">600ms</span>
+    <input id="chimeTempoSlider" type="range" min="150" max="2000" step="10" value="600">
   </label>
   <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
@@ -328,12 +344,28 @@
     Instrument:
     <select id="domToneInstrumentSelect">
       <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+      <option value="celesta">Celesta</option>
+      <option value="glockenspiel">Glockenspiel</option>
       <option value="music_box">Music Box</option>
       <option value="vibraphone">Vibraphone</option>
       <option value="marimba">Marimba</option>
-      <option value="kalimba">Kalimba</option>
+      <option value="xylophone">Xylophone</option>
+      <option value="tubular_bells">Tubular Bells</option>
+      <option value="orchestral_harp">Orchestral Harp</option>
       <option value="flute">Flute</option>
+      <option value="pan_flute">Pan Flute</option>
+      <option value="ocarina">Ocarina</option>
+      <option value="steel_drums">Steel Drums</option>
+      <option value="kalimba">Kalimba</option>
     </select>
+  </label>
+  <label id="domToneRangeWrap" class="hud-slider hide" title="How many octaves the arpeggio's pentatonic scale spans -- higher lets the chord reach further up (and down) from its root note, so hue swings produce a wider melodic range instead of staying clustered around one register.">
+    Tone range: <span id="domToneRangeLabel">2</span> octave(s)
+    <input id="domToneRangeSlider" type="range" min="1" max="3" step="1" value="2">
+  </label>
+  <label id="domToneTempoWrap" class="hud-slider hide" title="How quickly the arpeggio moves from note to note within its rolling chord -- lower is a faster, busier pad; higher spaces each note out for a slower, more spacious groove.">
+    Tone tempo: <span id="domToneTempoLabel">450ms</span>
+    <input id="domToneTempoSlider" type="range" min="150" max="1500" step="10" value="450">
   </label>
   <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="Tracks structural complexity in the scene -- busier, edgier views sound rougher; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
   <label id="edgeToneVolumeWrap" class="hud-slider hide" title="How loud the edge texture tone plays, independent of your device's system volume.">
@@ -355,13 +387,28 @@
       <option value="instrument">Instrument</option>
     </select>
   </label>
-  <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- three real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre).">
+  <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre).">
     Instrument:
     <select id="edgeToneInstrumentSelect">
+      <option value="agogo">Agogo</option>
       <option value="woodblock">Woodblock</option>
       <option value="taiko_drum">Taiko Drum</option>
+      <option value="melodic_tom">Melodic Tom</option>
       <option value="synth_drum">Synth Drum</option>
+      <option value="reverse_cymbal">Reverse Cymbal</option>
     </select>
+  </label>
+  <label id="edgeToneMinHitsWrap" class="hud-slider hide" title="The fewest strikes the rhythm engine will ever spread across each 16-step bar, even for the calmest/flattest scenes -- raise this so quiet footage still produces a noticeable pulse instead of near-silence.">
+    Min hits/bar: <span id="edgeToneMinHitsLabel">2</span>
+    <input id="edgeToneMinHitsSlider" type="range" min="1" max="16" step="1" value="2">
+  </label>
+  <label id="edgeToneMaxHitsWrap" class="hud-slider hide" title="The most strikes the rhythm engine will spread across each 16-step bar, even for the busiest/edgiest scenes -- raise this to let very cluttered footage produce a denser, more filled-in groove.">
+    Max hits/bar: <span id="edgeToneMaxHitsLabel">12</span>
+    <input id="edgeToneMaxHitsSlider" type="range" min="1" max="16" step="1" value="12">
+  </label>
+  <label id="edgeToneTempoWrap" class="hud-slider hide" title="The step clock's speed, in beats per minute -- independent of scene density, this sets how fast the underlying 16-step bar cycles, i.e. how fast the groove feels overall.">
+    Texture tempo: <span id="edgeToneTempoLabel">100 BPM</span>
+    <input id="edgeToneTempoSlider" type="range" min="60" max="200" step="1" value="100">
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
