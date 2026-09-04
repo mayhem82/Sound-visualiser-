@@ -276,21 +276,63 @@
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
+  <label id="midiOutputWrap" class="hud-slider hide" title="Which connected MIDI output any feature below set to MIDI sends its notes to -- a hardware synth, or a virtual MIDI port feeding software on this device. Appears once a MIDI output is actually detected.">
+    MIDI output:
+    <select id="midiOutputSelect"></select>
+  </label>
   <button id="chimeBtn" class="hud-btn" aria-pressed="false" title="Plucks a short melodic note (up a pentatonic scale, higher = closer) as the camera nears a saved calibration colour -- an audible second channel alongside the visual correction. Needs at least one saved colour first (Calibrate a colour below) -- silent until then, since there's nothing yet to chime near.">Colour proximity chime: Off</button>
   <label id="chimeVolumeWrap" class="hud-slider hide" title="How loud the proximity chime plays, independent of your device's system volume.">
     Chime volume: <span id="chimeVolumeLabel">50%</span>
     <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="chimeOutputWrap" class="hud-slider hide" title="Synth: the chime's own built-in oscillator (default, always available). MIDI: sends real notes to a connected MIDI output -- an actual instrument, not this page's synth. Instrument: real recorded General MIDI instrument samples, fetched and played in-browser, no external device needed.">
+    Sound:
+    <select id="chimeOutputSelect">
+      <option value="synth">Synth</option>
+      <option value="midi">MIDI out</option>
+      <option value="instrument">Instrument</option>
+    </select>
+  </label>
+  <label id="chimeInstrumentWrap" class="hud-slider hide" title="Which instrument plays the chime's notes -- a MIDI program change (MIDI out) or which real instrument sample set to fetch (Instrument).">
+    Instrument:
+    <select id="chimeInstrumentSelect">
+      <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+      <option value="music_box">Music Box</option>
+      <option value="vibraphone">Vibraphone</option>
+      <option value="marimba">Marimba</option>
+      <option value="kalimba">Kalimba</option>
+      <option value="flute">Flute</option>
+    </select>
   </label>
   <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
     Tone volume: <span id="domToneVolumeLabel">40%</span>
     <input id="domToneVolumeSlider" type="range" min="0" max="100" value="40">
   </label>
-  <label id="domToneStyleWrap" class="hud-slider hide" title="Continuous: a soft tone that bends pitch smoothly, following the hue live. Melodic: an ambient arpeggio pad instead -- hue picks a chord root on a minor-pentatonic scale (a different scale/register from the chime's), and the chord rolls in a slow, overlapping groove rather than one sustained tone.">
+  <label id="domToneStyleWrap" class="hud-slider hide" title="Continuous: a soft tone that bends pitch smoothly, following the hue live. Melodic: an ambient arpeggio pad instead -- hue picks a chord root on a pentatonic scale rooted a tritone away from the chime's (a genuinely different scale, not just a different register), and the chord rolls in a slow, overlapping groove rather than one sustained tone.">
     Style:
     <select id="domToneStyleSelect">
       <option value="continuous">Continuous</option>
       <option value="melodic">Melodic</option>
+    </select>
+  </label>
+  <label id="domToneOutputWrap" class="hud-slider hide" title="Only applies to Melodic (Continuous is a persistent bent tone, no clean equivalent as separate notes). Synth: the pad's own built-in oscillator. MIDI: sends real notes to a connected MIDI output. Instrument: real recorded General MIDI instrument samples played in-browser.">
+    Sound:
+    <select id="domToneOutputSelect">
+      <option value="synth">Synth</option>
+      <option value="midi">MIDI out</option>
+      <option value="instrument">Instrument</option>
+    </select>
+  </label>
+  <label id="domToneInstrumentWrap" class="hud-slider hide" title="Which instrument plays the arpeggio's notes.">
+    Instrument:
+    <select id="domToneInstrumentSelect">
+      <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+      <option value="music_box">Music Box</option>
+      <option value="vibraphone">Vibraphone</option>
+      <option value="marimba">Marimba</option>
+      <option value="kalimba">Kalimba</option>
+      <option value="flute">Flute</option>
     </select>
   </label>
   <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="Tracks structural complexity in the scene -- busier, edgier views sound rougher; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
@@ -303,6 +345,22 @@
     <select id="edgeToneStyleSelect">
       <option value="continuous">Continuous</option>
       <option value="melodic">Melodic</option>
+    </select>
+  </label>
+  <label id="edgeToneOutputWrap" class="hud-slider hide" title="Only applies to Melodic. Synth: the tick's own built-in filtered noise burst. MIDI: sends real percussive-instrument notes to a connected MIDI output. Instrument: real recorded General MIDI instrument samples played in-browser.">
+    Sound:
+    <select id="edgeToneOutputSelect">
+      <option value="synth">Synth</option>
+      <option value="midi">MIDI out</option>
+      <option value="instrument">Instrument</option>
+    </select>
+  </label>
+  <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- three real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre).">
+    Instrument:
+    <select id="edgeToneInstrumentSelect">
+      <option value="woodblock">Woodblock</option>
+      <option value="taiko_drum">Taiko Drum</option>
+      <option value="synth_drum">Synth Drum</option>
     </select>
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>

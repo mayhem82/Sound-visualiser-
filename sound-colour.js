@@ -52,6 +52,16 @@
   const CHIME_ENABLED_KEY = "chimeEnabled_colorVision_v1";
   const CHIME_VOLUME_KEY = "chimeVolume_colorVision_v1";
   const CHIME_DEFAULT_VOLUME = 50;
+  // Sound output for the chime, dominant tone, and edge texture: Synth (the
+  // original built-in oscillator/noise), MIDI (real notes to a connected
+  // MIDI output), or Instrument (real GM instrument samples). See the
+  // "Shared instrument output" section below for how each actually works.
+  const CHIME_OUTPUT_KEY = "chimeOutput_colorVision_v1";
+  const CHIME_INSTRUMENT_KEY = "chimeInstrument_colorVision_v1";
+  const DOM_TONE_OUTPUT_KEY = "domToneOutput_colorVision_v1";
+  const DOM_TONE_INSTRUMENT_KEY = "domToneInstrument_colorVision_v1";
+  const EDGE_TONE_OUTPUT_KEY = "edgeToneOutput_colorVision_v1";
+  const EDGE_TONE_INSTRUMENT_KEY = "edgeToneInstrument_colorVision_v1";
   // Dominant colour tone -- a second, more ambient sonification: rather
   // than reacting to a saved calibration colour specifically, a soft
   // continuous tone tracks the whole scene's average colour every ~150ms --
@@ -315,22 +325,36 @@
   const outlineColorInput = document.getElementById("outlineColorInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
+  const midiOutputWrap = document.getElementById("midiOutputWrap");
+  const midiOutputSelect = document.getElementById("midiOutputSelect");
   const chimeBtn = document.getElementById("chimeBtn");
   const chimeVolumeWrap = document.getElementById("chimeVolumeWrap");
   const chimeVolumeSlider = document.getElementById("chimeVolumeSlider");
   const chimeVolumeLabel = document.getElementById("chimeVolumeLabel");
+  const chimeOutputWrap = document.getElementById("chimeOutputWrap");
+  const chimeOutputSelect = document.getElementById("chimeOutputSelect");
+  const chimeInstrumentWrap = document.getElementById("chimeInstrumentWrap");
+  const chimeInstrumentSelect = document.getElementById("chimeInstrumentSelect");
   const domToneBtn = document.getElementById("domToneBtn");
   const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
   const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
   const domToneVolumeLabel = document.getElementById("domToneVolumeLabel");
   const domToneStyleWrap = document.getElementById("domToneStyleWrap");
   const domToneStyleSelect = document.getElementById("domToneStyleSelect");
+  const domToneOutputWrap = document.getElementById("domToneOutputWrap");
+  const domToneOutputSelect = document.getElementById("domToneOutputSelect");
+  const domToneInstrumentWrap = document.getElementById("domToneInstrumentWrap");
+  const domToneInstrumentSelect = document.getElementById("domToneInstrumentSelect");
   const edgeToneBtn = document.getElementById("edgeToneBtn");
   const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
   const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
   const edgeToneVolumeLabel = document.getElementById("edgeToneVolumeLabel");
   const edgeToneStyleWrap = document.getElementById("edgeToneStyleWrap");
   const edgeToneStyleSelect = document.getElementById("edgeToneStyleSelect");
+  const edgeToneOutputWrap = document.getElementById("edgeToneOutputWrap");
+  const edgeToneOutputSelect = document.getElementById("edgeToneOutputSelect");
+  const edgeToneInstrumentWrap = document.getElementById("edgeToneInstrumentWrap");
+  const edgeToneInstrumentSelect = document.getElementById("edgeToneInstrumentSelect");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -827,12 +851,18 @@
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
       chimeEnabled: false,
       chimeVolume: CHIME_DEFAULT_VOLUME,
+      chimeOutput: "synth",
+      chimeInstrument: GM_INSTRUMENTS[1].folder,
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       domToneStyle: "continuous",
+      domToneOutput: "synth",
+      domToneInstrument: GM_INSTRUMENTS[3].folder,
       edgeToneEnabled: false,
       edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
       edgeToneStyle: "continuous",
+      edgeToneOutput: "synth",
+      edgeToneInstrument: GM_PERCUSSIVE_INSTRUMENTS[0].folder,
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -2748,6 +2778,198 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // ---- Shared instrument output (MIDI out + real sampled instruments) ----
+  // Every note-based sonification below (the chime, the dominant colour
+  // tone's melodic mode, the edge texture's melodic mode) can play through
+  // its own built-in oscillator/noise (Synth, the original/default), or
+  // through one of two genuinely real alternatives instead:
+  //
+  //   MIDI out -- sends actual MIDI messages (Web MIDI API) to a real
+  //   connected instrument: hardware synth, or a virtual MIDI port feeding
+  //   a software synth/DAW. The sound itself comes entirely from whatever's
+  //   on the receiving end -- this page only ever sends note data, the same
+  //   way any MIDI controller does. Only available in Chromium-based
+  //   browsers with a MIDI output already present; feature-detected via
+  //   navigator.requestMIDIAccess, hidden with no fake fallback elsewhere.
+  //
+  //   Instrument -- real recorded General MIDI instrument samples (the
+  //   FluidR3 GM soundfont, exported as individual per-note MP3s by the
+  //   widely-used, MIT-licensed midi-js-soundfonts project), fetched on
+  //   demand and decoded via the browser's own Web Audio decodeAudioData --
+  //   no bundled audio in this repo, no third-party JS library, just real
+  //   sample files fetched at runtime like any other asset. That sample set
+  //   only has natural notes (no sharps/flats) per octave; the nearest one
+  //   is picked and pitch-shifted via playbackRate for the remaining
+  //   semitones -- exactly how a real hardware sampler/rompler works, not
+  //   an approximation unique to this page.
+  const SOUNDFONT_BASE_URL = "https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/";
+  // Pitched instruments (chime, dominant colour tone).
+  const GM_INSTRUMENTS = [
+    { name: "Acoustic Grand Piano", program: 0, folder: "acoustic_grand_piano" },
+    { name: "Music Box", program: 10, folder: "music_box" },
+    { name: "Vibraphone", program: 11, folder: "vibraphone" },
+    { name: "Marimba", program: 12, folder: "marimba" },
+    { name: "Kalimba", program: 108, folder: "kalimba" },
+    { name: "Flute", program: 73, folder: "flute" }
+  ];
+  // Percussive-flavoured GM instruments (edge texture) -- real GM program
+  // numbers played on a normal channel with a fixed note, NOT the reserved
+  // channel-10 drum kit (a program change on channel 10 is ignored by every
+  // GM synth; these three are ordinary pitched-channel instruments that
+  // just happen to sound percussive).
+  const GM_PERCUSSIVE_INSTRUMENTS = [
+    { name: "Woodblock", program: 115, folder: "woodblock" },
+    { name: "Taiko Drum", program: 116, folder: "taiko_drum" },
+    { name: "Synth Drum", program: 118, folder: "synth_drum" }
+  ];
+  const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+  function hzToMidiNote(freq) {
+    return 69 + 12 * Math.log2(freq / 440);
+  }
+
+  // Finds the nearest available natural-note sample to a MIDI note number,
+  // and how many semitones away it is (for pitch-shifting via playbackRate).
+  function midiNoteToNearestSample(midiNote) {
+    const target = Math.round(midiNote);
+    let best = null;
+    for (let candidate = target - 6; candidate <= target + 6; candidate++) {
+      const octave = Math.floor(candidate / 12) - 1; // MIDI 60 = C4
+      const semitoneInOctave = ((candidate % 12) + 12) % 12;
+      const noteName = Object.keys(NATURAL_NOTE_SEMITONES).find((n) => NATURAL_NOTE_SEMITONES[n] === semitoneInOctave);
+      if (!noteName) continue; // this candidate itself is a sharp/flat -- no sample file for it
+      const diff = Math.abs(candidate - target);
+      if (!best || diff < best.diff) best = { sampleName: `${noteName}${octave}`, diff, semitoneOffset: midiNote - candidate };
+    }
+    return best;
+  }
+
+  let instrumentAudioCtx = null;
+  const instrumentSampleCache = new Map(); // "folder/NoteOctave" -> Promise<AudioBuffer>
+
+  function ensureInstrumentAudio() {
+    if (instrumentAudioCtx) return instrumentAudioCtx;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    instrumentAudioCtx = new Ctx();
+    return instrumentAudioCtx;
+  }
+
+  function loadInstrumentSample(ctx, folder, sampleName) {
+    const key = `${folder}/${sampleName}`;
+    if (instrumentSampleCache.has(key)) return instrumentSampleCache.get(key);
+    const promise = fetch(`${SOUNDFONT_BASE_URL}${folder}-mp3/${sampleName}.mp3`)
+      .then((resp) => {
+        if (!resp.ok) throw new Error(`sample fetch failed: ${resp.status}`);
+        return resp.arrayBuffer();
+      })
+      .then((arrayBuf) => ctx.decodeAudioData(arrayBuf));
+    instrumentSampleCache.set(key, promise);
+    return promise;
+  }
+
+  // Plays one real instrument sample at the given MIDI note -- fire-and-
+  // forget (never blocks the caller on the network/decode round-trip);
+  // a fetch/decode failure (offline, sample genuinely missing) is silently
+  // dropped rather than surfaced, same "never let sonification errors break
+  // the page" spirit as everything else in this section.
+  async function playInstrumentNote(folder, midiNote, velocity, durationS) {
+    const ctx = ensureInstrumentAudio();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const nearest = midiNoteToNearestSample(midiNote);
+    if (!nearest) return;
+    try {
+      const buffer = await loadInstrumentSample(ctx, folder, nearest.sampleName);
+      const now = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = Math.pow(2, nearest.semitoneOffset / 12);
+      const gain = ctx.createGain();
+      gain.gain.value = Math.max(0.0001, Math.min(1, velocity));
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(now);
+      if (durationS) src.stop(now + durationS);
+    } catch (e) {
+      // Network/decoding failure -- stays silent this note, same as above.
+    }
+  }
+
+  // ---- MIDI out (Web MIDI API) ----
+  let midiAccess = null;
+  let midiOutput = null;
+
+  async function ensureMidiAccess() {
+    if (midiAccess || !navigator.requestMIDIAccess) return midiAccess;
+    try {
+      midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+      midiAccess.onstatechange = refreshMidiOutputs;
+      refreshMidiOutputs();
+    } catch (e) {
+      midiAccess = null;
+    }
+    return midiAccess;
+  }
+
+  function refreshMidiOutputs() {
+    if (!midiAccess) return;
+    const outputs = [...midiAccess.outputs.values()];
+    const previouslySelectedId = midiOutput && midiOutput.id;
+    midiOutputSelect.innerHTML = "";
+    if (!outputs.length) {
+      midiOutput = null;
+      midiOutputWrap.classList.add("hide");
+      return;
+    }
+    outputs.forEach((out) => {
+      const option = document.createElement("option");
+      option.value = out.id;
+      option.textContent = out.name || "MIDI output";
+      midiOutputSelect.appendChild(option);
+    });
+    midiOutput = outputs.find((o) => o.id === previouslySelectedId) || outputs[0];
+    midiOutputSelect.value = midiOutput.id;
+    midiOutputWrap.classList.remove("hide");
+  }
+
+  const midiProgramSentPerChannel = {};
+
+  function sendMidiProgramChange(channel, program) {
+    if (!midiOutput) return;
+    if (midiProgramSentPerChannel[channel] === program) return;
+    midiProgramSentPerChannel[channel] = program;
+    midiOutput.send([0xc0 | channel, program]);
+  }
+
+  function sendMidiNoteOn(channel, midiNote, velocity) {
+    if (!midiOutput) return;
+    const note = Math.max(0, Math.min(127, Math.round(midiNote)));
+    const vel = Math.max(1, Math.min(127, Math.round(velocity * 127)));
+    midiOutput.send([0x90 | channel, note, vel]);
+  }
+
+  function sendMidiNoteOff(channel, midiNote) {
+    if (!midiOutput) return;
+    const note = Math.max(0, Math.min(127, Math.round(midiNote)));
+    midiOutput.send([0x80 | channel, note, 0]);
+  }
+
+  // Plays one note out to the currently selected MIDI output: a program
+  // change (only sent when it actually changes, so repeated notes on the
+  // same instrument don't re-select it every time) followed by note on,
+  // then note off after durationMs.
+  function playMidiNote(channel, program, midiNote, velocity, durationMs) {
+    if (!midiOutput) return;
+    sendMidiProgramChange(channel, program);
+    sendMidiNoteOn(channel, midiNote, velocity);
+    setTimeout(() => sendMidiNoteOff(channel, midiNote), durationMs);
+  }
+
+  const CHIME_MIDI_CHANNEL = 0;
+  const DOM_TONE_MIDI_CHANNEL = 1;
+  const EDGE_TONE_MIDI_CHANNEL = 2;
+
   // ---- Colour proximity chime ----
   // First step of the "Sight <-> Sound" direction (index.html's "What's
   // next" section): a soft tone that rises in pitch and volume as the live
@@ -2781,6 +3003,18 @@
     try { return localStorage.getItem(CHIME_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let chimeVolume = loadOutlineNumberPref(CHIME_VOLUME_KEY, CHIME_DEFAULT_VOLUME);
+  let chimeOutput = (() => {
+    try {
+      const raw = localStorage.getItem(CHIME_OUTPUT_KEY);
+      return raw === "midi" || raw === "instrument" ? raw : "synth";
+    } catch (e) { return "synth"; }
+  })();
+  let chimeInstrument = (() => {
+    try {
+      const raw = localStorage.getItem(CHIME_INSTRUMENT_KEY);
+      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_INSTRUMENTS[1].folder; // Music Box
+    } catch (e) { return GM_INSTRUMENTS[1].folder; }
+  })();
   let chimeAudioCtx = null;
   let chimeTimerId = null;
   // Which scale step last actually played a note, and how many sampling
@@ -2820,6 +3054,15 @@
   // A quick attack (it's a pluck, not a fade-in) into a slow exponential
   // decay is what makes it read as a struck note rather than a beep.
   function playChimeNote(freq, velocity) {
+    if (chimeOutput === "midi") {
+      const inst = GM_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_INSTRUMENTS[1];
+      playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100);
+      return;
+    }
+    if (chimeOutput === "instrument") {
+      playInstrumentNote(chimeInstrument, hzToMidiNote(freq), velocity * (chimeVolume / 100), 1.3);
+      return;
+    }
     const now = chimeAudioCtx.currentTime;
     const osc = chimeAudioCtx.createOscillator();
     osc.type = "triangle";
@@ -2879,6 +3122,12 @@
   function saveChimeVolumePref() {
     try { localStorage.setItem(CHIME_VOLUME_KEY, String(chimeVolume)); } catch (e) {}
   }
+  function saveChimeOutputPref() {
+    try { localStorage.setItem(CHIME_OUTPUT_KEY, chimeOutput); } catch (e) {}
+  }
+  function saveChimeInstrumentPref() {
+    try { localStorage.setItem(CHIME_INSTRUMENT_KEY, chimeInstrument); } catch (e) {}
+  }
 
   function setChimeEnabled(next) {
     if (next === chimeEnabled) return;
@@ -2886,8 +3135,24 @@
     chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
     chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
     chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+    chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
+    chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
     saveChimeEnabledPref();
     updateChimeSamplingTimer();
+  }
+
+  function setChimeOutput(next) {
+    if (next !== "synth" && next !== "midi" && next !== "instrument") return;
+    chimeOutput = next;
+    chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
+    if (chimeOutput === "midi") ensureMidiAccess();
+    saveChimeOutputPref();
+  }
+
+  function setChimeInstrument(next) {
+    if (!GM_INSTRUMENTS.some((i) => i.folder === next)) return;
+    chimeInstrument = next;
+    saveChimeInstrumentPref();
   }
 
   // ---- Dominant colour tone ----
@@ -2907,6 +3172,18 @@
   let domToneVolume = loadOutlineNumberPref(DOM_TONE_VOLUME_KEY, DOM_TONE_DEFAULT_VOLUME);
   let domToneStyle = (() => {
     try { return localStorage.getItem(DOM_TONE_STYLE_KEY) === "melodic" ? "melodic" : "continuous"; } catch (e) { return "continuous"; }
+  })();
+  let domToneOutput = (() => {
+    try {
+      const raw = localStorage.getItem(DOM_TONE_OUTPUT_KEY);
+      return raw === "midi" || raw === "instrument" ? raw : "synth";
+    } catch (e) { return "synth"; }
+  })();
+  let domToneInstrument = (() => {
+    try {
+      const raw = localStorage.getItem(DOM_TONE_INSTRUMENT_KEY);
+      return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_INSTRUMENTS[3].folder; // Marimba
+    } catch (e) { return GM_INSTRUMENTS[3].folder; }
   })();
   let domToneAudioCtx = null;
   let domToneOsc = null;
@@ -2963,6 +3240,15 @@
   // attack and a longer decay, so overlapping notes blend into a pad
   // instead of standing apart as separate hits.
   function playDomTonePadNote(freq, velocity) {
+    if (domToneOutput === "midi") {
+      const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS[3];
+      playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600);
+      return;
+    }
+    if (domToneOutput === "instrument") {
+      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8);
+      return;
+    }
     const now = domToneAudioCtx.currentTime;
     const osc = domToneAudioCtx.createOscillator();
     osc.type = "sine";
@@ -3034,6 +3320,22 @@
   function saveDomToneStylePref() {
     try { localStorage.setItem(DOM_TONE_STYLE_KEY, domToneStyle); } catch (e) {}
   }
+  function saveDomToneOutputPref() {
+    try { localStorage.setItem(DOM_TONE_OUTPUT_KEY, domToneOutput); } catch (e) {}
+  }
+  function saveDomToneInstrumentPref() {
+    try { localStorage.setItem(DOM_TONE_INSTRUMENT_KEY, domToneInstrument); } catch (e) {}
+  }
+
+  // MIDI/Instrument output only makes sense for Melodic's discrete notes --
+  // Continuous is a persistent oscillator bending pitch, no clean
+  // equivalent as separate MIDI notes or looped one-shot samples -- so
+  // these two controls only ever show up alongside Melodic.
+  function updateDomToneOutputControlsVisibility() {
+    const show = domToneEnabled && domToneStyle === "melodic";
+    domToneOutputWrap.classList.toggle("hide", !show);
+    domToneInstrumentWrap.classList.toggle("hide", !show || domToneOutput === "synth");
+  }
 
   function setDomToneEnabled(next) {
     if (next === domToneEnabled) return;
@@ -3042,6 +3344,7 @@
     domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
     domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
     domToneStyleWrap.classList.toggle("hide", !domToneEnabled);
+    updateDomToneOutputControlsVisibility();
     saveDomToneEnabledPref();
     updateDomToneSamplingTimer();
   }
@@ -3053,7 +3356,22 @@
       domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
     }
     domToneArpTickCount = 0;
+    updateDomToneOutputControlsVisibility();
     saveDomToneStylePref();
+  }
+
+  function setDomToneOutput(next) {
+    if (next !== "synth" && next !== "midi" && next !== "instrument") return;
+    domToneOutput = next;
+    updateDomToneOutputControlsVisibility();
+    if (domToneOutput === "midi") ensureMidiAccess();
+    saveDomToneOutputPref();
+  }
+
+  function setDomToneInstrument(next) {
+    if (!GM_INSTRUMENTS.some((i) => i.folder === next)) return;
+    domToneInstrument = next;
+    saveDomToneInstrumentPref();
   }
 
   // ---- Edge texture tone ----
@@ -3071,6 +3389,23 @@
   let edgeToneStyle = (() => {
     try { return localStorage.getItem(EDGE_TONE_STYLE_KEY) === "melodic" ? "melodic" : "continuous"; } catch (e) { return "continuous"; }
   })();
+  let edgeToneOutput = (() => {
+    try {
+      const raw = localStorage.getItem(EDGE_TONE_OUTPUT_KEY);
+      return raw === "midi" || raw === "instrument" ? raw : "synth";
+    } catch (e) { return "synth"; }
+  })();
+  let edgeToneInstrument = (() => {
+    try {
+      const raw = localStorage.getItem(EDGE_TONE_INSTRUMENT_KEY);
+      return GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === raw) ? raw : GM_PERCUSSIVE_INSTRUMENTS[0].folder; // Woodblock
+    } catch (e) { return GM_PERCUSSIVE_INSTRUMENTS[0].folder; }
+  })();
+  // Edge texture's ticks have no inherent pitch of their own (density
+  // doesn't map to a note) -- MIDI/Instrument modes always strike this one
+  // fixed note, letting the chosen instrument's own timbre carry the
+  // percussive character instead.
+  const EDGE_TONE_MIDI_NOTE = 60; // C4
   let edgeToneAudioCtx = null;
   let edgeToneNoiseSrc = null;
   let edgeToneFilter = null;
@@ -3134,6 +3469,15 @@
   // brightness-filtered by density the same way the continuous drone's
   // lowpass cutoff already is, so louder/busier still means brighter/busier.
   function playEdgeTexTick(density) {
+    if (edgeToneOutput === "midi") {
+      const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS[0];
+      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, EDGE_TONE_MIDI_NOTE, density, 150);
+      return;
+    }
+    if (edgeToneOutput === "instrument") {
+      playInstrumentNote(edgeToneInstrument, EDGE_TONE_MIDI_NOTE, density * (edgeToneVolume / 100), 0.3);
+      return;
+    }
     const now = edgeToneAudioCtx.currentTime;
     const dur = 0.12;
     const buffer = edgeToneAudioCtx.createBuffer(1, Math.max(1, Math.round(edgeToneAudioCtx.sampleRate * dur)), edgeToneAudioCtx.sampleRate);
@@ -3211,6 +3555,18 @@
   function saveEdgeToneStylePref() {
     try { localStorage.setItem(EDGE_TONE_STYLE_KEY, edgeToneStyle); } catch (e) {}
   }
+  function saveEdgeToneOutputPref() {
+    try { localStorage.setItem(EDGE_TONE_OUTPUT_KEY, edgeToneOutput); } catch (e) {}
+  }
+  function saveEdgeToneInstrumentPref() {
+    try { localStorage.setItem(EDGE_TONE_INSTRUMENT_KEY, edgeToneInstrument); } catch (e) {}
+  }
+
+  function updateEdgeToneOutputControlsVisibility() {
+    const show = edgeToneEnabled && edgeToneStyle === "melodic";
+    edgeToneOutputWrap.classList.toggle("hide", !show);
+    edgeToneInstrumentWrap.classList.toggle("hide", !show || edgeToneOutput === "synth");
+  }
 
   function setEdgeToneEnabled(next) {
     if (next === edgeToneEnabled) return;
@@ -3219,6 +3575,7 @@
     edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
     edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
     edgeToneStyleWrap.classList.toggle("hide", !edgeToneEnabled);
+    updateEdgeToneOutputControlsVisibility();
     saveEdgeToneEnabledPref();
     updateEdgeToneSamplingTimer();
   }
@@ -3230,7 +3587,22 @@
       edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
     edgeToneTickElapsedMs = 0;
+    updateEdgeToneOutputControlsVisibility();
     saveEdgeToneStylePref();
+  }
+
+  function setEdgeToneOutput(next) {
+    if (next !== "synth" && next !== "midi" && next !== "instrument") return;
+    edgeToneOutput = next;
+    updateEdgeToneOutputControlsVisibility();
+    if (edgeToneOutput === "midi") ensureMidiAccess();
+    saveEdgeToneOutputPref();
+  }
+
+  function setEdgeToneInstrument(next) {
+    if (!GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === next)) return;
+    edgeToneInstrument = next;
+    saveEdgeToneInstrumentPref();
   }
 
   // Converts a tap position (viewport CSS pixels) into a fraction of the
@@ -3531,12 +3903,18 @@
       particleSizeScale,
       chimeEnabled,
       chimeVolume,
+      chimeOutput,
+      chimeInstrument,
       domToneEnabled,
       domToneVolume,
       domToneStyle,
+      domToneOutput,
+      domToneInstrument,
       edgeToneEnabled,
       edgeToneVolume,
       edgeToneStyle,
+      edgeToneOutput,
+      edgeToneInstrument,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -3717,6 +4095,14 @@
       chimeVolumeLabel.textContent = `${chimeVolume}%`;
       saveChimeVolumePref();
     }
+    if (s.chimeOutput === "synth" || s.chimeOutput === "midi" || s.chimeOutput === "instrument") {
+      setChimeOutput(s.chimeOutput);
+      chimeOutputSelect.value = chimeOutput;
+    }
+    if (typeof s.chimeInstrument === "string" && GM_INSTRUMENTS.some((i) => i.folder === s.chimeInstrument)) {
+      setChimeInstrument(s.chimeInstrument);
+      chimeInstrumentSelect.value = chimeInstrument;
+    }
     if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
       setDomToneEnabled(s.domToneEnabled);
     }
@@ -3730,6 +4116,14 @@
       setDomToneStyle(s.domToneStyle);
       domToneStyleSelect.value = domToneStyle;
     }
+    if (s.domToneOutput === "synth" || s.domToneOutput === "midi" || s.domToneOutput === "instrument") {
+      setDomToneOutput(s.domToneOutput);
+      domToneOutputSelect.value = domToneOutput;
+    }
+    if (typeof s.domToneInstrument === "string" && GM_INSTRUMENTS.some((i) => i.folder === s.domToneInstrument)) {
+      setDomToneInstrument(s.domToneInstrument);
+      domToneInstrumentSelect.value = domToneInstrument;
+    }
     if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
       setEdgeToneEnabled(s.edgeToneEnabled);
     }
@@ -3742,6 +4136,14 @@
     if (s.edgeToneStyle === "continuous" || s.edgeToneStyle === "melodic") {
       setEdgeToneStyle(s.edgeToneStyle);
       edgeToneStyleSelect.value = edgeToneStyle;
+    }
+    if (s.edgeToneOutput === "synth" || s.edgeToneOutput === "midi" || s.edgeToneOutput === "instrument") {
+      setEdgeToneOutput(s.edgeToneOutput);
+      edgeToneOutputSelect.value = edgeToneOutput;
+    }
+    if (typeof s.edgeToneInstrument === "string" && GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === s.edgeToneInstrument)) {
+      setEdgeToneInstrument(s.edgeToneInstrument);
+      edgeToneInstrumentSelect.value = edgeToneInstrument;
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -4180,9 +4582,21 @@
   particleSizeLabel.textContent = `${particleSizeScale}%`;
   updateParticlesUi();
 
+  // Shared MIDI output device picker -- populated once a MIDI output
+  // actually exists (see refreshMidiOutputs); opened up-front if any
+  // feature was already saved as MIDI output, so the device list is ready
+  // without needing to re-select MIDI from a dropdown first.
+  midiOutputSelect.addEventListener("change", () => {
+    if (!midiAccess) return;
+    midiOutput = midiAccess.outputs.get(midiOutputSelect.value) || null;
+  });
+  if (chimeOutput === "midi" || domToneOutput === "midi" || edgeToneOutput === "midi") ensureMidiAccess();
+
   chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
   chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
   chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+  chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
+  chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
   chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
   chimeVolumeSlider.addEventListener("input", () => {
     chimeVolume = parseFloat(chimeVolumeSlider.value);
@@ -4191,12 +4605,17 @@
   });
   chimeVolumeSlider.value = String(chimeVolume);
   chimeVolumeLabel.textContent = `${chimeVolume}%`;
+  chimeOutputSelect.addEventListener("change", () => setChimeOutput(chimeOutputSelect.value));
+  chimeOutputSelect.value = chimeOutput;
+  chimeInstrumentSelect.addEventListener("change", () => setChimeInstrument(chimeInstrumentSelect.value));
+  chimeInstrumentSelect.value = chimeInstrument;
   updateChimeSamplingTimer();
 
   domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
   domToneBtn.setAttribute("aria-pressed", String(domToneEnabled));
   domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
   domToneStyleWrap.classList.toggle("hide", !domToneEnabled);
+  updateDomToneOutputControlsVisibility();
   domToneBtn.addEventListener("click", () => setDomToneEnabled(!domToneEnabled));
   domToneVolumeSlider.addEventListener("input", () => {
     domToneVolume = parseFloat(domToneVolumeSlider.value);
@@ -4207,12 +4626,17 @@
   domToneVolumeLabel.textContent = `${domToneVolume}%`;
   domToneStyleSelect.addEventListener("change", () => setDomToneStyle(domToneStyleSelect.value));
   domToneStyleSelect.value = domToneStyle;
+  domToneOutputSelect.addEventListener("change", () => setDomToneOutput(domToneOutputSelect.value));
+  domToneOutputSelect.value = domToneOutput;
+  domToneInstrumentSelect.addEventListener("change", () => setDomToneInstrument(domToneInstrumentSelect.value));
+  domToneInstrumentSelect.value = domToneInstrument;
   updateDomToneSamplingTimer();
 
   edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
   edgeToneBtn.setAttribute("aria-pressed", String(edgeToneEnabled));
   edgeToneVolumeWrap.classList.toggle("hide", !edgeToneEnabled);
   edgeToneStyleWrap.classList.toggle("hide", !edgeToneEnabled);
+  updateEdgeToneOutputControlsVisibility();
   edgeToneBtn.addEventListener("click", () => setEdgeToneEnabled(!edgeToneEnabled));
   edgeToneVolumeSlider.addEventListener("input", () => {
     edgeToneVolume = parseFloat(edgeToneVolumeSlider.value);
@@ -4223,6 +4647,10 @@
   edgeToneVolumeLabel.textContent = `${edgeToneVolume}%`;
   edgeToneStyleSelect.addEventListener("change", () => setEdgeToneStyle(edgeToneStyleSelect.value));
   edgeToneStyleSelect.value = edgeToneStyle;
+  edgeToneOutputSelect.addEventListener("change", () => setEdgeToneOutput(edgeToneOutputSelect.value));
+  edgeToneOutputSelect.value = edgeToneOutput;
+  edgeToneInstrumentSelect.addEventListener("change", () => setEdgeToneInstrument(edgeToneInstrumentSelect.value));
+  edgeToneInstrumentSelect.value = edgeToneInstrument;
   updateEdgeToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
