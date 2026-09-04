@@ -3251,6 +3251,20 @@
     midiOutput.send([0xe0 | channel, value & 0x7f, (value >> 7) & 0x7f]);
   }
 
+  const midiExpressionSentPerChannel = {};
+
+  // Standard MIDI CC 11 (Expression) -- the real, standard way to continuously
+  // vary a HELD note's loudness over time, used by dominant tone's Continuous
+  // style over MIDI (a single sustained note whose pitch/volume both keep
+  // changing, rather than a one-shot Note On/Off per pluck).
+  function sendMidiExpression(channel, value0to1) {
+    if (!midiOutput) return;
+    const value = Math.max(0, Math.min(127, Math.round(value0to1 * 127)));
+    if (midiExpressionSentPerChannel[channel] === value) return;
+    midiExpressionSentPerChannel[channel] = value;
+    midiOutput.send([0xb0 | channel, 11, value]);
+  }
+
   // Plays one note out to the currently selected MIDI output: a program
   // change (only sent when it actually changes, so repeated notes on the
   // same instrument don't re-select it every time), a pitch bend representing
@@ -3685,6 +3699,21 @@
   let domToneWalkIndex = null;
   let domToneArpTickCount = 0;
   let domToneArpStep = 0;
+  // Continuous style over MIDI: a single held note whose pitch keeps moving,
+  // not a one-shot pluck -- default MIDI pitch bend can only cover +-2
+  // semitones without extra RPN setup, but the mapped hue range spans a
+  // full octave, so this re-triggers a new Note On only when the target
+  // pitch crosses into a new semitone, and pitch-bends smoothly within it
+  // otherwise (the same technique a monophonic-legato MIDI patch uses).
+  let domToneContinuousMidiBaseNote = null;
+  // Continuous style over Instrument: a single looped real sample whose
+  // playbackRate keeps moving -- genuinely continuous, no semitone
+  // quantization needed at all (unlike MIDI above), since playbackRate has
+  // no +-2-semitone ceiling.
+  let domToneContinuousInstrumentSrc = null;
+  let domToneContinuousInstrumentGain = null;
+  let domToneContinuousInstrumentBaseMidiNote = null;
+  let domToneContinuousInstrumentFolder = null;
 
   function sampleDominantColor() {
     if (!gl || !stage.width || !stage.height) return null;
@@ -3742,10 +3771,118 @@
     osc.stop(now + 1.7);
   }
 
+  function stopDomToneContinuousMidi() {
+    if (domToneContinuousMidiBaseNote != null) {
+      sendMidiNoteOff(DOM_TONE_MIDI_CHANNEL, domToneContinuousMidiBaseNote);
+      domToneContinuousMidiBaseNote = null;
+    }
+  }
+
+  function updateDomToneContinuousMidi(rgb, l) {
+    if (!rgb || l < 0.03) {
+      stopDomToneContinuousMidi();
+      return;
+    }
+    const [h] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+    const targetFreq = 220 + (h / 360) * 220;
+    // Detune folds into the note position itself (not just a bend offset),
+    // so it's still represented even across a base-note change.
+    const exactMidiNote = hzToMidiNote(targetFreq) + domToneDetuneCents / 100;
+    const nearestBase = Math.round(exactMidiNote);
+    const bendCents = (exactMidiNote - nearestBase) * 100;
+    const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "marimba");
+    sendMidiProgramChange(DOM_TONE_MIDI_CHANNEL, inst.program);
+    if (domToneContinuousMidiBaseNote !== nearestBase) {
+      if (domToneContinuousMidiBaseNote != null) sendMidiNoteOff(DOM_TONE_MIDI_CHANNEL, domToneContinuousMidiBaseNote);
+      sendMidiPitchBend(DOM_TONE_MIDI_CHANNEL, bendCents);
+      sendMidiNoteOn(DOM_TONE_MIDI_CHANNEL, nearestBase, Math.min(1, l * 1.3));
+      domToneContinuousMidiBaseNote = nearestBase;
+    } else {
+      sendMidiPitchBend(DOM_TONE_MIDI_CHANNEL, bendCents);
+    }
+    sendMidiExpression(DOM_TONE_MIDI_CHANNEL, (domToneVolume / 100) * Math.min(1, l * 1.3));
+  }
+
+  function stopDomToneContinuousInstrument() {
+    if (domToneContinuousInstrumentSrc) {
+      try { domToneContinuousInstrumentSrc.stop(); } catch (e) {}
+      domToneContinuousInstrumentSrc.disconnect();
+    }
+    if (domToneContinuousInstrumentGain) domToneContinuousInstrumentGain.disconnect();
+    domToneContinuousInstrumentSrc = null;
+    domToneContinuousInstrumentGain = null;
+    domToneContinuousInstrumentBaseMidiNote = null;
+    domToneContinuousInstrumentFolder = null;
+  }
+
+  // Loads one real sample near the middle of the mapped 220-440Hz range and
+  // loops it -- the actual continuous pitch tracking happens every tick via
+  // playbackRate in updateDomToneContinuousInstrument, not by re-fetching.
+  async function ensureDomToneContinuousInstrument() {
+    if (domToneOutput !== "instrument" || domToneStyle !== "continuous" || !domToneEnabled) return;
+    if (domToneContinuousInstrumentSrc && domToneContinuousInstrumentFolder === domToneInstrument) return;
+    stopDomToneContinuousInstrument();
+    const ctx = ensureInstrumentAudio();
+    if (!ctx) return;
+    const centerMidiNote = hzToMidiNote(300);
+    const nearest = midiNoteToNearestSample(centerMidiNote);
+    if (!nearest) return;
+    const folderRequested = domToneInstrument;
+    try {
+      const buffer = await loadInstrumentSample(ctx, folderRequested, nearest.sampleName);
+      // Something changed while this fetch was in flight (turned off,
+      // switched away from Continuous/Instrument, or picked a different
+      // instrument) -- the settings this load was FOR no longer apply.
+      if (domToneOutput !== "instrument" || domToneStyle !== "continuous" || !domToneEnabled || domToneInstrument !== folderRequested) return;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+      domToneContinuousInstrumentSrc = src;
+      domToneContinuousInstrumentGain = gain;
+      domToneContinuousInstrumentBaseMidiNote = Math.round(centerMidiNote - nearest.semitoneOffset);
+      domToneContinuousInstrumentFolder = folderRequested;
+    } catch (e) {
+      // Network/decode failure -- stays silent, same spirit as playInstrumentNote.
+    }
+  }
+
+  function updateDomToneContinuousInstrument(rgb, l) {
+    if (!rgb || l < 0.03) {
+      if (domToneContinuousInstrumentGain) domToneContinuousInstrumentGain.gain.setTargetAtTime(0, instrumentAudioCtx.currentTime, 0.15);
+      return;
+    }
+    if (!domToneContinuousInstrumentSrc || domToneContinuousInstrumentFolder !== domToneInstrument) {
+      ensureDomToneContinuousInstrument(); // async, fire-and-forget -- nothing plays until it resolves
+      return;
+    }
+    const [h] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+    const targetFreq = 220 + (h / 360) * 220;
+    const targetMidiNote = hzToMidiNote(targetFreq);
+    const rate = Math.pow(2, (targetMidiNote - domToneContinuousInstrumentBaseMidiNote) / 12) * centsToRateFactor(domToneDetuneCents);
+    const now = instrumentAudioCtx.currentTime;
+    domToneContinuousInstrumentSrc.playbackRate.setTargetAtTime(rate, now, 0.2);
+    const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.5;
+    domToneContinuousInstrumentGain.gain.setTargetAtTime(targetGain, now, 0.2);
+  }
+
   function updateDominantColorTone() {
     if (!domToneAudioCtx) return;
     const rgb = sampleDominantColor();
     if (domToneStyle === "continuous") {
+      const [, , continuousL] = rgb ? rgb2hsl(rgb[0], rgb[1], rgb[2]) : [0, 0, 0];
+      if (domToneOutput === "midi") {
+        updateDomToneContinuousMidi(rgb, continuousL);
+        return;
+      }
+      if (domToneOutput === "instrument") {
+        updateDomToneContinuousInstrument(rgb, continuousL);
+        return;
+      }
       const now = domToneAudioCtx.currentTime;
       if (!rgb) {
         domToneGainNode.gain.setTargetAtTime(0, now, 0.15);
@@ -3861,21 +3998,23 @@
     try { localStorage.setItem(DOM_TONE_PATTERN_KEY, domTonePattern); } catch (e) {}
   }
 
-  // MIDI/Instrument output only makes sense for Melodic's discrete notes --
-  // Continuous is a persistent oscillator bending pitch, no clean
-  // equivalent as separate MIDI notes or looped one-shot samples -- so
-  // these two controls only ever show up alongside Melodic. Randomness and
-  // Pattern are the same (a note-choice effect, meaningless for one
-  // continuous tone); Detune applies to both styles, so it's gated on
-  // domToneEnabled alone.
+  // Output/Instrument now apply to BOTH styles: Continuous over MIDI holds
+  // one note and pitch-bends/re-triggers only on a semitone crossing (see
+  // updateDomToneContinuousMidi), and Continuous over Instrument loops one
+  // real sample and continuously re-tunes its playbackRate (see
+  // updateDomToneContinuousInstrument) -- both real, working equivalents of
+  // the synth oscillator's continuous pitch bend, not one-shot notes.
+  // Range/Tempo/Randomness/Pattern only make sense for Melodic's discrete
+  // arpeggio notes, so those stay Melodic-only; Detune applies to both.
   function updateDomToneOutputControlsVisibility() {
-    const show = domToneEnabled && domToneStyle === "melodic";
-    domToneOutputWrap.classList.toggle("hide", !show);
-    domToneInstrumentWrap.classList.toggle("hide", !show || domToneOutput === "synth");
-    domToneRangeWrap.classList.toggle("hide", !show);
-    domToneTempoWrap.classList.toggle("hide", !show);
-    domToneRandomnessWrap.classList.toggle("hide", !show);
-    domTonePatternWrap.classList.toggle("hide", !show);
+    const outputShow = domToneEnabled;
+    const melodicShow = domToneEnabled && domToneStyle === "melodic";
+    domToneOutputWrap.classList.toggle("hide", !outputShow);
+    domToneInstrumentWrap.classList.toggle("hide", !outputShow || domToneOutput === "synth");
+    domToneRangeWrap.classList.toggle("hide", !melodicShow);
+    domToneTempoWrap.classList.toggle("hide", !melodicShow);
+    domToneRandomnessWrap.classList.toggle("hide", !melodicShow);
+    domTonePatternWrap.classList.toggle("hide", !melodicShow);
     domToneDetuneWrap.classList.toggle("hide", !domToneEnabled);
   }
 
@@ -3887,6 +4026,10 @@
     domToneVolumeWrap.classList.toggle("hide", !domToneEnabled);
     domToneStyleWrap.classList.toggle("hide", !domToneEnabled);
     updateDomToneOutputControlsVisibility();
+    if (!domToneEnabled) {
+      stopDomToneContinuousMidi();
+      stopDomToneContinuousInstrument();
+    }
     saveDomToneEnabledPref();
     updateDomToneSamplingTimer();
   }
@@ -3897,6 +4040,10 @@
     if (domToneStyle === "continuous" && domToneGainNode && domToneAudioCtx) {
       domToneGainNode.gain.setTargetAtTime(0, domToneAudioCtx.currentTime, 0.1);
     }
+    if (domToneStyle === "melodic") {
+      stopDomToneContinuousMidi();
+      stopDomToneContinuousInstrument();
+    }
     domToneArpTickCount = 0;
     domToneWalkIndex = null;
     updateDomToneOutputControlsVisibility();
@@ -3905,6 +4052,10 @@
 
   function setDomToneOutput(next) {
     if (next !== "synth" && next !== "midi" && next !== "instrument") return;
+    if (domToneStyle === "continuous") {
+      if (domToneOutput === "midi" && next !== "midi") stopDomToneContinuousMidi();
+      if (domToneOutput === "instrument" && next !== "instrument") stopDomToneContinuousInstrument();
+    }
     domToneOutput = next;
     updateDomToneOutputControlsVisibility();
     if (domToneOutput === "midi") ensureMidiAccess();

@@ -481,7 +481,7 @@
       <option value="melodic">Melodic</option>
     </select>
   </label>
-  <label id="domToneOutputWrap" class="hud-slider hide" title="Only applies to Melodic (Continuous is a persistent bent tone, no clean equivalent as separate notes). Synth: the pad's own built-in oscillator. MIDI: sends real notes to a connected MIDI output. Instrument: real recorded General MIDI instrument samples played in-browser.">
+  <label id="domToneOutputWrap" class="hud-slider hide" title="Applies to both styles now. Synth: the built-in oscillator. MIDI: sends real notes to a connected MIDI output -- Melodic plays discrete plucked notes, Continuous holds one note and pitch-bends it live, re-triggering only when it crosses a semitone (the default MIDI pitch-bend range can't cover a full octave). Instrument: real recorded General MIDI instrument samples -- Melodic plays discrete one-shots, Continuous loops one sample and continuously re-tunes its pitch, genuinely smoothly (no semitone limit).">
     Sound:
     <select id="domToneOutputSelect">
       <option value="synth">Synth</option>
@@ -489,7 +489,7 @@
       <option value="instrument">Instrument</option>
     </select>
   </label>
-  <label id="domToneInstrumentWrap" class="hud-slider hide" title="Which instrument plays the arpeggio's notes.">
+  <label id="domToneInstrumentWrap" class="hud-slider hide" title="Which instrument plays the tone -- the arpeggio's notes in Melodic, or the held/looped tone in Continuous.">
     Instrument:
     <select id="domToneInstrumentSelect">
       <optgroup label="Piano">
