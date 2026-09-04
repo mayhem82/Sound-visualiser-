@@ -86,6 +86,35 @@
   const EDGE_TONE_DEFAULT_MAX_HITS = 12;
   const EDGE_TONE_TEMPO_KEY = "edgeToneTempo_colorVision_v1";
   const EDGE_TONE_DEFAULT_TEMPO_BPM = 100;
+  // Colour source for the chime: Saved (needs at least one calibrated
+  // colour first, the original design) or Live (no setup needed at all --
+  // reacts directly to how vivid the current on-screen colour already is).
+  const CHIME_SOURCE_KEY = "chimeSource_colorVision_v1";
+  // Detune (cents, +-100) and Randomness (0-100%) -- shared concepts across
+  // all three, but what Randomness actually randomizes differs per feature
+  // (see each feature's own play/update function): the chime and dominant
+  // tone's arpeggio can have their note choice nudged to a neighbouring
+  // scale step instead of the deterministic one; edge texture's rhythm can
+  // have individual steps flip on/off around the Euclidean pattern. All
+  // three also get a touch of random pitch "humanizing" jitter layered on
+  // top of Detune. At 0 (the default), every feature's output is bit-for-bit
+  // identical to before these controls existed.
+  const CHIME_DETUNE_KEY = "chimeDetune_colorVision_v1";
+  const CHIME_RANDOMNESS_KEY = "chimeRandomness_colorVision_v1";
+  const CHIME_RANDOMNESS_MAX_CENTS = 20;
+  const DOM_TONE_DETUNE_KEY = "domToneDetune_colorVision_v1";
+  const DOM_TONE_RANDOMNESS_KEY = "domToneRandomness_colorVision_v1";
+  const DOM_TONE_RANDOMNESS_MAX_CENTS = 20;
+  const EDGE_TONE_DETUNE_KEY = "edgeToneDetune_colorVision_v1";
+  const EDGE_TONE_RANDOMNESS_KEY = "edgeToneRandomness_colorVision_v1";
+  const EDGE_TONE_RANDOMNESS_MAX_CENTS = 20;
+  // Bars: how many 16-step bars edge texture's rhythm cycles through before
+  // repeating -- each bar rotates the same Euclidean pattern by a fixed
+  // offset (a real, standard rhythm technique: rotating a Euclidean rhythm
+  // produces a genuinely different-sounding groove at the same density),
+  // so a busy scene doesn't just loop one identical bar forever.
+  const EDGE_TONE_BARS_KEY = "edgeToneBars_colorVision_v1";
+  const EDGE_TONE_DEFAULT_BARS = 1;
   // Dominant colour tone -- a second, more ambient sonification: rather
   // than reacting to a saved calibration colour specifically, a soft
   // continuous tone tracks the whole scene's average colour every ~150ms --
@@ -359,12 +388,20 @@
   const chimeOutputSelect = document.getElementById("chimeOutputSelect");
   const chimeInstrumentWrap = document.getElementById("chimeInstrumentWrap");
   const chimeInstrumentSelect = document.getElementById("chimeInstrumentSelect");
+  const chimeSourceWrap = document.getElementById("chimeSourceWrap");
+  const chimeSourceSelect = document.getElementById("chimeSourceSelect");
   const chimeRangeWrap = document.getElementById("chimeRangeWrap");
   const chimeRangeSlider = document.getElementById("chimeRangeSlider");
   const chimeRangeLabel = document.getElementById("chimeRangeLabel");
   const chimeTempoWrap = document.getElementById("chimeTempoWrap");
   const chimeTempoSlider = document.getElementById("chimeTempoSlider");
   const chimeTempoLabel = document.getElementById("chimeTempoLabel");
+  const chimeDetuneWrap = document.getElementById("chimeDetuneWrap");
+  const chimeDetuneSlider = document.getElementById("chimeDetuneSlider");
+  const chimeDetuneLabel = document.getElementById("chimeDetuneLabel");
+  const chimeRandomnessWrap = document.getElementById("chimeRandomnessWrap");
+  const chimeRandomnessSlider = document.getElementById("chimeRandomnessSlider");
+  const chimeRandomnessLabel = document.getElementById("chimeRandomnessLabel");
   const domToneBtn = document.getElementById("domToneBtn");
   const domToneVolumeWrap = document.getElementById("domToneVolumeWrap");
   const domToneVolumeSlider = document.getElementById("domToneVolumeSlider");
@@ -381,6 +418,12 @@
   const domToneTempoWrap = document.getElementById("domToneTempoWrap");
   const domToneTempoSlider = document.getElementById("domToneTempoSlider");
   const domToneTempoLabel = document.getElementById("domToneTempoLabel");
+  const domToneDetuneWrap = document.getElementById("domToneDetuneWrap");
+  const domToneDetuneSlider = document.getElementById("domToneDetuneSlider");
+  const domToneDetuneLabel = document.getElementById("domToneDetuneLabel");
+  const domToneRandomnessWrap = document.getElementById("domToneRandomnessWrap");
+  const domToneRandomnessSlider = document.getElementById("domToneRandomnessSlider");
+  const domToneRandomnessLabel = document.getElementById("domToneRandomnessLabel");
   const edgeToneBtn = document.getElementById("edgeToneBtn");
   const edgeToneVolumeWrap = document.getElementById("edgeToneVolumeWrap");
   const edgeToneVolumeSlider = document.getElementById("edgeToneVolumeSlider");
@@ -400,6 +443,15 @@
   const edgeToneTempoWrap = document.getElementById("edgeToneTempoWrap");
   const edgeToneTempoSlider = document.getElementById("edgeToneTempoSlider");
   const edgeToneTempoLabel = document.getElementById("edgeToneTempoLabel");
+  const edgeToneDetuneWrap = document.getElementById("edgeToneDetuneWrap");
+  const edgeToneDetuneSlider = document.getElementById("edgeToneDetuneSlider");
+  const edgeToneDetuneLabel = document.getElementById("edgeToneDetuneLabel");
+  const edgeToneRandomnessWrap = document.getElementById("edgeToneRandomnessWrap");
+  const edgeToneRandomnessSlider = document.getElementById("edgeToneRandomnessSlider");
+  const edgeToneRandomnessLabel = document.getElementById("edgeToneRandomnessLabel");
+  const edgeToneBarsWrap = document.getElementById("edgeToneBarsWrap");
+  const edgeToneBarsSlider = document.getElementById("edgeToneBarsSlider");
+  const edgeToneBarsLabel = document.getElementById("edgeToneBarsLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -896,10 +948,13 @@
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
       chimeEnabled: false,
       chimeVolume: CHIME_DEFAULT_VOLUME,
+      chimeSource: "saved",
       chimeOutput: "synth",
       chimeInstrument: "music_box",
       chimeRange: CHIME_DEFAULT_RANGE,
       chimeTempo: CHIME_DEFAULT_TEMPO_MS,
+      chimeDetune: 0,
+      chimeRandomness: 0,
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       domToneStyle: "continuous",
@@ -907,6 +962,8 @@
       domToneInstrument: "marimba",
       domToneRange: DOM_TONE_DEFAULT_RANGE_OCTAVES,
       domToneTempo: DOM_TONE_DEFAULT_TEMPO_MS,
+      domToneDetune: 0,
+      domToneRandomness: 0,
       edgeToneEnabled: false,
       edgeToneVolume: EDGE_TONE_DEFAULT_VOLUME,
       edgeToneStyle: "continuous",
@@ -915,6 +972,9 @@
       edgeToneMinHits: EDGE_TONE_DEFAULT_MIN_HITS,
       edgeToneMaxHits: EDGE_TONE_DEFAULT_MAX_HITS,
       edgeToneTempo: EDGE_TONE_DEFAULT_TEMPO_BPM,
+      edgeToneDetune: 0,
+      edgeToneRandomness: 0,
+      edgeToneBars: EDGE_TONE_DEFAULT_BARS,
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -2858,6 +2918,13 @@
   // Pitched instruments (chime, dominant colour tone).
   const GM_INSTRUMENTS = [
     { name: "Acoustic Grand Piano", program: 0, folder: "acoustic_grand_piano" },
+    { name: "Bright Acoustic Piano", program: 1, folder: "bright_acoustic_piano" },
+    { name: "Electric Grand Piano", program: 2, folder: "electric_grand_piano" },
+    { name: "Honky-tonk Piano", program: 3, folder: "honkytonk_piano" },
+    { name: "Electric Piano 1", program: 4, folder: "electric_piano_1" },
+    { name: "Electric Piano 2", program: 5, folder: "electric_piano_2" },
+    { name: "Harpsichord", program: 6, folder: "harpsichord" },
+    { name: "Clavinet", program: 7, folder: "clavinet" },
     { name: "Celesta", program: 8, folder: "celesta" },
     { name: "Glockenspiel", program: 9, folder: "glockenspiel" },
     { name: "Music Box", program: 10, folder: "music_box" },
@@ -2865,12 +2932,103 @@
     { name: "Marimba", program: 12, folder: "marimba" },
     { name: "Xylophone", program: 13, folder: "xylophone" },
     { name: "Tubular Bells", program: 14, folder: "tubular_bells" },
+    { name: "Dulcimer", program: 15, folder: "dulcimer" },
+    { name: "Drawbar Organ", program: 16, folder: "drawbar_organ" },
+    { name: "Percussive Organ", program: 17, folder: "percussive_organ" },
+    { name: "Rock Organ", program: 18, folder: "rock_organ" },
+    { name: "Church Organ", program: 19, folder: "church_organ" },
+    { name: "Reed Organ", program: 20, folder: "reed_organ" },
+    { name: "Accordion", program: 21, folder: "accordion" },
+    { name: "Harmonica", program: 22, folder: "harmonica" },
+    { name: "Tango Accordion", program: 23, folder: "tango_accordion" },
+    { name: "Acoustic Guitar (nylon)", program: 24, folder: "acoustic_guitar_nylon" },
+    { name: "Acoustic Guitar (steel)", program: 25, folder: "acoustic_guitar_steel" },
+    { name: "Electric Guitar (jazz)", program: 26, folder: "electric_guitar_jazz" },
+    { name: "Electric Guitar (clean)", program: 27, folder: "electric_guitar_clean" },
+    { name: "Electric Guitar (muted)", program: 28, folder: "electric_guitar_muted" },
+    { name: "Overdriven Guitar", program: 29, folder: "overdriven_guitar" },
+    { name: "Distortion Guitar", program: 30, folder: "distortion_guitar" },
+    { name: "Guitar Harmonics", program: 31, folder: "guitar_harmonics" },
+    { name: "Acoustic Bass", program: 32, folder: "acoustic_bass" },
+    { name: "Electric Bass (finger)", program: 33, folder: "electric_bass_finger" },
+    { name: "Electric Bass (pick)", program: 34, folder: "electric_bass_pick" },
+    { name: "Fretless Bass", program: 35, folder: "fretless_bass" },
+    { name: "Slap Bass 1", program: 36, folder: "slap_bass_1" },
+    { name: "Slap Bass 2", program: 37, folder: "slap_bass_2" },
+    { name: "Synth Bass 1", program: 38, folder: "synth_bass_1" },
+    { name: "Synth Bass 2", program: 39, folder: "synth_bass_2" },
+    { name: "Violin", program: 40, folder: "violin" },
+    { name: "Viola", program: 41, folder: "viola" },
+    { name: "Cello", program: 42, folder: "cello" },
+    { name: "Contrabass", program: 43, folder: "contrabass" },
+    { name: "Tremolo Strings", program: 44, folder: "tremolo_strings" },
+    { name: "Pizzicato Strings", program: 45, folder: "pizzicato_strings" },
     { name: "Orchestral Harp", program: 46, folder: "orchestral_harp" },
+    { name: "Timpani", program: 47, folder: "timpani" },
+    { name: "String Ensemble 1", program: 48, folder: "string_ensemble_1" },
+    { name: "String Ensemble 2", program: 49, folder: "string_ensemble_2" },
+    { name: "Synth Strings 1", program: 50, folder: "synth_strings_1" },
+    { name: "Synth Strings 2", program: 51, folder: "synth_strings_2" },
+    { name: "Choir Aahs", program: 52, folder: "choir_aahs" },
+    { name: "Voice Oohs", program: 53, folder: "voice_oohs" },
+    { name: "Synth Choir", program: 54, folder: "synth_choir" },
+    { name: "Orchestra Hit", program: 55, folder: "orchestra_hit" },
+    { name: "Trumpet", program: 56, folder: "trumpet" },
+    { name: "Trombone", program: 57, folder: "trombone" },
+    { name: "Tuba", program: 58, folder: "tuba" },
+    { name: "Muted Trumpet", program: 59, folder: "muted_trumpet" },
+    { name: "French Horn", program: 60, folder: "french_horn" },
+    { name: "Brass Section", program: 61, folder: "brass_section" },
+    { name: "Synth Brass 1", program: 62, folder: "synth_brass_1" },
+    { name: "Synth Brass 2", program: 63, folder: "synth_brass_2" },
+    { name: "Soprano Sax", program: 64, folder: "soprano_sax" },
+    { name: "Alto Sax", program: 65, folder: "alto_sax" },
+    { name: "Tenor Sax", program: 66, folder: "tenor_sax" },
+    { name: "Baritone Sax", program: 67, folder: "baritone_sax" },
+    { name: "Oboe", program: 68, folder: "oboe" },
+    { name: "English Horn", program: 69, folder: "english_horn" },
+    { name: "Bassoon", program: 70, folder: "bassoon" },
+    { name: "Clarinet", program: 71, folder: "clarinet" },
+    { name: "Piccolo", program: 72, folder: "piccolo" },
     { name: "Flute", program: 73, folder: "flute" },
+    { name: "Recorder", program: 74, folder: "recorder" },
     { name: "Pan Flute", program: 75, folder: "pan_flute" },
+    { name: "Blown Bottle", program: 76, folder: "blown_bottle" },
+    { name: "Shakuhachi", program: 77, folder: "shakuhachi" },
+    { name: "Whistle", program: 78, folder: "whistle" },
     { name: "Ocarina", program: 79, folder: "ocarina" },
-    { name: "Steel Drums", program: 114, folder: "steel_drums" },
-    { name: "Kalimba", program: 108, folder: "kalimba" }
+    { name: "Lead 1 (square)", program: 80, folder: "lead_1_square" },
+    { name: "Lead 2 (sawtooth)", program: 81, folder: "lead_2_sawtooth" },
+    { name: "Lead 3 (calliope)", program: 82, folder: "lead_3_calliope" },
+    { name: "Lead 4 (chiff)", program: 83, folder: "lead_4_chiff" },
+    { name: "Lead 5 (charang)", program: 84, folder: "lead_5_charang" },
+    { name: "Lead 6 (voice)", program: 85, folder: "lead_6_voice" },
+    { name: "Lead 7 (fifths)", program: 86, folder: "lead_7_fifths" },
+    { name: "Lead 8 (bass + lead)", program: 87, folder: "lead_8_bass__lead" },
+    { name: "Pad 1 (new age)", program: 88, folder: "pad_1_new_age" },
+    { name: "Pad 2 (warm)", program: 89, folder: "pad_2_warm" },
+    { name: "Pad 3 (polysynth)", program: 90, folder: "pad_3_polysynth" },
+    { name: "Pad 4 (choir)", program: 91, folder: "pad_4_choir" },
+    { name: "Pad 5 (bowed)", program: 92, folder: "pad_5_bowed" },
+    { name: "Pad 6 (metallic)", program: 93, folder: "pad_6_metallic" },
+    { name: "Pad 7 (halo)", program: 94, folder: "pad_7_halo" },
+    { name: "Pad 8 (sweep)", program: 95, folder: "pad_8_sweep" },
+    { name: "FX 1 (rain)", program: 96, folder: "fx_1_rain" },
+    { name: "FX 2 (soundtrack)", program: 97, folder: "fx_2_soundtrack" },
+    { name: "FX 3 (crystal)", program: 98, folder: "fx_3_crystal" },
+    { name: "FX 4 (atmosphere)", program: 99, folder: "fx_4_atmosphere" },
+    { name: "FX 5 (brightness)", program: 100, folder: "fx_5_brightness" },
+    { name: "FX 6 (goblins)", program: 101, folder: "fx_6_goblins" },
+    { name: "FX 7 (echoes)", program: 102, folder: "fx_7_echoes" },
+    { name: "FX 8 (sci-fi)", program: 103, folder: "fx_8_scifi" },
+    { name: "Sitar", program: 104, folder: "sitar" },
+    { name: "Banjo", program: 105, folder: "banjo" },
+    { name: "Shamisen", program: 106, folder: "shamisen" },
+    { name: "Koto", program: 107, folder: "koto" },
+    { name: "Kalimba", program: 108, folder: "kalimba" },
+    { name: "Bagpipe", program: 109, folder: "bagpipe" },
+    { name: "Fiddle", program: 110, folder: "fiddle" },
+    { name: "Shanai", program: 111, folder: "shanai" }
   ];
   // Percussive-flavoured GM instruments (edge texture) -- real GM program
   // numbers played on a normal channel with a fixed note, NOT the reserved
@@ -2878,12 +3036,21 @@
   // GM synth; these are ordinary pitched-channel instruments that just
   // happen to sound percussive).
   const GM_PERCUSSIVE_INSTRUMENTS = [
+    { name: "Tinkle Bell", program: 112, folder: "tinkle_bell" },
     { name: "Agogo", program: 113, folder: "agogo" },
     { name: "Woodblock", program: 115, folder: "woodblock" },
     { name: "Taiko Drum", program: 116, folder: "taiko_drum" },
     { name: "Melodic Tom", program: 117, folder: "melodic_tom" },
     { name: "Synth Drum", program: 118, folder: "synth_drum" },
-    { name: "Reverse Cymbal", program: 119, folder: "reverse_cymbal" }
+    { name: "Reverse Cymbal", program: 119, folder: "reverse_cymbal" },
+    { name: "Guitar Fret Noise", program: 120, folder: "guitar_fret_noise" },
+    { name: "Breath Noise", program: 121, folder: "breath_noise" },
+    { name: "Seashore", program: 122, folder: "seashore" },
+    { name: "Bird Tweet", program: 123, folder: "bird_tweet" },
+    { name: "Telephone Ring", program: 124, folder: "telephone_ring" },
+    { name: "Helicopter", program: 125, folder: "helicopter" },
+    { name: "Applause", program: 126, folder: "applause" },
+    { name: "Gunshot", program: 127, folder: "gunshot" }
   ];
   const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
@@ -2936,7 +3103,7 @@
   // a fetch/decode failure (offline, sample genuinely missing) is silently
   // dropped rather than surfaced, same "never let sonification errors break
   // the page" spirit as everything else in this section.
-  async function playInstrumentNote(folder, midiNote, velocity, durationS) {
+  async function playInstrumentNote(folder, midiNote, velocity, durationS, detuneCents = 0) {
     const ctx = ensureInstrumentAudio();
     if (!ctx) return;
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -2947,7 +3114,10 @@
       const now = ctx.currentTime;
       const src = ctx.createBufferSource();
       src.buffer = buffer;
-      src.playbackRate.value = Math.pow(2, nearest.semitoneOffset / 12);
+      // The base semitone shift to reach the nearest available sample, times
+      // Detune/Randomness's own cents offset -- both are just playbackRate
+      // multipliers, so they combine into one real-sampler-style pitch shift.
+      src.playbackRate.value = Math.pow(2, nearest.semitoneOffset / 12) * centsToRateFactor(detuneCents);
       const gain = ctx.createGain();
       gain.gain.value = Math.max(0.0001, Math.min(1, velocity));
       src.connect(gain);
@@ -3018,13 +3188,47 @@
     midiOutput.send([0x80 | channel, note, 0]);
   }
 
+  // A frequency/playback-rate multiplier for a pitch shift given in cents
+  // (1/100th of a semitone) -- shared by Detune and Randomness's pitch
+  // jitter across all three synth outputs (oscillator frequency directly,
+  // sample playbackRate, and MIDI pitch bend below).
+  function centsToRateFactor(cents) {
+    return Math.pow(2, cents / 1200);
+  }
+
+  // A small random pitch offset (in cents) scaled by a 0-100 Randomness
+  // percentage -- 0 randomness always returns exactly 0 (no behavior change
+  // from the deterministic default), 100 returns up to +-maxCents.
+  function randomCentsJitter(randomnessPercent, maxCents) {
+    if (!randomnessPercent) return 0;
+    return (Math.random() * 2 - 1) * maxCents * (randomnessPercent / 100);
+  }
+
+  const midiPitchBendSentPerChannel = {};
+
+  // Standard MIDI pitch bend (0xE0), 14-bit value centred at 8192 -- default
+  // GM pitch bend range on virtually every synth is +-2 semitones (200
+  // cents) with no RPN setup required, so Detune/Randomness's cents values
+  // are clamped to that range to guarantee this works on any connected
+  // instrument out of the box.
+  function sendMidiPitchBend(channel, cents) {
+    if (!midiOutput) return;
+    const clamped = Math.max(-200, Math.min(200, cents));
+    const value = Math.max(0, Math.min(16383, Math.round(8192 + (clamped / 200) * 8191)));
+    if (midiPitchBendSentPerChannel[channel] === value) return;
+    midiPitchBendSentPerChannel[channel] = value;
+    midiOutput.send([0xe0 | channel, value & 0x7f, (value >> 7) & 0x7f]);
+  }
+
   // Plays one note out to the currently selected MIDI output: a program
   // change (only sent when it actually changes, so repeated notes on the
-  // same instrument don't re-select it every time) followed by note on,
-  // then note off after durationMs.
-  function playMidiNote(channel, program, midiNote, velocity, durationMs) {
+  // same instrument don't re-select it every time), a pitch bend representing
+  // Detune/Randomness's combined cents offset (also deduped against the last
+  // value sent), then note on, then note off after durationMs.
+  function playMidiNote(channel, program, midiNote, velocity, durationMs, detuneCents = 0) {
     if (!midiOutput) return;
     sendMidiProgramChange(channel, program);
+    sendMidiPitchBend(channel, detuneCents);
     sendMidiNoteOn(channel, midiNote, velocity);
     setTimeout(() => sendMidiNoteOff(channel, midiNote), durationMs);
   }
@@ -3078,13 +3282,25 @@
       return GM_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "music_box";
     } catch (e) { return "music_box"; }
   })();
+  // Colour source: Saved (needs a calibrated colour, the original design)
+  // or Live (no setup -- reacts to how vivid the current on-screen colour
+  // already is, see updateProximityChime).
+  let chimeSource = (() => {
+    try { return localStorage.getItem(CHIME_SOURCE_KEY) === "live" ? "live" : "saved"; } catch (e) { return "saved"; }
+  })();
   // Range: how far away (in Lab colour distance) the chime starts
   // responding at all -- wider reaches from farther off, narrower means
-  // only a near-exact match triggers it.
+  // only a near-exact match triggers it. Only meaningful for Saved (Live
+  // has no saved-point distance to reach from).
   let chimeRange = loadOutlineNumberPref(CHIME_RANGE_KEY, CHIME_DEFAULT_RANGE);
   // Tempo: how often it re-chimes (ms) while held steady on an exact
   // match -- otherwise it would only ever play once and go quiet.
   let chimeTempoMs = loadOutlineNumberPref(CHIME_TEMPO_KEY, CHIME_DEFAULT_TEMPO_MS);
+  // Detune (cents, +-100) and Randomness (0-100%, see randomCentsJitter and
+  // updateProximityChime's neighbouring-scale-step nudge) -- both default to
+  // 0, matching the original deterministic behaviour exactly.
+  let chimeDetuneCents = loadOutlineNumberPref(CHIME_DETUNE_KEY, 0);
+  let chimeRandomness = loadOutlineNumberPref(CHIME_RANDOMNESS_KEY, 0);
   let chimeAudioCtx = null;
   let chimeTimerId = null;
   // Which scale step last actually played a note, and how many sampling
@@ -3124,19 +3340,20 @@
   // A quick attack (it's a pluck, not a fade-in) into a slow exponential
   // decay is what makes it read as a struck note rather than a beep.
   function playChimeNote(freq, velocity) {
+    const totalCents = chimeDetuneCents + randomCentsJitter(chimeRandomness, CHIME_RANDOMNESS_MAX_CENTS);
     if (chimeOutput === "midi") {
       const inst = GM_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "music_box");
-      playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100);
+      playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100, totalCents);
       return;
     }
     if (chimeOutput === "instrument") {
-      playInstrumentNote(chimeInstrument, hzToMidiNote(freq), velocity * (chimeVolume / 100), 1.3);
+      playInstrumentNote(chimeInstrument, hzToMidiNote(freq), velocity * (chimeVolume / 100), 1.3, totalCents);
       return;
     }
     const now = chimeAudioCtx.currentTime;
     const osc = chimeAudioCtx.createOscillator();
     osc.type = "triangle";
-    osc.frequency.value = freq;
+    osc.frequency.value = freq * centsToRateFactor(totalCents);
     const gain = chimeAudioCtx.createGain();
     const peak = Math.max(0.001, velocity * (chimeVolume / 100) * 0.5);
     gain.gain.setValueAtTime(0.0001, now);
@@ -3152,12 +3369,28 @@
     if (!chimeAudioCtx) return;
     chimeTicksSinceLastNote++;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
-    const dist = nearestSavedPointLabDistance(sampleCenterColor());
-    if (dist == null) {
-      chimeLastNoteIndex = -1;
-      return;
+    let closeness;
+    if (chimeSource === "live") {
+      // No saved colours needed: treat how vivid (saturated and lit) the
+      // scene's own current dominant colour already is as the "closeness"
+      // signal, reusing the same sampling this file already does for the
+      // dominant colour tone -- a dull/grey scene stays quiet, a vivid one
+      // chimes, with no calibration step required first.
+      const rgb = sampleDominantColor();
+      if (!rgb) {
+        chimeLastNoteIndex = -1;
+        return;
+      }
+      const [, s, l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+      closeness = Math.max(0, Math.min(1, s * Math.min(1, l * 1.5)));
+    } else {
+      const dist = nearestSavedPointLabDistance(sampleCenterColor());
+      if (dist == null) {
+        chimeLastNoteIndex = -1;
+        return;
+      }
+      closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (chimeRange - CHIME_CLOSE_LAB_DISTANCE)));
     }
-    const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (chimeRange - CHIME_CLOSE_LAB_DISTANCE)));
     if (closeness <= 0.02) {
       chimeLastNoteIndex = -1;
       return;
@@ -3170,9 +3403,19 @@
     const repeatTicks = Math.max(1, Math.round(chimeTempoMs / 150));
     const heldAtTopNote = noteIndex === CHIME_SCALE_HZ.length - 1 && chimeTicksSinceLastNote >= repeatTicks;
     if (!steppedToNewNote && !heldAtTopNote) return;
+    // Tracking (steppedToNewNote/repeat timing) always uses the true,
+    // deterministic noteIndex -- Randomness only ever nudges which note
+    // actually SOUNDS by one scale step, at up to a 60% chance scaled by
+    // the Randomness percentage, so at 0 (the default) this is always
+    // exactly the deterministic note, unchanged from before this control
+    // existed.
     chimeLastNoteIndex = noteIndex;
     chimeTicksSinceLastNote = 0;
-    playChimeNote(CHIME_SCALE_HZ[noteIndex], closeness);
+    let playedIndex = noteIndex;
+    if (chimeRandomness > 0 && Math.random() * 100 < chimeRandomness * 0.6) {
+      playedIndex = Math.max(0, Math.min(CHIME_SCALE_HZ.length - 1, noteIndex + (Math.random() < 0.5 ? -1 : 1)));
+    }
+    playChimeNote(CHIME_SCALE_HZ[playedIndex], closeness);
   }
 
   function updateChimeSamplingTimer() {
@@ -3205,6 +3448,21 @@
   function saveChimeTempoPref() {
     try { localStorage.setItem(CHIME_TEMPO_KEY, String(chimeTempoMs)); } catch (e) {}
   }
+  function saveChimeSourcePref() {
+    try { localStorage.setItem(CHIME_SOURCE_KEY, chimeSource); } catch (e) {}
+  }
+  function saveChimeDetunePref() {
+    try { localStorage.setItem(CHIME_DETUNE_KEY, String(chimeDetuneCents)); } catch (e) {}
+  }
+  function saveChimeRandomnessPref() {
+    try { localStorage.setItem(CHIME_RANDOMNESS_KEY, String(chimeRandomness)); } catch (e) {}
+  }
+
+  // Range only applies to Saved (a Lab-distance threshold) -- Live has
+  // nothing to measure distance from, so it's hidden in that mode.
+  function updateChimeSourceControlsVisibility() {
+    chimeRangeWrap.classList.toggle("hide", !chimeEnabled || chimeSource !== "saved");
+  }
 
   function setChimeEnabled(next) {
     if (next === chimeEnabled) return;
@@ -3212,10 +3470,13 @@
     chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
     chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
     chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+    chimeSourceWrap.classList.toggle("hide", !chimeEnabled);
     chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
     chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
-    chimeRangeWrap.classList.toggle("hide", !chimeEnabled);
+    updateChimeSourceControlsVisibility();
     chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
+    chimeDetuneWrap.classList.toggle("hide", !chimeEnabled);
+    chimeRandomnessWrap.classList.toggle("hide", !chimeEnabled);
     saveChimeEnabledPref();
     updateChimeSamplingTimer();
   }
@@ -3234,6 +3495,14 @@
     saveChimeInstrumentPref();
   }
 
+  function setChimeSource(next) {
+    if (next !== "saved" && next !== "live") return;
+    chimeSource = next;
+    chimeLastNoteIndex = -1;
+    updateChimeSourceControlsVisibility();
+    saveChimeSourcePref();
+  }
+
   function setChimeRange(next) {
     chimeRange = Math.max(CHIME_CLOSE_LAB_DISTANCE + 4, Math.min(80, next));
     saveChimeRangePref();
@@ -3242,6 +3511,16 @@
   function setChimeTempo(next) {
     chimeTempoMs = Math.max(150, Math.min(2000, next));
     saveChimeTempoPref();
+  }
+
+  function setChimeDetune(next) {
+    chimeDetuneCents = Math.max(-100, Math.min(100, next));
+    saveChimeDetunePref();
+  }
+
+  function setChimeRandomness(next) {
+    chimeRandomness = Math.max(0, Math.min(100, next));
+    saveChimeRandomnessPref();
   }
 
   // ---- Dominant colour tone ----
@@ -3309,6 +3588,11 @@
   // actually resampled) -- defaults to every 3rd tick (~450ms), slow
   // enough to read as an ambient pad, not a fast melodic run.
   let domToneTempoMs = loadOutlineNumberPref(DOM_TONE_TEMPO_KEY, DOM_TONE_DEFAULT_TEMPO_MS);
+  // Detune applies to both Continuous (shifts the drone's pitch centre) and
+  // Melodic (shifts every arpeggio note); Randomness only meaningfully
+  // applies to Melodic's discrete note choice (see updateDominantColorTone).
+  let domToneDetuneCents = loadOutlineNumberPref(DOM_TONE_DETUNE_KEY, 0);
+  let domToneRandomness = loadOutlineNumberPref(DOM_TONE_RANDOMNESS_KEY, 0);
   let domToneArpTickCount = 0;
   let domToneArpStep = 0;
 
@@ -3343,19 +3627,20 @@
   // attack and a longer decay, so overlapping notes blend into a pad
   // instead of standing apart as separate hits.
   function playDomTonePadNote(freq, velocity) {
+    const totalCents = domToneDetuneCents + randomCentsJitter(domToneRandomness, DOM_TONE_RANDOMNESS_MAX_CENTS);
     if (domToneOutput === "midi") {
       const inst = GM_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_INSTRUMENTS.find((i) => i.folder === "marimba");
-      playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600);
+      playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600, totalCents);
       return;
     }
     if (domToneOutput === "instrument") {
-      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8);
+      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8, totalCents);
       return;
     }
     const now = domToneAudioCtx.currentTime;
     const osc = domToneAudioCtx.createOscillator();
     osc.type = "sine";
-    osc.frequency.value = freq;
+    osc.frequency.value = freq * centsToRateFactor(totalCents);
     const gain = domToneAudioCtx.createGain();
     const peak = Math.max(0.001, velocity * (domToneVolume / 100) * 0.2);
     gain.gain.setValueAtTime(0.0001, now);
@@ -3380,7 +3665,7 @@
       // Hue mapped across one octave (220-440Hz) rather than the chime's
       // wider proximity range -- this tone is meant to sit in the
       // background as a continuous drone, not compete for attention.
-      const targetFreq = 220 + (h / 360) * 220;
+      const targetFreq = (220 + (h / 360) * 220) * centsToRateFactor(domToneDetuneCents);
       const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.12;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
@@ -3404,7 +3689,17 @@
     const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
     domToneArpStep++;
     const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
-    playDomTonePadNote(DOM_TONE_SCALE_HZ[noteIndex], Math.min(1, l * 1.3));
+    // Randomness (0 by default -- deterministic, unchanged) can substitute
+    // the arpeggio's fixed chord-offset sequence with any other tone from
+    // the same chord shape, at up to a 60% chance scaled by the Randomness
+    // percentage -- domToneArpStep itself still always advances on its own
+    // regular schedule, so the tempo/step logic is unaffected.
+    let playedIndex = noteIndex;
+    if (domToneRandomness > 0 && Math.random() * 100 < domToneRandomness * 0.6) {
+      const randOffset = DOM_TONE_CHORD_OFFSETS[Math.floor(Math.random() * DOM_TONE_CHORD_OFFSETS.length)];
+      playedIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + randOffset);
+    }
+    playDomTonePadNote(DOM_TONE_SCALE_HZ[playedIndex], Math.min(1, l * 1.3));
   }
 
   function updateDomToneSamplingTimer() {
@@ -3441,17 +3736,27 @@
   function saveDomToneTempoPref() {
     try { localStorage.setItem(DOM_TONE_TEMPO_KEY, String(domToneTempoMs)); } catch (e) {}
   }
+  function saveDomToneDetunePref() {
+    try { localStorage.setItem(DOM_TONE_DETUNE_KEY, String(domToneDetuneCents)); } catch (e) {}
+  }
+  function saveDomToneRandomnessPref() {
+    try { localStorage.setItem(DOM_TONE_RANDOMNESS_KEY, String(domToneRandomness)); } catch (e) {}
+  }
 
   // MIDI/Instrument output only makes sense for Melodic's discrete notes --
   // Continuous is a persistent oscillator bending pitch, no clean
   // equivalent as separate MIDI notes or looped one-shot samples -- so
-  // these two controls only ever show up alongside Melodic.
+  // these two controls only ever show up alongside Melodic. Randomness is
+  // the same (a note-choice effect, meaningless for one continuous tone);
+  // Detune applies to both styles, so it's gated on domToneEnabled alone.
   function updateDomToneOutputControlsVisibility() {
     const show = domToneEnabled && domToneStyle === "melodic";
     domToneOutputWrap.classList.toggle("hide", !show);
     domToneInstrumentWrap.classList.toggle("hide", !show || domToneOutput === "synth");
     domToneRangeWrap.classList.toggle("hide", !show);
     domToneTempoWrap.classList.toggle("hide", !show);
+    domToneRandomnessWrap.classList.toggle("hide", !show);
+    domToneDetuneWrap.classList.toggle("hide", !domToneEnabled);
   }
 
   function setDomToneEnabled(next) {
@@ -3502,6 +3807,16 @@
     domToneTempoMs = Math.max(150, Math.min(1500, next));
     domToneArpTickCount = 0;
     saveDomToneTempoPref();
+  }
+
+  function setDomToneDetune(next) {
+    domToneDetuneCents = Math.max(-100, Math.min(100, next));
+    saveDomToneDetunePref();
+  }
+
+  function setDomToneRandomness(next) {
+    domToneRandomness = Math.max(0, Math.min(100, next));
+    saveDomToneRandomnessPref();
   }
 
   // ---- Edge texture tone ----
@@ -3559,6 +3874,17 @@
   let edgeToneMinHits = loadOutlineNumberPref(EDGE_TONE_MIN_HITS_KEY, EDGE_TONE_DEFAULT_MIN_HITS);
   let edgeToneMaxHits = loadOutlineNumberPref(EDGE_TONE_MAX_HITS_KEY, EDGE_TONE_DEFAULT_MAX_HITS);
   let edgeToneTempoBpm = loadOutlineNumberPref(EDGE_TONE_TEMPO_KEY, EDGE_TONE_DEFAULT_TEMPO_BPM);
+  // Detune/Randomness for the fixed MIDI/Instrument note (the synth branch's
+  // noise burst has no real "pitch" of its own, but its bandpass centre
+  // frequency stands in for one -- see playEdgeTexTick). Bars: how many
+  // 16-step bars the rhythm cycles through before repeating exactly --
+  // edgeToneBarIndex tracks which bar of that cycle is currently playing,
+  // incrementing every time the step index wraps back to 0 (see
+  // updateEdgeTexture's rotation).
+  let edgeToneDetuneCents = loadOutlineNumberPref(EDGE_TONE_DETUNE_KEY, 0);
+  let edgeToneRandomness = loadOutlineNumberPref(EDGE_TONE_RANDOMNESS_KEY, 0);
+  let edgeToneBars = loadOutlineNumberPref(EDGE_TONE_BARS_KEY, EDGE_TONE_DEFAULT_BARS);
+  let edgeToneBarIndex = 0;
 
   // The standard "bucket"/error-diffusion method for spreading N hits as
   // evenly as possible across `steps` slots -- musically equivalent to a
@@ -3634,13 +3960,14 @@
   // brightness-filtered by density the same way the continuous drone's
   // lowpass cutoff already is, so louder/busier still means brighter/busier.
   function playEdgeTexTick(density) {
+    const totalCents = edgeToneDetuneCents + randomCentsJitter(edgeToneRandomness, EDGE_TONE_RANDOMNESS_MAX_CENTS);
     if (edgeToneOutput === "midi") {
       const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === "woodblock");
-      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, EDGE_TONE_MIDI_NOTE, density, 150);
+      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, EDGE_TONE_MIDI_NOTE, density, 150, totalCents);
       return;
     }
     if (edgeToneOutput === "instrument") {
-      playInstrumentNote(edgeToneInstrument, EDGE_TONE_MIDI_NOTE, density * (edgeToneVolume / 100), 0.3);
+      playInstrumentNote(edgeToneInstrument, EDGE_TONE_MIDI_NOTE, density * (edgeToneVolume / 100), 0.3, totalCents);
       return;
     }
     const now = edgeToneAudioCtx.currentTime;
@@ -3652,7 +3979,10 @@
     src.buffer = buffer;
     const filter = edgeToneAudioCtx.createBiquadFilter();
     filter.type = "bandpass";
-    filter.frequency.value = 400 + density * 4000;
+    // The synth branch's noise burst has no fixed pitch of its own, so its
+    // bandpass centre frequency stands in for "pitch" here -- the same
+    // Detune/Randomness cents shift that would otherwise bend a note.
+    filter.frequency.value = (400 + density * 4000) * centsToRateFactor(totalCents);
     filter.Q.value = 0.7;
     const gain = edgeToneAudioCtx.createGain();
     const peak = Math.max(0.001, (edgeToneVolume / 100) * density * 0.5);
@@ -3691,6 +4021,9 @@
     if (edgeToneStepElapsedMs < msPerStep) return;
     edgeToneStepElapsedMs -= msPerStep;
     edgeToneStepIndex = (edgeToneStepIndex + 1) % EDGE_TONE_STEPS;
+    // Bars: every time the step index wraps back to a new bar, advance
+    // which bar of the loop is currently playing (see the rotation below).
+    if (edgeToneStepIndex === 0) edgeToneBarIndex = (edgeToneBarIndex + 1) % edgeToneBars;
     // Gated at a low floor, not the continuous mode's own perceptual scale
     // -- a genuinely flat wall reads as ~0 density and stays silent, but
     // this shouldn't cut off well before that the way a higher floor would.
@@ -3700,7 +4033,24 @@
     // in between that range the current bar's pattern actually sits.
     const hits = Math.max(edgeToneMinHits, Math.min(edgeToneMaxHits, Math.round(edgeToneMinHits + density * (edgeToneMaxHits - edgeToneMinHits))));
     const pattern = euclideanHitPattern(hits, EDGE_TONE_STEPS);
-    if (!pattern[edgeToneStepIndex]) return;
+    // Bars: each bar of the loop reads the same Euclidean pattern rotated
+    // by a fixed offset -- rotating a Euclidean rhythm is a real, standard
+    // technique that gives a genuinely different-sounding groove at the
+    // same density, so a multi-bar loop actually progresses instead of
+    // repeating one identical bar, cycling back to the original (offset 0)
+    // after edgeToneBars bars. At the default of 1 bar, edgeToneBarIndex is
+    // always 0, so patternIndex === edgeToneStepIndex -- unchanged from
+    // before this control existed.
+    const rotationStep = Math.round(EDGE_TONE_STEPS / edgeToneBars);
+    const patternIndex = (edgeToneStepIndex + edgeToneBarIndex * rotationStep) % EDGE_TONE_STEPS;
+    let hitHere = pattern[patternIndex];
+    // Randomness (0 by default -- deterministic, unchanged) can flip a step
+    // either way: an occasional predicted hit gets dropped, or a rest
+    // becomes a quiet extra hit -- capped well under 100% so the
+    // underlying Euclidean shape still comes through even at max
+    // Randomness, rather than randomizing the pattern beyond recognition.
+    if (edgeToneRandomness > 0 && Math.random() * 100 < edgeToneRandomness * 0.3) hitHere = !hitHere;
+    if (!hitHere) return;
     const accent = edgeToneStepIndex % 4 === 0 ? 1 : 0.7;
     playEdgeTexTick(density * accent);
   }
@@ -3715,6 +4065,7 @@
       edgeToneTimerId = null;
       edgeToneStepIndex = 0;
       edgeToneStepElapsedMs = 0;
+      edgeToneBarIndex = 0;
       if (edgeToneGainNode) edgeToneGainNode.gain.setTargetAtTime(0, edgeToneAudioCtx.currentTime, 0.1);
     }
   }
@@ -3743,6 +4094,15 @@
   function saveEdgeToneTempoPref() {
     try { localStorage.setItem(EDGE_TONE_TEMPO_KEY, String(edgeToneTempoBpm)); } catch (e) {}
   }
+  function saveEdgeToneDetunePref() {
+    try { localStorage.setItem(EDGE_TONE_DETUNE_KEY, String(edgeToneDetuneCents)); } catch (e) {}
+  }
+  function saveEdgeToneRandomnessPref() {
+    try { localStorage.setItem(EDGE_TONE_RANDOMNESS_KEY, String(edgeToneRandomness)); } catch (e) {}
+  }
+  function saveEdgeToneBarsPref() {
+    try { localStorage.setItem(EDGE_TONE_BARS_KEY, String(edgeToneBars)); } catch (e) {}
+  }
 
   function updateEdgeToneOutputControlsVisibility() {
     const show = edgeToneEnabled && edgeToneStyle === "melodic";
@@ -3751,6 +4111,9 @@
     edgeToneMinHitsWrap.classList.toggle("hide", !show);
     edgeToneMaxHitsWrap.classList.toggle("hide", !show);
     edgeToneTempoWrap.classList.toggle("hide", !show);
+    edgeToneDetuneWrap.classList.toggle("hide", !show);
+    edgeToneRandomnessWrap.classList.toggle("hide", !show);
+    edgeToneBarsWrap.classList.toggle("hide", !show);
   }
 
   function setEdgeToneEnabled(next) {
@@ -3773,6 +4136,7 @@
     }
     edgeToneStepIndex = 0;
     edgeToneStepElapsedMs = 0;
+    edgeToneBarIndex = 0;
     updateEdgeToneOutputControlsVisibility();
     saveEdgeToneStylePref();
   }
@@ -3804,6 +4168,22 @@
   function setEdgeToneTempo(next) {
     edgeToneTempoBpm = Math.max(60, Math.min(200, Math.round(next)));
     saveEdgeToneTempoPref();
+  }
+
+  function setEdgeToneDetune(next) {
+    edgeToneDetuneCents = Math.max(-100, Math.min(100, next));
+    saveEdgeToneDetunePref();
+  }
+
+  function setEdgeToneRandomness(next) {
+    edgeToneRandomness = Math.max(0, Math.min(100, next));
+    saveEdgeToneRandomnessPref();
+  }
+
+  function setEdgeToneBars(next) {
+    edgeToneBars = Math.max(1, Math.min(4, Math.round(next)));
+    edgeToneBarIndex = 0;
+    saveEdgeToneBarsPref();
   }
 
   // Converts a tap position (viewport CSS pixels) into a fraction of the
@@ -4104,10 +4484,13 @@
       particleSizeScale,
       chimeEnabled,
       chimeVolume,
+      chimeSource,
       chimeOutput,
       chimeInstrument,
       chimeRange,
       chimeTempo: chimeTempoMs,
+      chimeDetune: chimeDetuneCents,
+      chimeRandomness,
       domToneEnabled,
       domToneVolume,
       domToneStyle,
@@ -4115,6 +4498,8 @@
       domToneInstrument,
       domToneRange: domToneRangeOctaves,
       domToneTempo: domToneTempoMs,
+      domToneDetune: domToneDetuneCents,
+      domToneRandomness,
       edgeToneEnabled,
       edgeToneVolume,
       edgeToneStyle,
@@ -4123,6 +4508,9 @@
       edgeToneMinHits,
       edgeToneMaxHits,
       edgeToneTempo: edgeToneTempoBpm,
+      edgeToneDetune: edgeToneDetuneCents,
+      edgeToneRandomness,
+      edgeToneBars,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -4311,6 +4699,10 @@
       setChimeInstrument(s.chimeInstrument);
       chimeInstrumentSelect.value = chimeInstrument;
     }
+    if (s.chimeSource === "saved" || s.chimeSource === "live") {
+      setChimeSource(s.chimeSource);
+      chimeSourceSelect.value = chimeSource;
+    }
     if (Number.isFinite(s.chimeRange)) {
       setChimeRange(s.chimeRange);
       chimeRangeSlider.value = String(chimeRange);
@@ -4320,6 +4712,16 @@
       setChimeTempo(s.chimeTempo);
       chimeTempoSlider.value = String(chimeTempoMs);
       chimeTempoLabel.textContent = `${chimeTempoMs}ms`;
+    }
+    if (Number.isFinite(s.chimeDetune)) {
+      setChimeDetune(s.chimeDetune);
+      chimeDetuneSlider.value = String(chimeDetuneCents);
+      chimeDetuneLabel.textContent = `${chimeDetuneCents}c`;
+    }
+    if (Number.isFinite(s.chimeRandomness)) {
+      setChimeRandomness(s.chimeRandomness);
+      chimeRandomnessSlider.value = String(chimeRandomness);
+      chimeRandomnessLabel.textContent = `${chimeRandomness}%`;
     }
     if (typeof s.domToneEnabled === "boolean" && s.domToneEnabled !== domToneEnabled) {
       setDomToneEnabled(s.domToneEnabled);
@@ -4351,6 +4753,16 @@
       setDomToneTempo(s.domToneTempo);
       domToneTempoSlider.value = String(domToneTempoMs);
       domToneTempoLabel.textContent = `${domToneTempoMs}ms`;
+    }
+    if (Number.isFinite(s.domToneDetune)) {
+      setDomToneDetune(s.domToneDetune);
+      domToneDetuneSlider.value = String(domToneDetuneCents);
+      domToneDetuneLabel.textContent = `${domToneDetuneCents}c`;
+    }
+    if (Number.isFinite(s.domToneRandomness)) {
+      setDomToneRandomness(s.domToneRandomness);
+      domToneRandomnessSlider.value = String(domToneRandomness);
+      domToneRandomnessLabel.textContent = `${domToneRandomness}%`;
     }
     if (typeof s.edgeToneEnabled === "boolean" && s.edgeToneEnabled !== edgeToneEnabled) {
       setEdgeToneEnabled(s.edgeToneEnabled);
@@ -4387,6 +4799,21 @@
       setEdgeToneTempo(s.edgeToneTempo);
       edgeToneTempoSlider.value = String(edgeToneTempoBpm);
       edgeToneTempoLabel.textContent = `${edgeToneTempoBpm} BPM`;
+    }
+    if (Number.isFinite(s.edgeToneDetune)) {
+      setEdgeToneDetune(s.edgeToneDetune);
+      edgeToneDetuneSlider.value = String(edgeToneDetuneCents);
+      edgeToneDetuneLabel.textContent = `${edgeToneDetuneCents}c`;
+    }
+    if (Number.isFinite(s.edgeToneRandomness)) {
+      setEdgeToneRandomness(s.edgeToneRandomness);
+      edgeToneRandomnessSlider.value = String(edgeToneRandomness);
+      edgeToneRandomnessLabel.textContent = `${edgeToneRandomness}%`;
+    }
+    if (Number.isFinite(s.edgeToneBars)) {
+      setEdgeToneBars(s.edgeToneBars);
+      edgeToneBarsSlider.value = String(edgeToneBars);
+      edgeToneBarsLabel.textContent = String(edgeToneBars);
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -4838,10 +5265,13 @@
   chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
   chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
   chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+  chimeSourceWrap.classList.toggle("hide", !chimeEnabled);
   chimeOutputWrap.classList.toggle("hide", !chimeEnabled);
   chimeInstrumentWrap.classList.toggle("hide", !chimeEnabled || chimeOutput === "synth");
-  chimeRangeWrap.classList.toggle("hide", !chimeEnabled);
+  updateChimeSourceControlsVisibility();
   chimeTempoWrap.classList.toggle("hide", !chimeEnabled);
+  chimeDetuneWrap.classList.toggle("hide", !chimeEnabled);
+  chimeRandomnessWrap.classList.toggle("hide", !chimeEnabled);
   chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
   chimeVolumeSlider.addEventListener("input", () => {
     chimeVolume = parseFloat(chimeVolumeSlider.value);
@@ -4850,6 +5280,8 @@
   });
   chimeVolumeSlider.value = String(chimeVolume);
   chimeVolumeLabel.textContent = `${chimeVolume}%`;
+  chimeSourceSelect.addEventListener("change", () => setChimeSource(chimeSourceSelect.value));
+  chimeSourceSelect.value = chimeSource;
   chimeOutputSelect.addEventListener("change", () => setChimeOutput(chimeOutputSelect.value));
   chimeOutputSelect.value = chimeOutput;
   chimeInstrumentSelect.addEventListener("change", () => setChimeInstrument(chimeInstrumentSelect.value));
@@ -4866,6 +5298,18 @@
   });
   chimeTempoSlider.value = String(chimeTempoMs);
   chimeTempoLabel.textContent = `${chimeTempoMs}ms`;
+  chimeDetuneSlider.addEventListener("input", () => {
+    setChimeDetune(parseFloat(chimeDetuneSlider.value));
+    chimeDetuneLabel.textContent = `${chimeDetuneCents}c`;
+  });
+  chimeDetuneSlider.value = String(chimeDetuneCents);
+  chimeDetuneLabel.textContent = `${chimeDetuneCents}c`;
+  chimeRandomnessSlider.addEventListener("input", () => {
+    setChimeRandomness(parseFloat(chimeRandomnessSlider.value));
+    chimeRandomnessLabel.textContent = `${chimeRandomness}%`;
+  });
+  chimeRandomnessSlider.value = String(chimeRandomness);
+  chimeRandomnessLabel.textContent = `${chimeRandomness}%`;
   updateChimeSamplingTimer();
 
   domToneBtn.textContent = `Dominant colour tone: ${domToneEnabled ? "On" : "Off"}`;
@@ -4899,6 +5343,18 @@
   });
   domToneTempoSlider.value = String(domToneTempoMs);
   domToneTempoLabel.textContent = `${domToneTempoMs}ms`;
+  domToneDetuneSlider.addEventListener("input", () => {
+    setDomToneDetune(parseFloat(domToneDetuneSlider.value));
+    domToneDetuneLabel.textContent = `${domToneDetuneCents}c`;
+  });
+  domToneDetuneSlider.value = String(domToneDetuneCents);
+  domToneDetuneLabel.textContent = `${domToneDetuneCents}c`;
+  domToneRandomnessSlider.addEventListener("input", () => {
+    setDomToneRandomness(parseFloat(domToneRandomnessSlider.value));
+    domToneRandomnessLabel.textContent = `${domToneRandomness}%`;
+  });
+  domToneRandomnessSlider.value = String(domToneRandomness);
+  domToneRandomnessLabel.textContent = `${domToneRandomness}%`;
   updateDomToneSamplingTimer();
 
   edgeToneBtn.textContent = `Edge texture tone: ${edgeToneEnabled ? "On" : "Off"}`;
@@ -4938,6 +5394,24 @@
   });
   edgeToneTempoSlider.value = String(edgeToneTempoBpm);
   edgeToneTempoLabel.textContent = `${edgeToneTempoBpm} BPM`;
+  edgeToneDetuneSlider.addEventListener("input", () => {
+    setEdgeToneDetune(parseFloat(edgeToneDetuneSlider.value));
+    edgeToneDetuneLabel.textContent = `${edgeToneDetuneCents}c`;
+  });
+  edgeToneDetuneSlider.value = String(edgeToneDetuneCents);
+  edgeToneDetuneLabel.textContent = `${edgeToneDetuneCents}c`;
+  edgeToneRandomnessSlider.addEventListener("input", () => {
+    setEdgeToneRandomness(parseFloat(edgeToneRandomnessSlider.value));
+    edgeToneRandomnessLabel.textContent = `${edgeToneRandomness}%`;
+  });
+  edgeToneRandomnessSlider.value = String(edgeToneRandomness);
+  edgeToneRandomnessLabel.textContent = `${edgeToneRandomness}%`;
+  edgeToneBarsSlider.addEventListener("input", () => {
+    setEdgeToneBars(parseFloat(edgeToneBarsSlider.value));
+    edgeToneBarsLabel.textContent = String(edgeToneBars);
+  });
+  edgeToneBarsSlider.value = String(edgeToneBars);
+  edgeToneBarsLabel.textContent = String(edgeToneBars);
   updateEdgeToneSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);

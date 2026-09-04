@@ -296,29 +296,170 @@
   <label id="chimeInstrumentWrap" class="hud-slider hide" title="Which instrument plays the chime's notes -- a MIDI program change (MIDI out) or which real instrument sample set to fetch (Instrument).">
     Instrument:
     <select id="chimeInstrumentSelect">
-      <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
-      <option value="celesta">Celesta</option>
-      <option value="glockenspiel">Glockenspiel</option>
-      <option value="music_box">Music Box</option>
-      <option value="vibraphone">Vibraphone</option>
-      <option value="marimba">Marimba</option>
-      <option value="xylophone">Xylophone</option>
-      <option value="tubular_bells">Tubular Bells</option>
-      <option value="orchestral_harp">Orchestral Harp</option>
-      <option value="flute">Flute</option>
-      <option value="pan_flute">Pan Flute</option>
-      <option value="ocarina">Ocarina</option>
-      <option value="steel_drums">Steel Drums</option>
-      <option value="kalimba">Kalimba</option>
+      <optgroup label="Piano">
+        <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+        <option value="bright_acoustic_piano">Bright Acoustic Piano</option>
+        <option value="electric_grand_piano">Electric Grand Piano</option>
+        <option value="honkytonk_piano">Honky-tonk Piano</option>
+        <option value="electric_piano_1">Electric Piano 1</option>
+        <option value="electric_piano_2">Electric Piano 2</option>
+        <option value="harpsichord">Harpsichord</option>
+        <option value="clavinet">Clavinet</option>
+      </optgroup>
+      <optgroup label="Chromatic Percussion">
+        <option value="celesta">Celesta</option>
+        <option value="glockenspiel">Glockenspiel</option>
+        <option value="music_box" selected>Music Box</option>
+        <option value="vibraphone">Vibraphone</option>
+        <option value="marimba">Marimba</option>
+        <option value="xylophone">Xylophone</option>
+        <option value="tubular_bells">Tubular Bells</option>
+        <option value="dulcimer">Dulcimer</option>
+      </optgroup>
+      <optgroup label="Organ">
+        <option value="drawbar_organ">Drawbar Organ</option>
+        <option value="percussive_organ">Percussive Organ</option>
+        <option value="rock_organ">Rock Organ</option>
+        <option value="church_organ">Church Organ</option>
+        <option value="reed_organ">Reed Organ</option>
+        <option value="accordion">Accordion</option>
+        <option value="harmonica">Harmonica</option>
+        <option value="tango_accordion">Tango Accordion</option>
+      </optgroup>
+      <optgroup label="Guitar">
+        <option value="acoustic_guitar_nylon">Acoustic Guitar (nylon)</option>
+        <option value="acoustic_guitar_steel">Acoustic Guitar (steel)</option>
+        <option value="electric_guitar_jazz">Electric Guitar (jazz)</option>
+        <option value="electric_guitar_clean">Electric Guitar (clean)</option>
+        <option value="electric_guitar_muted">Electric Guitar (muted)</option>
+        <option value="overdriven_guitar">Overdriven Guitar</option>
+        <option value="distortion_guitar">Distortion Guitar</option>
+        <option value="guitar_harmonics">Guitar Harmonics</option>
+      </optgroup>
+      <optgroup label="Bass">
+        <option value="acoustic_bass">Acoustic Bass</option>
+        <option value="electric_bass_finger">Electric Bass (finger)</option>
+        <option value="electric_bass_pick">Electric Bass (pick)</option>
+        <option value="fretless_bass">Fretless Bass</option>
+        <option value="slap_bass_1">Slap Bass 1</option>
+        <option value="slap_bass_2">Slap Bass 2</option>
+        <option value="synth_bass_1">Synth Bass 1</option>
+        <option value="synth_bass_2">Synth Bass 2</option>
+      </optgroup>
+      <optgroup label="Strings">
+        <option value="violin">Violin</option>
+        <option value="viola">Viola</option>
+        <option value="cello">Cello</option>
+        <option value="contrabass">Contrabass</option>
+        <option value="tremolo_strings">Tremolo Strings</option>
+        <option value="pizzicato_strings">Pizzicato Strings</option>
+        <option value="orchestral_harp">Orchestral Harp</option>
+        <option value="timpani">Timpani</option>
+      </optgroup>
+      <optgroup label="Ensemble">
+        <option value="string_ensemble_1">String Ensemble 1</option>
+        <option value="string_ensemble_2">String Ensemble 2</option>
+        <option value="synth_strings_1">Synth Strings 1</option>
+        <option value="synth_strings_2">Synth Strings 2</option>
+        <option value="choir_aahs">Choir Aahs</option>
+        <option value="voice_oohs">Voice Oohs</option>
+        <option value="synth_choir">Synth Choir</option>
+        <option value="orchestra_hit">Orchestra Hit</option>
+      </optgroup>
+      <optgroup label="Brass">
+        <option value="trumpet">Trumpet</option>
+        <option value="trombone">Trombone</option>
+        <option value="tuba">Tuba</option>
+        <option value="muted_trumpet">Muted Trumpet</option>
+        <option value="french_horn">French Horn</option>
+        <option value="brass_section">Brass Section</option>
+        <option value="synth_brass_1">Synth Brass 1</option>
+        <option value="synth_brass_2">Synth Brass 2</option>
+      </optgroup>
+      <optgroup label="Reed">
+        <option value="soprano_sax">Soprano Sax</option>
+        <option value="alto_sax">Alto Sax</option>
+        <option value="tenor_sax">Tenor Sax</option>
+        <option value="baritone_sax">Baritone Sax</option>
+        <option value="oboe">Oboe</option>
+        <option value="english_horn">English Horn</option>
+        <option value="bassoon">Bassoon</option>
+        <option value="clarinet">Clarinet</option>
+      </optgroup>
+      <optgroup label="Pipe">
+        <option value="piccolo">Piccolo</option>
+        <option value="flute">Flute</option>
+        <option value="recorder">Recorder</option>
+        <option value="pan_flute">Pan Flute</option>
+        <option value="blown_bottle">Blown Bottle</option>
+        <option value="shakuhachi">Shakuhachi</option>
+        <option value="whistle">Whistle</option>
+        <option value="ocarina">Ocarina</option>
+      </optgroup>
+      <optgroup label="Synth Lead">
+        <option value="lead_1_square">Lead 1 (square)</option>
+        <option value="lead_2_sawtooth">Lead 2 (sawtooth)</option>
+        <option value="lead_3_calliope">Lead 3 (calliope)</option>
+        <option value="lead_4_chiff">Lead 4 (chiff)</option>
+        <option value="lead_5_charang">Lead 5 (charang)</option>
+        <option value="lead_6_voice">Lead 6 (voice)</option>
+        <option value="lead_7_fifths">Lead 7 (fifths)</option>
+        <option value="lead_8_bass__lead">Lead 8 (bass + lead)</option>
+      </optgroup>
+      <optgroup label="Synth Pad">
+        <option value="pad_1_new_age">Pad 1 (new age)</option>
+        <option value="pad_2_warm">Pad 2 (warm)</option>
+        <option value="pad_3_polysynth">Pad 3 (polysynth)</option>
+        <option value="pad_4_choir">Pad 4 (choir)</option>
+        <option value="pad_5_bowed">Pad 5 (bowed)</option>
+        <option value="pad_6_metallic">Pad 6 (metallic)</option>
+        <option value="pad_7_halo">Pad 7 (halo)</option>
+        <option value="pad_8_sweep">Pad 8 (sweep)</option>
+      </optgroup>
+      <optgroup label="Synth Effects">
+        <option value="fx_1_rain">FX 1 (rain)</option>
+        <option value="fx_2_soundtrack">FX 2 (soundtrack)</option>
+        <option value="fx_3_crystal">FX 3 (crystal)</option>
+        <option value="fx_4_atmosphere">FX 4 (atmosphere)</option>
+        <option value="fx_5_brightness">FX 5 (brightness)</option>
+        <option value="fx_6_goblins">FX 6 (goblins)</option>
+        <option value="fx_7_echoes">FX 7 (echoes)</option>
+        <option value="fx_8_scifi">FX 8 (sci-fi)</option>
+      </optgroup>
+      <optgroup label="Ethnic">
+        <option value="sitar">Sitar</option>
+        <option value="banjo">Banjo</option>
+        <option value="shamisen">Shamisen</option>
+        <option value="koto">Koto</option>
+        <option value="kalimba">Kalimba</option>
+        <option value="bagpipe">Bagpipe</option>
+        <option value="fiddle">Fiddle</option>
+        <option value="shanai">Shanai</option>
+      </optgroup>
     </select>
   </label>
-  <label id="chimeRangeWrap" class="hud-slider hide" title="How close a colour must be to a saved calibration point before the chime starts responding at all, and how far the closeness curve stretches from there -- lower is stricter (must nearly match exactly), higher lets the chime react from further away.">
+  <label id="chimeSourceWrap" class="hud-slider hide" title="Saved colours: chimes as the camera nears any saved calibration colour -- needs at least one saved first (see Calibrate a colour). Live scene: no setup needed at all -- chimes based on how vivid (saturated and lit) the current on-screen colour already is, using the same pentatonic scale.">
+    Colour source:
+    <select id="chimeSourceSelect">
+      <option value="saved">Saved colours</option>
+      <option value="live">Live scene</option>
+    </select>
+  </label>
+  <label id="chimeRangeWrap" class="hud-slider hide" title="How close a colour must be to a saved calibration point before the chime starts responding at all, and how far the closeness curve stretches from there -- lower is stricter (must nearly match exactly), higher lets the chime react from further away. Only applies to the Saved colours source.">
     Chime range: <span id="chimeRangeLabel">32</span>
     <input id="chimeRangeSlider" type="range" min="10" max="80" step="1" value="32">
   </label>
   <label id="chimeTempoWrap" class="hud-slider hide" title="The fastest the chime is allowed to repeat while sitting right on top of a saved colour -- lower is a quicker, more insistent repeat; higher spaces the notes out more.">
     Chime tempo: <span id="chimeTempoLabel">600ms</span>
     <input id="chimeTempoSlider" type="range" min="150" max="2000" step="10" value="600">
+  </label>
+  <label id="chimeDetuneWrap" class="hud-slider hide" title="Shifts every chime note's pitch up or down by up to a semitone (100 cents), applied consistently whether it's playing through the built-in synth, a MIDI pitch bend to a connected instrument, or a resampled instrument sample.">
+    Chime detune: <span id="chimeDetuneLabel">0c</span>
+    <input id="chimeDetuneSlider" type="range" min="-100" max="100" step="1" value="0">
+  </label>
+  <label id="chimeRandomnessWrap" class="hud-slider hide" title="Humanizes the chime: a small chance each note gets nudged to a neighbouring scale step instead of the exact closeness-driven one, plus a touch of random pitch jitter -- 0% is fully deterministic (the original behaviour), higher values add more melodic variety.">
+    Chime randomness: <span id="chimeRandomnessLabel">0%</span>
+    <input id="chimeRandomnessSlider" type="range" min="0" max="100" step="1" value="0">
   </label>
   <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
@@ -343,20 +484,146 @@
   <label id="domToneInstrumentWrap" class="hud-slider hide" title="Which instrument plays the arpeggio's notes.">
     Instrument:
     <select id="domToneInstrumentSelect">
-      <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
-      <option value="celesta">Celesta</option>
-      <option value="glockenspiel">Glockenspiel</option>
-      <option value="music_box">Music Box</option>
-      <option value="vibraphone">Vibraphone</option>
-      <option value="marimba">Marimba</option>
-      <option value="xylophone">Xylophone</option>
-      <option value="tubular_bells">Tubular Bells</option>
-      <option value="orchestral_harp">Orchestral Harp</option>
-      <option value="flute">Flute</option>
-      <option value="pan_flute">Pan Flute</option>
-      <option value="ocarina">Ocarina</option>
-      <option value="steel_drums">Steel Drums</option>
-      <option value="kalimba">Kalimba</option>
+      <optgroup label="Piano">
+        <option value="acoustic_grand_piano">Acoustic Grand Piano</option>
+        <option value="bright_acoustic_piano">Bright Acoustic Piano</option>
+        <option value="electric_grand_piano">Electric Grand Piano</option>
+        <option value="honkytonk_piano">Honky-tonk Piano</option>
+        <option value="electric_piano_1">Electric Piano 1</option>
+        <option value="electric_piano_2">Electric Piano 2</option>
+        <option value="harpsichord">Harpsichord</option>
+        <option value="clavinet">Clavinet</option>
+      </optgroup>
+      <optgroup label="Chromatic Percussion">
+        <option value="celesta">Celesta</option>
+        <option value="glockenspiel">Glockenspiel</option>
+        <option value="music_box">Music Box</option>
+        <option value="vibraphone">Vibraphone</option>
+        <option value="marimba" selected>Marimba</option>
+        <option value="xylophone">Xylophone</option>
+        <option value="tubular_bells">Tubular Bells</option>
+        <option value="dulcimer">Dulcimer</option>
+      </optgroup>
+      <optgroup label="Organ">
+        <option value="drawbar_organ">Drawbar Organ</option>
+        <option value="percussive_organ">Percussive Organ</option>
+        <option value="rock_organ">Rock Organ</option>
+        <option value="church_organ">Church Organ</option>
+        <option value="reed_organ">Reed Organ</option>
+        <option value="accordion">Accordion</option>
+        <option value="harmonica">Harmonica</option>
+        <option value="tango_accordion">Tango Accordion</option>
+      </optgroup>
+      <optgroup label="Guitar">
+        <option value="acoustic_guitar_nylon">Acoustic Guitar (nylon)</option>
+        <option value="acoustic_guitar_steel">Acoustic Guitar (steel)</option>
+        <option value="electric_guitar_jazz">Electric Guitar (jazz)</option>
+        <option value="electric_guitar_clean">Electric Guitar (clean)</option>
+        <option value="electric_guitar_muted">Electric Guitar (muted)</option>
+        <option value="overdriven_guitar">Overdriven Guitar</option>
+        <option value="distortion_guitar">Distortion Guitar</option>
+        <option value="guitar_harmonics">Guitar Harmonics</option>
+      </optgroup>
+      <optgroup label="Bass">
+        <option value="acoustic_bass">Acoustic Bass</option>
+        <option value="electric_bass_finger">Electric Bass (finger)</option>
+        <option value="electric_bass_pick">Electric Bass (pick)</option>
+        <option value="fretless_bass">Fretless Bass</option>
+        <option value="slap_bass_1">Slap Bass 1</option>
+        <option value="slap_bass_2">Slap Bass 2</option>
+        <option value="synth_bass_1">Synth Bass 1</option>
+        <option value="synth_bass_2">Synth Bass 2</option>
+      </optgroup>
+      <optgroup label="Strings">
+        <option value="violin">Violin</option>
+        <option value="viola">Viola</option>
+        <option value="cello">Cello</option>
+        <option value="contrabass">Contrabass</option>
+        <option value="tremolo_strings">Tremolo Strings</option>
+        <option value="pizzicato_strings">Pizzicato Strings</option>
+        <option value="orchestral_harp">Orchestral Harp</option>
+        <option value="timpani">Timpani</option>
+      </optgroup>
+      <optgroup label="Ensemble">
+        <option value="string_ensemble_1">String Ensemble 1</option>
+        <option value="string_ensemble_2">String Ensemble 2</option>
+        <option value="synth_strings_1">Synth Strings 1</option>
+        <option value="synth_strings_2">Synth Strings 2</option>
+        <option value="choir_aahs">Choir Aahs</option>
+        <option value="voice_oohs">Voice Oohs</option>
+        <option value="synth_choir">Synth Choir</option>
+        <option value="orchestra_hit">Orchestra Hit</option>
+      </optgroup>
+      <optgroup label="Brass">
+        <option value="trumpet">Trumpet</option>
+        <option value="trombone">Trombone</option>
+        <option value="tuba">Tuba</option>
+        <option value="muted_trumpet">Muted Trumpet</option>
+        <option value="french_horn">French Horn</option>
+        <option value="brass_section">Brass Section</option>
+        <option value="synth_brass_1">Synth Brass 1</option>
+        <option value="synth_brass_2">Synth Brass 2</option>
+      </optgroup>
+      <optgroup label="Reed">
+        <option value="soprano_sax">Soprano Sax</option>
+        <option value="alto_sax">Alto Sax</option>
+        <option value="tenor_sax">Tenor Sax</option>
+        <option value="baritone_sax">Baritone Sax</option>
+        <option value="oboe">Oboe</option>
+        <option value="english_horn">English Horn</option>
+        <option value="bassoon">Bassoon</option>
+        <option value="clarinet">Clarinet</option>
+      </optgroup>
+      <optgroup label="Pipe">
+        <option value="piccolo">Piccolo</option>
+        <option value="flute">Flute</option>
+        <option value="recorder">Recorder</option>
+        <option value="pan_flute">Pan Flute</option>
+        <option value="blown_bottle">Blown Bottle</option>
+        <option value="shakuhachi">Shakuhachi</option>
+        <option value="whistle">Whistle</option>
+        <option value="ocarina">Ocarina</option>
+      </optgroup>
+      <optgroup label="Synth Lead">
+        <option value="lead_1_square">Lead 1 (square)</option>
+        <option value="lead_2_sawtooth">Lead 2 (sawtooth)</option>
+        <option value="lead_3_calliope">Lead 3 (calliope)</option>
+        <option value="lead_4_chiff">Lead 4 (chiff)</option>
+        <option value="lead_5_charang">Lead 5 (charang)</option>
+        <option value="lead_6_voice">Lead 6 (voice)</option>
+        <option value="lead_7_fifths">Lead 7 (fifths)</option>
+        <option value="lead_8_bass__lead">Lead 8 (bass + lead)</option>
+      </optgroup>
+      <optgroup label="Synth Pad">
+        <option value="pad_1_new_age">Pad 1 (new age)</option>
+        <option value="pad_2_warm">Pad 2 (warm)</option>
+        <option value="pad_3_polysynth">Pad 3 (polysynth)</option>
+        <option value="pad_4_choir">Pad 4 (choir)</option>
+        <option value="pad_5_bowed">Pad 5 (bowed)</option>
+        <option value="pad_6_metallic">Pad 6 (metallic)</option>
+        <option value="pad_7_halo">Pad 7 (halo)</option>
+        <option value="pad_8_sweep">Pad 8 (sweep)</option>
+      </optgroup>
+      <optgroup label="Synth Effects">
+        <option value="fx_1_rain">FX 1 (rain)</option>
+        <option value="fx_2_soundtrack">FX 2 (soundtrack)</option>
+        <option value="fx_3_crystal">FX 3 (crystal)</option>
+        <option value="fx_4_atmosphere">FX 4 (atmosphere)</option>
+        <option value="fx_5_brightness">FX 5 (brightness)</option>
+        <option value="fx_6_goblins">FX 6 (goblins)</option>
+        <option value="fx_7_echoes">FX 7 (echoes)</option>
+        <option value="fx_8_scifi">FX 8 (sci-fi)</option>
+      </optgroup>
+      <optgroup label="Ethnic">
+        <option value="sitar">Sitar</option>
+        <option value="banjo">Banjo</option>
+        <option value="shamisen">Shamisen</option>
+        <option value="koto">Koto</option>
+        <option value="kalimba">Kalimba</option>
+        <option value="bagpipe">Bagpipe</option>
+        <option value="fiddle">Fiddle</option>
+        <option value="shanai">Shanai</option>
+      </optgroup>
     </select>
   </label>
   <label id="domToneRangeWrap" class="hud-slider hide" title="How many octaves the arpeggio's pentatonic scale spans -- higher lets the chord reach further up (and down) from its root note, so hue swings produce a wider melodic range instead of staying clustered around one register.">
@@ -366,6 +633,14 @@
   <label id="domToneTempoWrap" class="hud-slider hide" title="How quickly the arpeggio moves from note to note within its rolling chord -- lower is a faster, busier pad; higher spaces each note out for a slower, more spacious groove.">
     Tone tempo: <span id="domToneTempoLabel">450ms</span>
     <input id="domToneTempoSlider" type="range" min="150" max="1500" step="10" value="450">
+  </label>
+  <label id="domToneDetuneWrap" class="hud-slider hide" title="Shifts the dominant tone's pitch up or down by up to a semitone (100 cents) -- applies to both Continuous (the drone) and Melodic (every arpeggio note), consistently across the synth, MIDI, and Instrument outputs.">
+    Tone detune: <span id="domToneDetuneLabel">0c</span>
+    <input id="domToneDetuneSlider" type="range" min="-100" max="100" step="1" value="0">
+  </label>
+  <label id="domToneRandomnessWrap" class="hud-slider hide" title="Humanizes Melodic's arpeggio: a small chance each step substitutes any other tone from the same chord shape instead of the fixed sequence, plus a touch of random pitch jitter -- 0% is fully deterministic (the original behaviour), higher values add more melodic variety. Only applies to Melodic.">
+    Tone randomness: <span id="domToneRandomnessLabel">0%</span>
+    <input id="domToneRandomnessSlider" type="range" min="0" max="100" step="1" value="0">
   </label>
   <button id="edgeToneBtn" class="hud-btn" aria-pressed="false" title="Tracks structural complexity in the scene -- busier, edgier views sound rougher; flat colour fields stay near-silent. A third, texture-based sonification channel alongside the two colour-based ones above.">Edge texture tone: Off</button>
   <label id="edgeToneVolumeWrap" class="hud-slider hide" title="How loud the edge texture tone plays, independent of your device's system volume.">
@@ -390,12 +665,25 @@
   <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre).">
     Instrument:
     <select id="edgeToneInstrumentSelect">
-      <option value="agogo">Agogo</option>
-      <option value="woodblock">Woodblock</option>
-      <option value="taiko_drum">Taiko Drum</option>
-      <option value="melodic_tom">Melodic Tom</option>
-      <option value="synth_drum">Synth Drum</option>
-      <option value="reverse_cymbal">Reverse Cymbal</option>
+      <optgroup label="Percussive">
+        <option value="tinkle_bell">Tinkle Bell</option>
+        <option value="agogo">Agogo</option>
+        <option value="woodblock" selected>Woodblock</option>
+        <option value="taiko_drum">Taiko Drum</option>
+        <option value="melodic_tom">Melodic Tom</option>
+        <option value="synth_drum">Synth Drum</option>
+        <option value="reverse_cymbal">Reverse Cymbal</option>
+      </optgroup>
+      <optgroup label="Sound Effects">
+        <option value="guitar_fret_noise">Guitar Fret Noise</option>
+        <option value="breath_noise">Breath Noise</option>
+        <option value="seashore">Seashore</option>
+        <option value="bird_tweet">Bird Tweet</option>
+        <option value="telephone_ring">Telephone Ring</option>
+        <option value="helicopter">Helicopter</option>
+        <option value="applause">Applause</option>
+        <option value="gunshot">Gunshot</option>
+      </optgroup>
     </select>
   </label>
   <label id="edgeToneMinHitsWrap" class="hud-slider hide" title="The fewest strikes the rhythm engine will ever spread across each 16-step bar, even for the calmest/flattest scenes -- raise this so quiet footage still produces a noticeable pulse instead of near-silence.">
@@ -409,6 +697,18 @@
   <label id="edgeToneTempoWrap" class="hud-slider hide" title="The step clock's speed, in beats per minute -- independent of scene density, this sets how fast the underlying 16-step bar cycles, i.e. how fast the groove feels overall.">
     Texture tempo: <span id="edgeToneTempoLabel">100 BPM</span>
     <input id="edgeToneTempoSlider" type="range" min="60" max="200" step="1" value="100">
+  </label>
+  <label id="edgeToneDetuneWrap" class="hud-slider hide" title="Shifts the tick's pitch up or down by up to a semitone (100 cents) -- for the Synth output this shifts the noise burst's tonal colour; for MIDI/Instrument it's a real pitch shift.">
+    Texture detune: <span id="edgeToneDetuneLabel">0c</span>
+    <input id="edgeToneDetuneSlider" type="range" min="-100" max="100" step="1" value="0">
+  </label>
+  <label id="edgeToneRandomnessWrap" class="hud-slider hide" title="Humanizes the rhythm: a small chance each of the 16 steps flips -- a predicted hit drops, or a rest becomes an extra hit -- capped well under 100% so the underlying Euclidean pattern still comes through. 0% is the exact, deterministic pattern.">
+    Texture randomness: <span id="edgeToneRandomnessLabel">0%</span>
+    <input id="edgeToneRandomnessSlider" type="range" min="0" max="100" step="1" value="0">
+  </label>
+  <label id="edgeToneBarsWrap" class="hud-slider hide" title="How many 16-step bars the rhythm cycles through before repeating exactly -- each bar rotates the same pattern by a fixed offset (a real rhythm technique), so more than 1 bar means the groove actually progresses instead of looping one identical bar forever.">
+    Bars: <span id="edgeToneBarsLabel">1</span>
+    <input id="edgeToneBarsSlider" type="range" min="1" max="4" step="1" value="1">
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
