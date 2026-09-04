@@ -983,6 +983,7 @@
   }
 
   function draw(time) {
+    if (colourVisionFlashEnabled) updateColourVisionFlashTransition();
     if (cameraBackgroundEnabled) {
       // A fresh camera frame every draw, rather than the plain background's
       // fade trail — the trail effect is for a background that otherwise
@@ -1504,6 +1505,12 @@
 
   let colourVisionFlashEnabled = false;
   let cvFlashPointIndex = 0;
+  // Crossfade state for smoothing beat-to-beat point switches instead of a
+  // hard instant swap (see updateColourVisionFlashTransition).
+  let cvFlashTransitionFrom = null;
+  let cvFlashTransitionTo = null;
+  let cvFlashTransitionStartMs = 0;
+  const CV_FLASH_FADE_MS = 220;
 
   // ---- Colour math (mirrors the shader's math for JS-side previews) ----
 
@@ -2191,6 +2198,8 @@
     }
     colourVisionFlashEnabled = true;
     cvFlashPointIndex = 0;
+    cvFlashTransitionFrom = null;
+    cvFlashTransitionTo = null;
     uploadSinglePointUniforms(points[cvFlashPointIndex]);
     // Show the corrected view immediately, not whichever value the blend
     // slider was left at (e.g. 0/true from a previous disableColourVisionFlash)
@@ -2208,6 +2217,8 @@
 
   function disableColourVisionFlash() {
     colourVisionFlashEnabled = false;
+    cvFlashTransitionFrom = null;
+    cvFlashTransitionTo = null;
     colourVisionFlashBtn.textContent = "Colour vision flash mode: Off";
     colourVisionFlashBtn.classList.remove("active");
     colourVisionFlashBtn.setAttribute("aria-pressed", "false");
@@ -2230,12 +2241,60 @@
 
     // Advance to the next saved point on every beat so consecutive beats
     // never repeat the same one — always shown corrected/isolated, never
-    // alternating back to the true/raw camera view.
+    // alternating back to the true/raw camera view. Rather than an instant
+    // swap, crossfades from wherever the view currently is into the new
+    // point over CV_FLASH_FADE_MS (see updateColourVisionFlashTransition,
+    // called every frame from draw()) -- a hard cut read as a strobe/glitch
+    // more than a deliberate colour change, especially at faster beat
+    // speeds. If a previous crossfade hadn't finished yet, starts this one
+    // from ITS target rather than the last fully-settled point, so a fast
+    // run of beats doesn't visually snap backwards mid-fade.
+    const fromPoint = cvFlashTransitionTo || points[cvFlashPointIndex];
     cvFlashPointIndex = (cvFlashPointIndex + 1) % points.length;
-    uploadSinglePointUniforms(points[cvFlashPointIndex]);
+    cvFlashTransitionFrom = fromPoint;
+    cvFlashTransitionTo = points[cvFlashPointIndex];
+    cvFlashTransitionStartMs = performance.now();
 
     blendSlider.value = "100";
     blendLabel.textContent = "100%";
+  }
+
+  // Linearly interpolates every field uploadSinglePointUniforms reads --
+  // source colour (Lab conversion happens inside that function, so this
+  // stays in plain RGB) and each correction adjustment -- between two
+  // saved points. Adjustment values are deltas, not absolute hues/positions
+  // on a wheel, so a plain lerp (no circular-wrap handling) already gives a
+  // smooth, sensible in-between correction.
+  function lerpFlashPoint(a, b, t) {
+    return {
+      sourceColor: [
+        a.sourceColor[0] + (b.sourceColor[0] - a.sourceColor[0]) * t,
+        a.sourceColor[1] + (b.sourceColor[1] - a.sourceColor[1]) * t,
+        a.sourceColor[2] + (b.sourceColor[2] - a.sourceColor[2]) * t
+      ],
+      hueShift: a.hueShift + (b.hueShift - a.hueShift) * t,
+      satAdjust: a.satAdjust + (b.satAdjust - a.satAdjust) * t,
+      lightAdjust: a.lightAdjust + (b.lightAdjust - a.lightAdjust) * t,
+      contrastAdjust: (a.contrastAdjust || 0) + ((b.contrastAdjust || 0) - (a.contrastAdjust || 0)) * t,
+      exposureAdjust: (a.exposureAdjust || 0) + ((b.exposureAdjust || 0) - (a.exposureAdjust || 0)) * t
+    };
+  }
+
+  // Called every frame from draw() while flash mode is on -- advances
+  // whatever crossfade fireColourVisionFlash last started, uploading an
+  // interpolated point each frame until it reaches the target.
+  function updateColourVisionFlashTransition() {
+    if (!colourVisionFlashEnabled || !cvFlashTransitionTo) return;
+    if (!cvFlashTransitionFrom) {
+      // First point of a fresh flash-mode session -- nothing to fade from.
+      uploadSinglePointUniforms(cvFlashTransitionTo);
+      cvFlashTransitionTo = null;
+      return;
+    }
+    const elapsed = performance.now() - cvFlashTransitionStartMs;
+    const t = Math.min(1, elapsed / CV_FLASH_FADE_MS);
+    uploadSinglePointUniforms(lerpFlashPoint(cvFlashTransitionFrom, cvFlashTransitionTo, t));
+    if (t >= 1) cvFlashTransitionTo = null;
   }
 
   // Runs a single RGB colour through the same correction/CVD shader used
