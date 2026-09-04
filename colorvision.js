@@ -76,6 +76,13 @@
   const PARTICLE_DEFAULT_SIZE = 100;
   const SCENE_GRID_W = 24;
   const SCENE_GRID_H = 14;
+  // Colour proximity chime -- first step of the "Sight <-> Sound" direction
+  // (see index.html's "What's next" section): a soft tone that rises in
+  // pitch as the live camera view nears a saved calibration colour, an
+  // audible second channel alongside the visual correction.
+  const CHIME_ENABLED_KEY = "chimeEnabled_colorVision_v1";
+  const CHIME_VOLUME_KEY = "chimeVolume_colorVision_v1";
+  const CHIME_DEFAULT_VOLUME = 50;
   const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
   const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
@@ -347,6 +354,10 @@
   const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
+  const chimeBtn = document.getElementById("chimeBtn");
+  const chimeVolumeWrap = document.getElementById("chimeVolumeWrap");
+  const chimeVolumeSlider = document.getElementById("chimeVolumeSlider");
+  const chimeVolumeLabel = document.getElementById("chimeVolumeLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const rotateBtn = document.getElementById("rotateBtn");
@@ -855,6 +866,8 @@
       particleTrail: PARTICLE_DEFAULT_TRAIL,
       particleCount: PARTICLE_DEFAULT_COUNT,
       particleSizeScale: PARTICLE_DEFAULT_SIZE,
+      chimeEnabled: false,
+      chimeVolume: CHIME_DEFAULT_VOLUME,
       audioTintEnabled: false,
       ...audioTintDefaultsSnapshot(),
       beatFlashEnabled: false,
@@ -2823,6 +2836,11 @@
 
   async function startCamera() {
     setStatus("Requesting camera…");
+    // A chime enabled from a previous session has its AudioContext created
+    // suspended (no user gesture at page-load time to resume it against) --
+    // this click is a real gesture, so resume it here rather than leaving
+    // the chime silently non-functional for the rest of the session.
+    if (chimeAudioCtx && chimeAudioCtx.state === "suspended") chimeAudioCtx.resume().catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
@@ -4047,6 +4065,109 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // ---- Colour proximity chime ----
+  // First step of the "Sight <-> Sound" direction (index.html's "What's
+  // next" section): a soft tone that rises in pitch and volume as the live
+  // camera view (sampled the same way calibration aiming already does, via
+  // sampleCenterColor -- the crosshair position when not actively aiming)
+  // nears whichever saved calibration colour it's closest to in Lab space
+  // -- the same colour-distance space this file's correction spread
+  // already reasons in, not a naive RGB difference. Silent whenever
+  // nothing is close or no colours are saved yet, so it never drones.
+  //
+  // Runs on its own AudioContext with nothing feeding INTO it -- it only
+  // ever plays an oscillator tone out, never reads from the microphone --
+  // so there's no risk of it looping back into Audio colour tint's or
+  // Sound Nebula's analyser input.
+  let chimeEnabled = (() => {
+    try { return localStorage.getItem(CHIME_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let chimeVolume = loadOutlineNumberPref(CHIME_VOLUME_KEY, CHIME_DEFAULT_VOLUME);
+  let chimeAudioCtx = null;
+  let chimeOsc = null;
+  let chimeGainNode = null;
+  let chimeTimerId = null;
+
+  // Lab-space distance at which the chime is essentially "on the exact
+  // colour" (full volume/pitch) vs. fully faded out to silence.
+  const CHIME_CLOSE_LAB_DISTANCE = 6;
+  const CHIME_FAR_LAB_DISTANCE = 32;
+
+  function nearestSavedPointLabDistance(rgb) {
+    if (!points.length) return null;
+    const [L, A, B] = rgb2lab(rgb[0], rgb[1], rgb[2]);
+    let best = Infinity;
+    for (const p of points) {
+      const [pL, pA, pB] = rgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
+      const d = Math.hypot(L - pL, A - pA, B - pB);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function ensureChimeAudio() {
+    if (chimeAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    chimeAudioCtx = new Ctx();
+    chimeOsc = chimeAudioCtx.createOscillator();
+    chimeOsc.type = "sine";
+    chimeOsc.frequency.value = 220;
+    chimeGainNode = chimeAudioCtx.createGain();
+    chimeGainNode.gain.value = 0;
+    chimeOsc.connect(chimeGainNode);
+    chimeGainNode.connect(chimeAudioCtx.destination);
+    chimeOsc.start();
+  }
+
+  function updateProximityChime() {
+    if (!chimeGainNode) return;
+    const now = chimeAudioCtx.currentTime;
+    if (video.readyState < video.HAVE_CURRENT_DATA) {
+      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
+      return;
+    }
+    const dist = nearestSavedPointLabDistance(sampleCenterColor());
+    if (dist == null) {
+      chimeGainNode.gain.setTargetAtTime(0, now, 0.08);
+      return;
+    }
+    const closeness = Math.max(0, Math.min(1, 1 - (dist - CHIME_CLOSE_LAB_DISTANCE) / (CHIME_FAR_LAB_DISTANCE - CHIME_CLOSE_LAB_DISTANCE)));
+    const targetGain = closeness > 0.02 ? closeness * (chimeVolume / 100) * 0.3 : 0;
+    const targetFreq = 220 + closeness * 440;
+    chimeGainNode.gain.setTargetAtTime(targetGain, now, 0.08);
+    chimeOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
+  }
+
+  function updateChimeSamplingTimer() {
+    if (chimeEnabled && !chimeTimerId) {
+      ensureChimeAudio();
+      if (chimeAudioCtx && chimeAudioCtx.state === "suspended") chimeAudioCtx.resume().catch(() => {});
+      chimeTimerId = setInterval(updateProximityChime, 150);
+    } else if (!chimeEnabled && chimeTimerId) {
+      clearInterval(chimeTimerId);
+      chimeTimerId = null;
+      if (chimeGainNode) chimeGainNode.gain.setTargetAtTime(0, chimeAudioCtx.currentTime, 0.05);
+    }
+  }
+
+  function saveChimeEnabledPref() {
+    try { localStorage.setItem(CHIME_ENABLED_KEY, chimeEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveChimeVolumePref() {
+    try { localStorage.setItem(CHIME_VOLUME_KEY, String(chimeVolume)); } catch (e) {}
+  }
+
+  function setChimeEnabled(next) {
+    if (next === chimeEnabled) return;
+    chimeEnabled = next;
+    chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
+    chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
+    chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+    saveChimeEnabledPref();
+    updateChimeSamplingTimer();
+  }
+
   // Converts a tap position (viewport CSS pixels) into a fraction of the
   // raw video frame (0,0 top-left .. 1,1 bottom-right) — the same
   // object-fit:cover cropping and rotate180 flip the correction shader
@@ -4358,6 +4479,8 @@
       particleTrail,
       particleCount,
       particleSizeScale,
+      chimeEnabled,
+      chimeVolume,
       audioTintEnabled,
       audioTintStrength,
       audioTintSatStrength,
@@ -4620,6 +4743,15 @@
       particleSizeSlider.value = String(particleSizeScale);
       particleSizeLabel.textContent = `${particleSizeScale}%`;
       saveParticleSizePref();
+    }
+    if (typeof s.chimeEnabled === "boolean" && s.chimeEnabled !== chimeEnabled) {
+      setChimeEnabled(s.chimeEnabled);
+    }
+    if (Number.isFinite(s.chimeVolume)) {
+      chimeVolume = Math.max(0, Math.min(100, s.chimeVolume));
+      chimeVolumeSlider.value = String(chimeVolume);
+      chimeVolumeLabel.textContent = `${chimeVolume}%`;
+      saveChimeVolumePref();
     }
     if (Number.isFinite(s.audioTintStrength)) {
       audioTintStrength = s.audioTintStrength;
@@ -5068,6 +5200,19 @@
   particleSizeSlider.value = String(particleSizeScale);
   particleSizeLabel.textContent = `${particleSizeScale}%`;
   updateParticlesUi();
+
+  chimeBtn.textContent = `Colour proximity chime: ${chimeEnabled ? "On" : "Off"}`;
+  chimeBtn.setAttribute("aria-pressed", String(chimeEnabled));
+  chimeVolumeWrap.classList.toggle("hide", !chimeEnabled);
+  chimeBtn.addEventListener("click", () => setChimeEnabled(!chimeEnabled));
+  chimeVolumeSlider.addEventListener("input", () => {
+    chimeVolume = parseFloat(chimeVolumeSlider.value);
+    chimeVolumeLabel.textContent = `${chimeVolumeSlider.value}%`;
+    saveChimeVolumePref();
+  });
+  chimeVolumeSlider.value = String(chimeVolume);
+  chimeVolumeLabel.textContent = `${chimeVolume}%`;
+  updateChimeSamplingTimer();
 
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);

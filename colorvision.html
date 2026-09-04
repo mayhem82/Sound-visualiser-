@@ -371,6 +371,11 @@
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="chimeBtn" class="hud-btn" aria-pressed="false" title="A soft tone that rises in pitch as the camera nears a saved calibration colour -- an audible second channel alongside the visual correction, silent when nothing matches.">Colour proximity chime: Off</button>
+  <label id="chimeVolumeWrap" class="hud-slider hide" title="How loud the proximity chime plays, independent of your device's system volume.">
+    Chime volume: <span id="chimeVolumeLabel">50%</span>
+    <input id="chimeVolumeSlider" type="range" min="0" max="100" value="50">
+  </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
