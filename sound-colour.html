@@ -99,6 +99,10 @@
     Tint update rate: <span id="audioTintUpdateMsLabel">80ms</span>
     <input id="audioTintUpdateMsSlider" type="range" min="20" max="300" step="10" value="80">
   </label>
+  <label id="scientificColourWrap" class="hud-slider camera-only-mode-wrap hide" title="Off: each band's hue is a hand-picked colour chosen purely for looks (violet/cyan/pink). On: each band's hue is instead computed from its own real, live spectral centroid frequency -- octave-folded up into the visible light band (~400-789 THz, itself almost exactly one octave wide) and read off as an actual physical wavelength/colour, the same doubling relationship that links a musical octave to a light octave. A physically real colour, not a chosen one.">
+    <input id="scientificColourCheckbox" type="checkbox">
+    Scientific colour (real frequency &rarr; wavelength)
+  </label>
   <label id="audioTintBassEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Mutes the bass/kick band without losing its hue/gain/range settings.">
     <input id="audioTintBassEnabledCheckbox" type="checkbox" checked>
     Bass band on

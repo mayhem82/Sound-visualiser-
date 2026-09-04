@@ -90,6 +90,12 @@
   const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
   const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
   const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
+  // Scientific colour: replaces each band's hand-picked hue (violet/cyan/
+  // pink, chosen purely for looks) with a hue derived from the band's own
+  // actual measured frequency content, via the one physically real bridge
+  // between sound and light -- both are waves, and doubling frequency means
+  // going up an octave in either domain. See frequencyToVisibleHue() below.
+  const SCIENTIFIC_COLOUR_KEY = "scientificColour_colorVision_v1";
   // Audio -> Correction: the "Sight <-> Sound" direction reaching further
   // than Audio colour tint's hue-only wash -- bass/mid/treble instead boost
   // the correction blend / spread / outline strength themselves. Shares
@@ -135,7 +141,12 @@
     enabled: loadAudioTintBandBoolPref(audioTintBandKey(def.key, "Enabled"), def.enabled),
     from: 0,
     to: 0,
-    rawEnergy: 0
+    rawEnergy: 0,
+    // The hue actually used for tint/particles each tick -- the plain
+    // hand-picked hue above, or (with Scientific colour on) a hue computed
+    // live from this band's real measured frequency content. Seeded to the
+    // hand-picked hue so nothing reads undefined before the first tick.
+    effectiveHue: def.hue
   }));
 
   // ---- Beat flash (ported from Sound Nebula's beat detection) ----
@@ -222,6 +233,8 @@
   const audioTintUpdateMsWrap = document.getElementById("audioTintUpdateMsWrap");
   const audioTintUpdateMsSlider = document.getElementById("audioTintUpdateMsSlider");
   const audioTintUpdateMsLabel = document.getElementById("audioTintUpdateMsLabel");
+  const scientificColourWrap = document.getElementById("scientificColourWrap");
+  const scientificColourCheckbox = document.getElementById("scientificColourCheckbox");
   const audioTintExtraBandsWrap = document.getElementById("audioTintExtraBandsWrap");
   const audioTintExtraBandsCheckbox = document.getElementById("audioTintExtraBandsCheckbox");
   // One { wrap, slider, label } triple per band per field (hue/gain/fromHz/toHz),
@@ -491,6 +504,9 @@
   let audioTintExtraBandsVisible = (() => {
     try { return localStorage.getItem(AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY) === "1"; } catch (e) { return false; }
   })();
+  let scientificColourEnabled = (() => {
+    try { return localStorage.getItem(SCIENTIFIC_COLOUR_KEY) === "1"; } catch (e) { return false; }
+  })();
   let audioTintHue = 0;
   // 0..1 live loudness (post per-band gain), used by the saturation/lightness push.
   let audioTintLevel = 0;
@@ -606,6 +622,62 @@
     else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
     else { r1 = c; g1 = 0; b1 = x; }
     return [r1 + m, g1 + m, b1 + m];
+  }
+
+  // ---- Scientific colour: real frequency -> visible wavelength ----
+  // Sound and light are both waves, and the one genuinely physical bridge
+  // between them is the octave: doubling a frequency is going up an octave
+  // in either domain. Visible light spans roughly 400-789 THz -- almost
+  // exactly one octave wide (789/400 ~= 1.97) -- so any audio frequency,
+  // repeatedly doubled, lands uniquely inside that single visible octave
+  // with no ambiguity about which doubling to pick. This is the same idea
+  // physicists and chromesthesia tools use to give a sound a "real" colour,
+  // as opposed to an artistically chosen one (like this page's own default
+  // violet/cyan/pink band hues).
+  const VISIBLE_MIN_HZ = 400e12; // ~750nm, red edge
+  const SPEED_OF_LIGHT_M_S = 299792458;
+
+  function foldFrequencyToVisibleHz(freqHz) {
+    if (!(freqHz > 0)) return null;
+    let f = freqHz;
+    while (f < VISIBLE_MIN_HZ) f *= 2;
+    return f;
+  }
+
+  // Dan Bruton's widely-used wavelength->RGB approximation (piecewise-linear
+  // across the spectrum's empirical break points, with intensity falloff
+  // toward the visible edges and a gamma correction). It's fast and requires
+  // no lookup tables, but it's an approximation, not CIE-exact -- good
+  // enough to give a frequency a genuine, physically-motivated colour,
+  // not meant for precise colour science.
+  function wavelengthToRgb01(nm) {
+    let r = 0, g = 0, b = 0;
+    if (nm >= 380 && nm < 440) { r = -(nm - 440) / (440 - 380); b = 1; }
+    else if (nm < 490) { g = (nm - 440) / (490 - 440); b = 1; }
+    else if (nm < 510) { g = 1; b = -(nm - 510) / (510 - 490); }
+    else if (nm < 580) { r = (nm - 510) / (580 - 510); g = 1; }
+    else if (nm < 645) { r = 1; g = -(nm - 645) / (645 - 580); }
+    else if (nm <= 750) { r = 1; }
+    let factor;
+    if (nm >= 380 && nm < 420) factor = 0.3 + 0.7 * (nm - 380) / (420 - 380);
+    else if (nm < 701) factor = 1;
+    else if (nm <= 750) factor = 0.3 + 0.7 * (750 - nm) / (750 - 700);
+    else factor = 0;
+    const gamma = 0.8;
+    const adjust = (c) => (c === 0 ? 0 : Math.pow(c * factor, gamma));
+    return [adjust(r), adjust(g), adjust(b)];
+  }
+
+  // The actual conversion this page uses: a real measured frequency, folded
+  // up into the visible octave, turned into a wavelength, turned into an
+  // RGB colour, read back out as a hue -- a hue derived from physics, not
+  // picked by ear/eye.
+  function frequencyToVisibleHue(freqHz) {
+    const visibleHz = foldFrequencyToVisibleHz(freqHz);
+    if (visibleHz === null) return null;
+    const wavelengthNm = Math.max(380, Math.min(750, (SPEED_OF_LIGHT_M_S / visibleHz) * 1e9));
+    const [r, g, b] = wavelengthToRgb01(wavelengthNm);
+    return rgb2hsl(r, g, b)[0];
   }
 
   function srgbToLinear(c) {
@@ -920,6 +992,9 @@
   function saveAudioTintExtraBandsVisiblePref() {
     try { localStorage.setItem(AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY, audioTintExtraBandsVisible ? "1" : "0"); } catch (e) {}
   }
+  function saveScientificColourPref() {
+    try { localStorage.setItem(SCIENTIFIC_COLOUR_KEY, scientificColourEnabled ? "1" : "0"); } catch (e) {}
+  }
   function saveAudioTintBandPref(bandKey, field, value) {
     try { localStorage.setItem(audioTintBandKey(bandKey, field), String(value)); } catch (e) {}
   }
@@ -958,7 +1033,7 @@
     audioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
     const wraps = [
       audioTintResetBtn, audioTintStrengthWrap, audioTintSatStrengthWrap, audioTintLightStrengthWrap,
-      audioTintSmoothingWrap, audioTintFftSizeWrap, audioTintUpdateMsWrap, audioTintExtraBandsWrap
+      audioTintSmoothingWrap, audioTintFftSizeWrap, audioTintUpdateMsWrap, scientificColourWrap, audioTintExtraBandsWrap
     ];
     audioTintBandControls.forEach((controls, i) => {
       if (AUDIO_TINT_EXTRA_BAND_KEYS.includes(AUDIO_TINT_BAND_DEFS[i].key)) return; // handled by updateAudioTintExtraBandsVisibility
@@ -990,15 +1065,28 @@
       const start = Math.floor(band.from * n);
       const end = Math.max(start + 1, Math.floor(band.to * n));
       let sum = 0;
-      for (let i = start; i < end; i++) sum += audioTintFreqData[i];
+      let freqWeightedSum = 0;
+      for (let i = start; i < end; i++) {
+        const amp = audioTintFreqData[i];
+        sum += amp;
+        // Scientific colour reads this: the band's real, live spectral
+        // centroid (its energy-weighted average frequency), not just the
+        // band's own fixed edges -- so the hue reflects what's actually
+        // sounding within the band right now, not a static range.
+        freqWeightedSum += amp * (i / n) * nyquist;
+      }
       // Computed for every band regardless of its own enabled toggle — beat
       // detection reads AUDIO_TINT_BANDS[0] (Bass)'s rawEnergy directly, so
       // it keeps working even if Bass is muted out of the hue tint itself.
       band.rawEnergy = sum / (end - start) / 255;
+      const centroidFreq = sum > 0 ? freqWeightedSum / sum : (band.fromHz + band.toHz) / 2;
+      band.effectiveHue = scientificColourEnabled
+        ? (frequencyToVisibleHue(centroidFreq) ?? band.hue)
+        : band.hue;
       if (!band.enabled) continue;
       activeBands++;
       const energy = band.rawEnergy * band.gain;
-      weightedHue += band.hue * energy;
+      weightedHue += band.effectiveHue * energy;
       totalEnergy += energy;
     }
     if (totalEnergy > 0) audioTintHue = weightedHue / totalEnergy;
@@ -1214,7 +1302,7 @@
   // never from a no-mic Tone/Custom alternative.
   function getParticleEnergyAndHue(p) {
     const band = AUDIO_TINT_BANDS[p.bandIndex];
-    return { energy: band.rawEnergy, hue: band.hue };
+    return { energy: band.rawEnergy, hue: band.effectiveHue };
   }
 
   // Screen-space positions of the current scene attractors (see
@@ -3257,6 +3345,7 @@
       audioTintSmoothing,
       audioTintFftSize,
       audioTintUpdateMs,
+      scientificColourEnabled,
       audioTintExtraBandsVisible,
       ...audioTintBandsSnapshot(),
       beatFlashEnabled,
@@ -3298,6 +3387,7 @@
       audioTintSmoothing: AUDIO_TINT_DEFAULT_SMOOTHING,
       audioTintFftSize: AUDIO_TINT_DEFAULT_FFT_SIZE,
       audioTintUpdateMs: AUDIO_TINT_DEFAULT_UPDATE_MS,
+      scientificColourEnabled: false,
       audioTintExtraBandsVisible: false
     };
     AUDIO_TINT_BAND_DEFS.forEach((def) => {
@@ -3494,6 +3584,11 @@
         audioTintIntervalId = setInterval(audioAnalysisTick, audioTintUpdateMs);
       }
       saveAudioTintUpdateMsPref();
+    }
+    if (typeof s.scientificColourEnabled === "boolean") {
+      scientificColourEnabled = s.scientificColourEnabled;
+      scientificColourCheckbox.checked = scientificColourEnabled;
+      saveScientificColourPref();
     }
     if (typeof s.audioTintExtraBandsVisible === "boolean") {
       audioTintExtraBandsVisible = s.audioTintExtraBandsVisible;
@@ -3983,6 +4078,12 @@
   });
   audioTintUpdateMsSlider.value = String(audioTintUpdateMs);
   audioTintUpdateMsLabel.textContent = `${audioTintUpdateMs}ms`;
+
+  scientificColourCheckbox.addEventListener("change", () => {
+    scientificColourEnabled = scientificColourCheckbox.checked;
+    saveScientificColourPref();
+  });
+  scientificColourCheckbox.checked = scientificColourEnabled;
 
   audioTintExtraBandsCheckbox.addEventListener("change", () => {
     audioTintExtraBandsVisible = audioTintExtraBandsCheckbox.checked;
