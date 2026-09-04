@@ -86,6 +86,16 @@
   const EDGE_TONE_DEFAULT_MAX_HITS = 12;
   const EDGE_TONE_TEMPO_KEY = "edgeToneTempo_colorVision_v1";
   const EDGE_TONE_DEFAULT_TEMPO_BPM = 100;
+  // Pitch range: edge texture used to have no pitch at all -- every
+  // Melodic hit struck one fixed MIDI note, leaving its own timbre to
+  // carry the percussive character (chime and dominant tone always had
+  // real pitch; this made edge texture a pure drum machine rather than a
+  // sonification with the same abilities as the other two). Now density
+  // itself picks a pitch within a scale spanning this many octaves, the
+  // same way closeness/hue already pick pitch for chime/dominant tone --
+  // see EDGE_TONE_SCALE_HZ.
+  const EDGE_TONE_PITCH_RANGE_KEY = "edgeTonePitchRange_colorVision_v1";
+  const EDGE_TONE_DEFAULT_PITCH_RANGE_OCTAVES = 2;
   // Colour source for the chime: Saved (needs at least one calibrated
   // colour first, the original design) or Live (no setup needed at all --
   // reacts directly to how vivid the current on-screen colour already is).
@@ -460,6 +470,9 @@
   const edgeToneOutputSelect = document.getElementById("edgeToneOutputSelect");
   const edgeToneInstrumentWrap = document.getElementById("edgeToneInstrumentWrap");
   const edgeToneInstrumentSelect = document.getElementById("edgeToneInstrumentSelect");
+  const edgeTonePitchRangeWrap = document.getElementById("edgeTonePitchRangeWrap");
+  const edgeTonePitchRangeSlider = document.getElementById("edgeTonePitchRangeSlider");
+  const edgeTonePitchRangeLabel = document.getElementById("edgeTonePitchRangeLabel");
   const edgeToneMinHitsWrap = document.getElementById("edgeToneMinHitsWrap");
   const edgeToneMinHitsSlider = document.getElementById("edgeToneMinHitsSlider");
   const edgeToneMinHitsLabel = document.getElementById("edgeToneMinHitsLabel");
@@ -999,6 +1012,7 @@
       edgeToneStyle: "continuous",
       edgeToneOutput: "synth",
       edgeToneInstrument: "woodblock",
+      edgeTonePitchRange: EDGE_TONE_DEFAULT_PITCH_RANGE_OCTAVES,
       edgeToneMinHits: EDGE_TONE_DEFAULT_MIN_HITS,
       edgeToneMaxHits: EDGE_TONE_DEFAULT_MAX_HITS,
       edgeToneTempo: EDGE_TONE_DEFAULT_TEMPO_BPM,
@@ -4125,11 +4139,31 @@
       return GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "woodblock";
     } catch (e) { return "woodblock"; }
   })();
-  // Edge texture's ticks have no inherent pitch of their own (density
-  // doesn't map to a note) -- MIDI/Instrument modes always strike this one
-  // fixed note, letting the chosen instrument's own timbre carry the
-  // percussive character instead.
-  const EDGE_TONE_MIDI_NOTE = 60; // C4
+  // Edge texture's scale: chime uses a major-pentatonic scale rooted at
+  // C4, dominant tone the same shape rooted a tritone away at F#3
+  // (guaranteed zero pitch-class overlap with chime -- two 5-note scales
+  // fit that trick exactly). A THIRD 5-note scale can't also avoid both --
+  // 3x5=15 note-slots don't fit into 12 pitch classes, so a third
+  // pentatonic scale is mathematically guaranteed to reuse at least 3 of
+  // the 10 classes chime+dominant tone already claim. Rather than force a
+  // weak, barely-distinct pentatonic in the 2 leftover classes, edge
+  // texture uses a different scale SHAPE entirely -- a whole-tone scale
+  // (six equal whole-step degrees), which has a genuinely different,
+  // ambiguous/floaty character next to the other two's "happy" pentatonic
+  // sound -- and a different, lower register (D3), so it reads as its own
+  // distinct voice even where a pitch class does coincide.
+  const EDGE_TONE_WHOLE_TONE_DEGREES = [0, 2, 4, 6, 8, 10];
+  const EDGE_TONE_ROOT_HZ = 146.83; // D3
+  function buildWholeToneScaleHz(rootHz, rangeOctaves) {
+    const semis = [];
+    for (let oct = 0; oct < rangeOctaves; oct++) {
+      for (const d of EDGE_TONE_WHOLE_TONE_DEGREES) semis.push(d + oct * 12);
+    }
+    semis.push(rangeOctaves * 12); // top root, completing the span
+    return semis.map((st) => rootHz * Math.pow(2, st / 12));
+  }
+  let edgeTonePitchRangeOctaves = loadOutlineNumberPref(EDGE_TONE_PITCH_RANGE_KEY, EDGE_TONE_DEFAULT_PITCH_RANGE_OCTAVES);
+  let EDGE_TONE_SCALE_HZ = buildWholeToneScaleHz(EDGE_TONE_ROOT_HZ, edgeTonePitchRangeOctaves);
   let edgeToneAudioCtx = null;
   let edgeToneNoiseSrc = null;
   let edgeToneFilter = null;
@@ -4260,18 +4294,22 @@
   }
 
   // Rhythmic mode's single percussive hit -- a short one-shot filtered noise
-  // burst (its own buffer source + bandpass filter + gain, discarded after),
-  // brightness-filtered by density the same way the continuous drone's
-  // lowpass cutoff already is, so louder/busier still means brighter/busier.
-  function playEdgeTexTick(density) {
+  // burst (its own buffer source + bandpass filter + gain, discarded after).
+  // freq is the real pitch picked from EDGE_TONE_SCALE_HZ by density (see
+  // updateEdgeTexture) -- MIDI/Instrument now strike an actual note instead
+  // of a single fixed one, and the synth branch's bandpass centre frequency
+  // is built from that same pitch (scaled by density for brightness) so
+  // Pitch range audibly widens/narrows the synth's own texture too, not
+  // just the MIDI/Instrument outputs.
+  function playEdgeTexTick(density, freq) {
     const totalCents = edgeToneDetuneCents + randomCentsJitter(edgeToneRandomness, EDGE_TONE_RANDOMNESS_MAX_CENTS);
     if (edgeToneOutput === "midi") {
       const inst = GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === edgeToneInstrument) || GM_PERCUSSIVE_INSTRUMENTS.find((i) => i.folder === "woodblock");
-      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, EDGE_TONE_MIDI_NOTE, density, 150, totalCents);
+      playMidiNote(EDGE_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), density, 150, totalCents);
       return;
     }
     if (edgeToneOutput === "instrument") {
-      playInstrumentNote(edgeToneInstrument, EDGE_TONE_MIDI_NOTE, density * (edgeToneVolume / 100), 0.3, totalCents);
+      playInstrumentNote(edgeToneInstrument, hzToMidiNote(freq), density * (edgeToneVolume / 100), 0.3, totalCents);
       return;
     }
     const now = edgeToneAudioCtx.currentTime;
@@ -4284,9 +4322,11 @@
     const filter = edgeToneAudioCtx.createBiquadFilter();
     filter.type = "bandpass";
     // The synth branch's noise burst has no fixed pitch of its own, so its
-    // bandpass centre frequency stands in for "pitch" here -- the same
-    // Detune/Randomness cents shift that would otherwise bend a note.
-    filter.frequency.value = (400 + density * 4000) * centsToRateFactor(totalCents);
+    // bandpass centre frequency stands in for "pitch" here -- built from the
+    // same picked note (freq) that MIDI/Instrument would actually play,
+    // scaled up by density for extra brightness on busier hits, then the
+    // same Detune/Randomness cents shift that would otherwise bend a note.
+    filter.frequency.value = (freq * (1 + density * 3)) * centsToRateFactor(totalCents);
     filter.Q.value = 0.7;
     const gain = edgeToneAudioCtx.createGain();
     const peak = Math.max(0.001, (edgeToneVolume / 100) * density * 0.5);
@@ -4369,7 +4409,13 @@
     if (edgeToneRandomness > 0 && Math.random() * 100 < edgeToneRandomness * 0.3) hitHere = !hitHere;
     if (!hitHere) return;
     const accent = edgeToneStepIndex % 4 === 0 ? 1 : 0.7;
-    playEdgeTexTick(density * accent);
+    // Pitch: the same density driving how busy the pattern is also picks
+    // where in the scale this hit lands -- denser/edgier moments read as
+    // higher-pitched hits, calmer ones lower, the same "one real signal
+    // drives both rhythm and pitch" idea chime/dominant tone already use
+    // (closeness and hue), just fed by edge texture's own natural signal.
+    const pitchIndex = Math.min(EDGE_TONE_SCALE_HZ.length - 1, Math.floor(density * EDGE_TONE_SCALE_HZ.length));
+    playEdgeTexTick(density * accent, EDGE_TONE_SCALE_HZ[pitchIndex]);
   }
 
   function updateEdgeToneSamplingTimer() {
@@ -4423,11 +4469,15 @@
   function saveEdgeTonePatternPref() {
     try { localStorage.setItem(EDGE_TONE_PATTERN_KEY, edgeTonePattern); } catch (e) {}
   }
+  function saveEdgeTonePitchRangePref() {
+    try { localStorage.setItem(EDGE_TONE_PITCH_RANGE_KEY, String(edgeTonePitchRangeOctaves)); } catch (e) {}
+  }
 
   function updateEdgeToneOutputControlsVisibility() {
     const show = edgeToneEnabled && edgeToneStyle === "melodic";
     edgeToneOutputWrap.classList.toggle("hide", !show);
     edgeToneInstrumentWrap.classList.toggle("hide", !show || edgeToneOutput === "synth");
+    edgeTonePitchRangeWrap.classList.toggle("hide", !show);
     edgeToneMinHitsWrap.classList.toggle("hide", !show);
     edgeToneMaxHitsWrap.classList.toggle("hide", !show);
     edgeToneTempoWrap.classList.toggle("hide", !show);
@@ -4505,6 +4555,12 @@
     edgeToneBars = Math.max(1, Math.min(4, Math.round(next)));
     edgeToneBarIndex = 0;
     saveEdgeToneBarsPref();
+  }
+
+  function setEdgeTonePitchRange(next) {
+    edgeTonePitchRangeOctaves = Math.max(1, Math.min(3, Math.round(next)));
+    EDGE_TONE_SCALE_HZ = buildWholeToneScaleHz(EDGE_TONE_ROOT_HZ, edgeTonePitchRangeOctaves);
+    saveEdgeTonePitchRangePref();
   }
 
   function setEdgeTonePattern(next) {
@@ -4837,6 +4893,7 @@
       edgeToneStyle,
       edgeToneOutput,
       edgeToneInstrument,
+      edgeTonePitchRange: edgeTonePitchRangeOctaves,
       edgeToneMinHits,
       edgeToneMaxHits,
       edgeToneTempo: edgeToneTempoBpm,
@@ -5125,6 +5182,11 @@
     if (typeof s.edgeToneInstrument === "string" && GM_PERCUSSIVE_INSTRUMENTS.some((i) => i.folder === s.edgeToneInstrument)) {
       setEdgeToneInstrument(s.edgeToneInstrument);
       edgeToneInstrumentSelect.value = edgeToneInstrument;
+    }
+    if (Number.isFinite(s.edgeTonePitchRange)) {
+      setEdgeTonePitchRange(s.edgeTonePitchRange);
+      edgeTonePitchRangeSlider.value = String(edgeTonePitchRangeOctaves);
+      edgeTonePitchRangeLabel.textContent = String(edgeTonePitchRangeOctaves);
     }
     if (Number.isFinite(s.edgeToneMinHits)) {
       setEdgeToneMinHits(s.edgeToneMinHits);
@@ -5726,6 +5788,12 @@
   edgeToneOutputSelect.value = edgeToneOutput;
   edgeToneInstrumentSelect.addEventListener("change", () => setEdgeToneInstrument(edgeToneInstrumentSelect.value));
   edgeToneInstrumentSelect.value = edgeToneInstrument;
+  edgeTonePitchRangeSlider.addEventListener("input", () => {
+    setEdgeTonePitchRange(parseFloat(edgeTonePitchRangeSlider.value));
+    edgeTonePitchRangeLabel.textContent = String(edgeTonePitchRangeOctaves);
+  });
+  edgeTonePitchRangeSlider.value = String(edgeTonePitchRangeOctaves);
+  edgeTonePitchRangeLabel.textContent = String(edgeTonePitchRangeOctaves);
   edgeToneMinHitsSlider.addEventListener("input", () => {
     setEdgeToneMinHits(parseFloat(edgeToneMinHitsSlider.value));
     edgeToneMinHitsLabel.textContent = String(edgeToneMinHits);

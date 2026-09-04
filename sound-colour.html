@@ -678,7 +678,7 @@
       <option value="instrument">Instrument</option>
     </select>
   </label>
-  <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre).">
+  <label id="edgeToneInstrumentWrap" class="hud-slider hide" title="Which instrument strikes the tick -- real, percussive-flavoured General MIDI instruments (not the fixed drum kit, so each keeps its own distinct timbre), now played at a real pitch (see Pitch range) instead of one fixed note.">
     Instrument:
     <select id="edgeToneInstrumentSelect">
       <optgroup label="Percussive">
@@ -701,6 +701,10 @@
         <option value="gunshot">Gunshot</option>
       </optgroup>
     </select>
+  </label>
+  <label id="edgeTonePitchRangeWrap" class="hud-slider hide" title="How many octaves edge texture's own scale spans (a whole-tone scale rooted lower than the chime's or dominant tone's, for a genuinely different character) -- density itself picks a pitch within it, the same way closeness/hue already pick pitch for chime/dominant tone, so a hit is a real note now, not one fixed drum sound.">
+    Pitch range: <span id="edgeTonePitchRangeLabel">2</span> octave(s)
+    <input id="edgeTonePitchRangeSlider" type="range" min="1" max="3" step="1" value="2">
   </label>
   <label id="edgeToneMinHitsWrap" class="hud-slider hide" title="The fewest strikes the rhythm engine will ever spread across each 16-step bar, even for the calmest/flattest scenes -- raise this so quiet footage still produces a noticeable pulse instead of near-silence.">
     Min hits/bar: <span id="edgeToneMinHitsLabel">2</span>
