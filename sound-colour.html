@@ -501,6 +501,10 @@
       <option value="melodic">Melodic</option>
     </select>
   </label>
+  <label id="domToneScientificPitchWrap" class="hud-slider hide" title="Off: Continuous's frequency is a hand-picked 220-440Hz range, chosen purely because it's a comfortable octave. On: that frequency instead comes from the hue's own real spectral wavelength -- looked up against the same physics Scientific colour uses in reverse (wavelength -> real light frequency, folded down into this same 220-440Hz octave) -- so hue maps to a genuinely physically-derived pitch, not an arbitrary range. Hues with no real spectral wavelength at all (magenta/pink, and the purples between violet and red -- human vision perceives those as a mix of the spectrum's two ends, not a single wavelength) clamp to the nearest real spectral hue instead. Continuous only -- Melodic's whole design is picking a scale degree, not a raw frequency.">
+    <input id="domToneScientificPitchCheckbox" type="checkbox">
+    Scientific pitch (real hue &rarr; frequency)
+  </label>
   <label id="domToneOutputWrap" class="hud-slider hide" title="Applies to both styles now. Synth: the built-in oscillator. MIDI: sends real notes to a connected MIDI output -- Melodic plays discrete plucked notes, Continuous holds one note and pitch-bends it live, re-triggering only when it crosses a semitone (the default MIDI pitch-bend range can't cover a full octave). Instrument: real recorded General MIDI instrument samples -- Melodic plays discrete one-shots, Continuous loops one sample and continuously re-tunes its pitch, genuinely smoothly (no semitone limit).">
     Sound:
     <select id="domToneOutputSelect">

@@ -176,6 +176,11 @@
   // third, fifth, octave) rolls through it -- a groove of its own, not a
   // sustained tone bending pitch.
   const DOM_TONE_STYLE_KEY = "domToneStyle_colorVision_v1";
+  // Scientific pitch (Continuous only): replaces the hand-picked "220 +
+  // (hue/360)*220" frequency mapping with one derived from real physics --
+  // see hueToScientificFreqHz. The inverse of Scientific colour above (real
+  // frequency -> real hue); this is real hue -> real frequency.
+  const DOM_TONE_SCIENTIFIC_PITCH_KEY = "domToneScientificPitch_colorVision_v1";
   // Edge texture tone -- a third sonification channel: rather than colour,
   // this one tracks structural complexity (how much the scene's low-res
   // luminance grid varies cell-to-cell) as a filtered-noise texture --
@@ -456,6 +461,8 @@
   const domToneVolumeLabel = document.getElementById("domToneVolumeLabel");
   const domToneStyleWrap = document.getElementById("domToneStyleWrap");
   const domToneStyleSelect = document.getElementById("domToneStyleSelect");
+  const domToneScientificPitchWrap = document.getElementById("domToneScientificPitchWrap");
+  const domToneScientificPitchCheckbox = document.getElementById("domToneScientificPitchCheckbox");
   const domToneOutputWrap = document.getElementById("domToneOutputWrap");
   const domToneOutputSelect = document.getElementById("domToneOutputSelect");
   const domToneInstrumentWrap = document.getElementById("domToneInstrumentWrap");
@@ -873,6 +880,74 @@
     return rgb2hsl(r, g, b)[0];
   }
 
+  // ---- Scientific pitch: the reverse trip -- a real hue back to a real
+  // frequency (dominant tone's Continuous style; see
+  // domToneContinuousTargetFreqHz). Every step above has a working inverse
+  // except one: wavelengthToRgb01 is a piecewise approximation, not a closed
+  // form, so there's no algebraic formula to invert. Instead this samples it
+  // once across the whole visible range and picks whichever sampled
+  // wavelength's hue lands closest to the one actually wanted -- same
+  // physics, found by table lookup instead of solved for directly.
+  //
+  // That lookup has a genuine physical gap, not just an implementation one:
+  // wavelengthToRgb01(380..750) only ever produces hues from red round
+  // through violet -- it can't produce magenta/pink (roughly hue 300-345),
+  // because those aren't real spectral colours at all. Human vision
+  // perceives magenta as a mix of the spectrum's two ends (red + violet)
+  // with nothing in the middle, not as light of one wavelength -- there is
+  // no monochromatic source that looks magenta. A hue request that falls in
+  // that gap clamps to whichever real spectral endpoint (near-380nm violet
+  // or near-750nm red) is actually closest, rather than pretending a
+  // wavelength exists where physically none does.
+  //
+  // One more real limitation, again from wavelengthToRgb01 itself rather
+  // than this table: every wavelength past ~645nm comes out as flat, fully
+  // saturated red (g and b both already at 0) -- deep reds differ in
+  // intensity in reality, not in this model, and intensity isn't part of
+  // hue at all. They're genuinely tied on hue, so the lookup below just
+  // returns whichever of them it meets first; picking a different one among
+  // the ties wouldn't be more correct, only different.
+  const WAVELENGTH_HUE_TABLE = (() => {
+    const table = [];
+    for (let nm = 380; nm <= 750; nm++) {
+      const [r, g, b] = wavelengthToRgb01(nm);
+      table.push({ nm, hue: rgb2hsl(r, g, b)[0] });
+    }
+    return table;
+  })();
+
+  function hueToVisibleWavelengthNm(targetHue) {
+    let bestNm = WAVELENGTH_HUE_TABLE[0].nm;
+    let bestDist = Infinity;
+    for (const { nm, hue } of WAVELENGTH_HUE_TABLE) {
+      const dist = Math.abs(((hue - targetHue + 540) % 360) - 180); // circular hue distance
+      if (dist < bestDist) { bestDist = dist; bestNm = nm; }
+    }
+    return bestNm;
+  }
+
+  // Symmetric to foldFrequencyToVisibleHz, just the other direction: a real
+  // light frequency is always vastly higher than any audible one, so
+  // repeatedly halving it lands uniquely inside one target audible octave
+  // (loHz to 2*loHz) -- same "the octave is the one genuine bridge between
+  // domains" idea, just folding down instead of up.
+  function foldFrequencyDownToOctaveHz(freqHz, loHz) {
+    let f = freqHz;
+    while (f >= loHz * 2) f /= 2;
+    return f;
+  }
+
+  // The actual conversion Scientific pitch uses: a real hue, turned back
+  // into the real wavelength that (as closely as the table above allows)
+  // actually produces it, turned into that wavelength's real light
+  // frequency, folded down into one target audible octave -- physics, run
+  // in reverse, not a hand-picked frequency range chosen for how it sounds.
+  function hueToScientificFreqHz(targetHue, loHz) {
+    const nm = hueToVisibleWavelengthNm(targetHue);
+    const lightHz = SPEED_OF_LIGHT_M_S / (nm * 1e-9);
+    return foldFrequencyDownToOctaveHz(lightHz, loHz);
+  }
+
   function srgbToLinear(c) {
     return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   }
@@ -1014,6 +1089,7 @@
       domToneEnabled: false,
       domToneVolume: DOM_TONE_DEFAULT_VOLUME,
       domToneStyle: "continuous",
+      domToneScientificPitchEnabled: false,
       domToneOutput: "synth",
       domToneInstrument: "marimba",
       domToneRange: DOM_TONE_DEFAULT_RANGE_OCTAVES,
@@ -3671,6 +3747,18 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let domToneStyle = (() => {
     try { return localStorage.getItem(DOM_TONE_STYLE_KEY) === "melodic" ? "melodic" : "continuous"; } catch (e) { return "continuous"; }
   })();
+  let domToneScientificPitchEnabled = (() => {
+    try { return localStorage.getItem(DOM_TONE_SCIENTIFIC_PITCH_KEY) === "1"; } catch (e) { return false; }
+  })();
+  // Continuous style's target frequency -- the arbitrary "220 +
+  // (hue/360)*220" range chosen purely because it's a comfortable, audible
+  // octave, or (with Scientific pitch on) one derived from the hue's real
+  // spectral wavelength instead (see hueToScientificFreqHz). Shared by all
+  // three outputs (synth, MIDI, Instrument) so Scientific pitch affects all
+  // of them identically instead of just one.
+  function domToneContinuousTargetFreqHz(hue) {
+    return domToneScientificPitchEnabled ? hueToScientificFreqHz(hue, 220) : 220 + (hue / 360) * 220;
+  }
   let domToneOutput = (() => {
     try {
       const raw = localStorage.getItem(DOM_TONE_OUTPUT_KEY);
@@ -3821,7 +3909,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       return;
     }
     const [h] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
-    const targetFreq = 220 + (h / 360) * 220;
+    const targetFreq = domToneContinuousTargetFreqHz(h);
     // Detune folds into the note position itself (not just a bend offset),
     // so it's still represented even across a base-note change.
     const exactMidiNote = hzToMidiNote(targetFreq) + domToneDetuneCents / 100;
@@ -3898,7 +3986,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       return;
     }
     const [h] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
-    const targetFreq = 220 + (h / 360) * 220;
+    const targetFreq = domToneContinuousTargetFreqHz(h);
     const targetMidiNote = hzToMidiNote(targetFreq);
     const rate = Math.pow(2, (targetMidiNote - domToneContinuousInstrumentBaseMidiNote) / 12) * centsToRateFactor(domToneDetuneCents);
     const now = instrumentAudioCtx.currentTime;
@@ -3933,7 +4021,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       // SONIFICATION_CONTINUOUS_PEAK with edge texture's continuous style
       // instead of being quieter by default just because of a stale
       // per-channel constant).
-      const targetFreq = (220 + (h / 360) * 220) * centsToRateFactor(domToneDetuneCents);
+      const targetFreq = domToneContinuousTargetFreqHz(h) * centsToRateFactor(domToneDetuneCents);
       const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * SONIFICATION_CONTINUOUS_PEAK;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
@@ -4017,6 +4105,9 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   function saveDomToneStylePref() {
     try { localStorage.setItem(DOM_TONE_STYLE_KEY, domToneStyle); } catch (e) {}
   }
+  function saveDomToneScientificPitchPref() {
+    try { localStorage.setItem(DOM_TONE_SCIENTIFIC_PITCH_KEY, domToneScientificPitchEnabled ? "1" : "0"); } catch (e) {}
+  }
   function saveDomToneOutputPref() {
     try { localStorage.setItem(DOM_TONE_OUTPUT_KEY, domToneOutput); } catch (e) {}
   }
@@ -4050,12 +4141,14 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   function updateDomToneOutputControlsVisibility() {
     const outputShow = domToneEnabled;
     const melodicShow = domToneEnabled && domToneStyle === "melodic";
+    const continuousShow = domToneEnabled && domToneStyle === "continuous";
     domToneOutputWrap.classList.toggle("hide", !outputShow);
     domToneInstrumentWrap.classList.toggle("hide", !outputShow || domToneOutput === "synth");
     domToneRangeWrap.classList.toggle("hide", !melodicShow);
     domToneTempoWrap.classList.toggle("hide", !melodicShow);
     domToneRandomnessWrap.classList.toggle("hide", !melodicShow);
     domTonePatternWrap.classList.toggle("hide", !melodicShow);
+    domToneScientificPitchWrap.classList.toggle("hide", !continuousShow);
     domToneDetuneWrap.classList.toggle("hide", !domToneEnabled);
   }
 
@@ -4949,6 +5042,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       domToneEnabled,
       domToneVolume,
       domToneStyle,
+      domToneScientificPitchEnabled,
       domToneOutput,
       domToneInstrument,
       domToneRange: domToneRangeOctaves,
@@ -5197,6 +5291,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     if (s.domToneStyle === "continuous" || s.domToneStyle === "melodic") {
       setDomToneStyle(s.domToneStyle);
       domToneStyleSelect.value = domToneStyle;
+    }
+    if (typeof s.domToneScientificPitchEnabled === "boolean") {
+      domToneScientificPitchEnabled = s.domToneScientificPitchEnabled;
+      domToneScientificPitchCheckbox.checked = domToneScientificPitchEnabled;
+      saveDomToneScientificPitchPref();
     }
     if (s.domToneOutput === "synth" || s.domToneOutput === "midi" || s.domToneOutput === "instrument") {
       setDomToneOutput(s.domToneOutput);
@@ -5805,6 +5904,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   domToneVolumeLabel.textContent = `${domToneVolume}%`;
   domToneStyleSelect.addEventListener("change", () => setDomToneStyle(domToneStyleSelect.value));
   domToneStyleSelect.value = domToneStyle;
+  domToneScientificPitchCheckbox.addEventListener("change", () => {
+    domToneScientificPitchEnabled = domToneScientificPitchCheckbox.checked;
+    saveDomToneScientificPitchPref();
+  });
+  domToneScientificPitchCheckbox.checked = domToneScientificPitchEnabled;
   domToneOutputSelect.addEventListener("change", () => setDomToneOutput(domToneOutputSelect.value));
   domToneOutputSelect.value = domToneOutput;
   domToneInstrumentSelect.addEventListener("change", () => setDomToneInstrument(domToneInstrumentSelect.value));
