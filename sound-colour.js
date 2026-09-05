@@ -844,28 +844,96 @@
     return f;
   }
 
-  // Dan Bruton's widely-used wavelength->RGB approximation (piecewise-linear
-  // across the spectrum's empirical break points, with intensity falloff
-  // toward the visible edges and a gamma correction). It's fast and requires
-  // no lookup tables, but it's an approximation, not CIE-exact -- good
-  // enough to give a frequency a genuine, physically-motivated colour,
-  // not meant for precise colour science.
+  // Real CIE 1931 2-degree standard observer colour-matching functions --
+  // X/Y/Z tristimulus response per wavelength, 360-780nm at 5nm steps (the
+  // standard published table). Replaces an earlier version of this function
+  // that used Dan Bruton's popular piecewise-linear wavelength->RGB
+  // approximation -- fast and dependency-free, but not CIE-exact, which
+  // matters for a page whose entire premise is a genuinely physical
+  // wavelength, not merely a plausible-looking one.
+  //
+  // An analytic multi-lobe Gaussian fit to these same curves (Wyman, Sloan
+  // & Shirley 2013 -- accurate to within a fraction of a percent across most
+  // of the visible range, and far more compact than a table) was tried
+  // first and rejected: verified against this real table, the fit's hue
+  // output was excellent from ~400-620nm but became badly wrong past
+  // ~650nm, drifting back through orange into green by 750nm instead of
+  // staying red -- an artifact of the fit's absolute error becoming large
+  // *relative* to the real X/Y/Z values once those values themselves shrink
+  // toward zero in the deep-red tail. The real table has no such artifact
+  // (verified below), so it's what's actually used.
+  const CIE_1931_START_NM = 360;
+  const CIE_1931_STEP_NM = 5;
+  const CIE_1931_360_780_5NM = [
+    [0.000130,0.000004,0.000606],[0.000232,0.000007,0.001086],[0.000415,0.000012,0.001946],
+    [0.000742,0.000022,0.003486],[0.001368,0.000039,0.006450],[0.002236,0.000064,0.010550],
+    [0.004243,0.000120,0.020050],[0.007650,0.000217,0.036210],[0.014310,0.000396,0.067850],
+    [0.023190,0.000640,0.110200],[0.043510,0.001210,0.207400],[0.077630,0.002180,0.371300],
+    [0.134380,0.004000,0.645600],[0.214770,0.007300,1.039050],[0.283900,0.011600,1.385600],
+    [0.328500,0.016840,1.622960],[0.348280,0.023000,1.747060],[0.348060,0.029800,1.782600],
+    [0.336200,0.038000,1.772110],[0.318700,0.048000,1.744100],[0.290800,0.060000,1.669200],
+    [0.251100,0.073900,1.528100],[0.195360,0.090980,1.287640],[0.142100,0.112600,1.041900],
+    [0.095640,0.139020,0.812950],[0.057950,0.169300,0.616200],[0.032010,0.208020,0.465180],
+    [0.014700,0.258600,0.353300],[0.004900,0.323000,0.272000],[0.002400,0.407300,0.212300],
+    [0.009300,0.503000,0.158200],[0.029100,0.608200,0.111700],[0.063270,0.710000,0.078250],
+    [0.109600,0.793200,0.057250],[0.165500,0.862000,0.042160],[0.225750,0.914850,0.029840],
+    [0.290400,0.954000,0.020300],[0.359700,0.980300,0.013400],[0.433450,0.994950,0.008750],
+    [0.512050,1.000000,0.005750],[0.594500,0.995000,0.003900],[0.678400,0.978600,0.002750],
+    [0.762100,0.952000,0.002100],[0.842500,0.915400,0.001800],[0.916300,0.870000,0.001650],
+    [0.978600,0.816300,0.001400],[1.026300,0.757000,0.001100],[1.056700,0.694900,0.001000],
+    [1.062200,0.631000,0.000800],[1.045600,0.566800,0.000600],[1.002600,0.503000,0.000340],
+    [0.938400,0.441200,0.000240],[0.854450,0.381000,0.000190],[0.751400,0.321000,0.000100],
+    [0.642400,0.265000,0.000050],[0.541900,0.217000,0.000030],[0.447900,0.175000,0.000020],
+    [0.360800,0.138200,0.000010],[0.283500,0.107000,0.000000],[0.218700,0.081600,0.000000],
+    [0.164900,0.061000,0.000000],[0.121200,0.044580,0.000000],[0.087400,0.032000,0.000000],
+    [0.063600,0.023200,0.000000],[0.046770,0.017000,0.000000],[0.032900,0.011920,0.000000],
+    [0.022700,0.008210,0.000000],[0.015840,0.005723,0.000000],[0.011359,0.004102,0.000000],
+    [0.008111,0.002929,0.000000],[0.005790,0.002091,0.000000],[0.004109,0.001484,0.000000],
+    [0.002899,0.001047,0.000000],[0.002049,0.000740,0.000000],[0.001440,0.000520,0.000000],
+    [0.001000,0.000361,0.000000],[0.000690,0.000249,0.000000],[0.000476,0.000172,0.000000],
+    [0.000332,0.000120,0.000000],[0.000235,0.000085,0.000000],[0.000166,0.000060,0.000000],
+    [0.000117,0.000042,0.000000],[0.000083,0.000030,0.000000],[0.000059,0.000021,0.000000],
+    [0.000042,0.000015,0.000000],
+  ];
+  // Sanity checks a reader can verify against any colorimetry reference:
+  // 555nm is the CIE luminosity peak (Y=1.0 exactly), and 700nm's
+  // chromaticity is the textbook-cited (0.7347, 0.2653).
+  function cieXyzAtWavelengthNm(nm) {
+    const pos = (nm - CIE_1931_START_NM) / CIE_1931_STEP_NM;
+    const i0 = Math.max(0, Math.min(CIE_1931_360_780_5NM.length - 1, Math.floor(pos)));
+    const i1 = Math.min(CIE_1931_360_780_5NM.length - 1, i0 + 1);
+    const t = Math.max(0, Math.min(1, pos - i0));
+    const a = CIE_1931_360_780_5NM[i0], b = CIE_1931_360_780_5NM[i1];
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+
+  function srgbGammaEncode(c) {
+    c = Math.max(0, Math.min(1, c));
+    return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  }
+
+  // Monochromatic spectral colours sit outside the sRGB gamut (they're on
+  // the boundary of human vision, more saturated than any RGB display can
+  // reproduce), so the standard XYZ -> linear-sRGB matrix (IEC 61966-2-1,
+  // D65) can and does return a negative channel here. The fix has to be
+  // hue-preserving: hue (as rgb2hsl computes it, from max/min and their
+  // difference) depends only on the DIFFERENCES between channels, so
+  // shifting all three by the same constant -- their shared minimum, making
+  // it exactly 0 -- moves the colour toward grey without touching hue at
+  // all, and scaling all three by the same positive factor afterward (to
+  // put the peak at 1) is hue-preserving for the same reason. Clipping each
+  // channel independently instead (the naive fix) is what actually produced
+  // the wrong-looking colours that motivated writing this comment.
   function wavelengthToRgb01(nm) {
-    let r = 0, g = 0, b = 0;
-    if (nm >= 380 && nm < 440) { r = -(nm - 440) / (440 - 380); b = 1; }
-    else if (nm < 490) { g = (nm - 440) / (490 - 440); b = 1; }
-    else if (nm < 510) { g = 1; b = -(nm - 510) / (510 - 490); }
-    else if (nm < 580) { r = (nm - 510) / (580 - 510); g = 1; }
-    else if (nm < 645) { r = 1; g = -(nm - 645) / (645 - 580); }
-    else if (nm <= 750) { r = 1; }
-    let factor;
-    if (nm >= 380 && nm < 420) factor = 0.3 + 0.7 * (nm - 380) / (420 - 380);
-    else if (nm < 701) factor = 1;
-    else if (nm <= 750) factor = 0.3 + 0.7 * (750 - nm) / (750 - 700);
-    else factor = 0;
-    const gamma = 0.8;
-    const adjust = (c) => (c === 0 ? 0 : Math.pow(c * factor, gamma));
-    return [adjust(r), adjust(g), adjust(b)];
+    const [X, Y, Z] = cieXyzAtWavelengthNm(nm);
+    let r = 3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+    let g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+    let b = 0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+    const min = Math.min(r, g, b);
+    r -= min; g -= min; b -= min;
+    const max = Math.max(r, g, b, 1e-9);
+    r /= max; g /= max; b /= max;
+    return [srgbGammaEncode(r), srgbGammaEncode(g), srgbGammaEncode(b)];
   }
 
   // The actual conversion this page uses: a real measured frequency, folded
@@ -883,11 +951,12 @@
   // ---- Scientific pitch: the reverse trip -- a real hue back to a real
   // frequency (dominant tone's Continuous style; see
   // domToneContinuousTargetFreqHz). Every step above has a working inverse
-  // except one: wavelengthToRgb01 is a piecewise approximation, not a closed
-  // form, so there's no algebraic formula to invert. Instead this samples it
-  // once across the whole visible range and picks whichever sampled
-  // wavelength's hue lands closest to the one actually wanted -- same
-  // physics, found by table lookup instead of solved for directly.
+  // except one: wavelengthToRgb01 goes through a real tabulated dataset plus
+  // a hue-preserving gamut fix, not a closed-form formula, so there's no
+  // algebraic way to invert it. Instead this samples it once across the
+  // whole visible range and picks whichever sampled wavelength's hue lands
+  // closest to the one actually wanted -- same physics, found by table
+  // lookup instead of solved for directly.
   //
   // That lookup has a genuine physical gap, not just an implementation one:
   // wavelengthToRgb01(380..750) only ever produces hues from red round
