@@ -3801,6 +3801,26 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     return semis.map((st) => rootHz * Math.pow(2, st / 12));
   }
   let DOM_TONE_SCALE_HZ = buildPentatonicScaleHz(DOM_TONE_ROOT_HZ, domToneRangeOctaves);
+  // Scientific pitch's Melodic scale: equal temperament's semitone steps are
+  // themselves a chosen-for-convenience compromise, not a physical ratio
+  // (a "fifth" is really 2^(7/12) ~= 1.4983, not exactly 1.5) -- just
+  // intonation instead uses the small-integer frequency ratios that
+  // actually are physically consonant (a real perfect fifth beats at
+  // exactly 3:2). Reuses DOM_TONE_CHORD_OFFSETS ([0,2,4,7]) unchanged as
+  // indices into this 7-degree scale instead of the 5-degree pentatonic
+  // one -- which happens to land those same four index positions on
+  // unison/major third/perfect fifth/octave exactly, the chord shape the
+  // equal-tempered version's own comment already claimed but (built off a
+  // 5-note scale with wraparound) never actually landed precisely.
+  const DOM_TONE_JI_DEGREE_RATIOS = [1, 9 / 8, 5 / 4, 4 / 3, 3 / 2, 5 / 3, 15 / 8];
+  function buildJustIntonationScaleHz(rootHz, rangeOctaves) {
+    const freqs = [];
+    for (let oct = 0; oct < rangeOctaves; oct++) {
+      for (const ratio of DOM_TONE_JI_DEGREE_RATIOS) freqs.push(rootHz * ratio * Math.pow(2, oct));
+    }
+    freqs.push(rootHz * Math.pow(2, rangeOctaves)); // top root, completing the span
+    return freqs;
+  }
   // Tempo: ms per arpeggio step, converted to a whole number of the shared
   // 150ms sampling ticks (so it stays aligned with when density is
   // actually resampled) -- defaults to every 3rd tick (~450ms), slow
@@ -4036,12 +4056,23 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const arpTicks = Math.max(1, Math.round(domToneTempoMs / 150));
     if (domToneArpTickCount < arpTicks) return;
     domToneArpTickCount = 0;
+    // Scientific pitch: the hue already picks a real, physically-derived
+    // root frequency directly (see hueToScientificFreqHz) instead of a
+    // scale-degree index, so rootIndex is always 0 here -- the "scale"
+    // itself is rebuilt every tick around that moving root, using real
+    // just-intonation ratios (see buildJustIntonationScaleHz) instead of
+    // the fixed equal-tempered pentatonic table. Everything below this
+    // point (chord offsets, Pattern, Randomness) works identically either
+    // way -- only which scale array/root it's indexing into changes.
+    const activeScaleHz = domToneScientificPitchEnabled
+      ? buildJustIntonationScaleHz(hueToScientificFreqHz(h, DOM_TONE_ROOT_HZ), domToneRangeOctaves)
+      : DOM_TONE_SCALE_HZ;
     // At Range=1 octave, the scale is short enough that the chord's own
     // span (offsets up to +7) can't fit above every root position -- clamp
     // rootIndex so rootIndex+offset always lands inside the scale, instead
     // of the naive division going negative and producing a NaN frequency.
-    const maxRootIndex = Math.max(0, DOM_TONE_SCALE_HZ.length - 1 - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]);
-    const rootIndex = Math.min(maxRootIndex, Math.floor((h / 360) * (maxRootIndex + 1)));
+    const maxRootIndex = Math.max(0, activeScaleHz.length - 1 - DOM_TONE_CHORD_OFFSETS[DOM_TONE_CHORD_OFFSETS.length - 1]);
+    const rootIndex = domToneScientificPitchEnabled ? 0 : Math.min(maxRootIndex, Math.floor((h / 360) * (maxRootIndex + 1)));
     let playedIndex;
     if (domTonePattern === "drone_pulse") {
       // Repeats the hue-picked root note rhythmically instead of cycling
@@ -4060,7 +4091,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       } else {
         step = Math.random() < 0.5 ? -1 : 1;
       }
-      domToneWalkIndex = Math.max(0, Math.min(DOM_TONE_SCALE_HZ.length - 1, domToneWalkIndex + step));
+      domToneWalkIndex = Math.max(0, Math.min(activeScaleHz.length - 1, domToneWalkIndex + step));
       playedIndex = domToneWalkIndex;
       domToneArpStep++;
     } else {
@@ -4068,7 +4099,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       // hue-picked root -- the original behaviour, bit-for-bit unchanged.
       const offset = DOM_TONE_CHORD_OFFSETS[domToneArpStep % DOM_TONE_CHORD_OFFSETS.length];
       domToneArpStep++;
-      const noteIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + offset);
+      const noteIndex = Math.min(activeScaleHz.length - 1, rootIndex + offset);
       // Randomness (0 by default -- deterministic, unchanged) can substitute
       // the arpeggio's fixed chord-offset sequence with any other tone from
       // the same chord shape, at up to a 60% chance scaled by the Randomness
@@ -4077,10 +4108,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       playedIndex = noteIndex;
       if (domToneRandomness > 0 && Math.random() * 100 < domToneRandomness * 0.6) {
         const randOffset = DOM_TONE_CHORD_OFFSETS[Math.floor(Math.random() * DOM_TONE_CHORD_OFFSETS.length)];
-        playedIndex = Math.min(DOM_TONE_SCALE_HZ.length - 1, rootIndex + randOffset);
+        playedIndex = Math.min(activeScaleHz.length - 1, rootIndex + randOffset);
       }
     }
-    playDomTonePadNote(DOM_TONE_SCALE_HZ[playedIndex], Math.min(1, l * 1.3));
+    playDomTonePadNote(activeScaleHz[playedIndex], Math.min(1, l * 1.3));
   }
 
   function updateDomToneSamplingTimer() {
@@ -4141,14 +4172,16 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   function updateDomToneOutputControlsVisibility() {
     const outputShow = domToneEnabled;
     const melodicShow = domToneEnabled && domToneStyle === "melodic";
-    const continuousShow = domToneEnabled && domToneStyle === "continuous";
     domToneOutputWrap.classList.toggle("hide", !outputShow);
     domToneInstrumentWrap.classList.toggle("hide", !outputShow || domToneOutput === "synth");
     domToneRangeWrap.classList.toggle("hide", !melodicShow);
     domToneTempoWrap.classList.toggle("hide", !melodicShow);
     domToneRandomnessWrap.classList.toggle("hide", !melodicShow);
     domTonePatternWrap.classList.toggle("hide", !melodicShow);
-    domToneScientificPitchWrap.classList.toggle("hide", !continuousShow);
+    // Applies to both styles now (Continuous's held frequency, Melodic's
+    // chord root/scale) -- see domToneContinuousTargetFreqHz and
+    // updateDominantColorTone's Melodic branch.
+    domToneScientificPitchWrap.classList.toggle("hide", !domToneEnabled);
     domToneDetuneWrap.classList.toggle("hide", !domToneEnabled);
   }
 
