@@ -555,6 +555,13 @@
   const deletePointBtn = document.getElementById("deletePointBtn");
   const closeTuneBtn = document.getElementById("closeTuneBtn");
 
+  const takesBtn = document.getElementById("takesBtn");
+  const takesCount = document.getElementById("takesCount");
+  const takesPanel = document.getElementById("takesPanel");
+  const takesList = document.getElementById("takesList");
+  const takesEmptyHint = document.getElementById("takesEmptyHint");
+  const closeTakesBtn = document.getElementById("closeTakesBtn");
+
   const pointsPanel = document.getElementById("pointsPanel");
   const pointsGrid = document.getElementById("pointsGrid");
   const pointsHint = document.getElementById("pointsHint");
@@ -4922,6 +4929,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     tunePanel.classList.add("hide");
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
+    takesPanel.classList.add("hide");
   }
 
   function openTuneForNewPoint(sourceColor, returnFocusEl = calibrateBtn) {
@@ -6394,6 +6402,267 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     recordingIndicatorTime.textContent = `${mm}:${ss}`;
   }
 
+  // Recordings persist as a real list (Takes, same idea as Video
+  // Production's own) instead of firing one instant download and being
+  // forgotten -- metadata survives a reload; the video blob itself only
+  // lasts this tab session, the same real limitation Video Production's
+  // Takes have (a blob URL doesn't survive one).
+  const TAKES_META_KEY = "scTakesMeta_v1";
+  const takesInMemory = []; // {meta, videoUrl}
+
+  function loadTakesMeta() {
+    try {
+      const raw = localStorage.getItem(TAKES_META_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function saveTakesMeta(list) {
+    try { localStorage.setItem(TAKES_META_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+
+  // ============================================================
+  // WebM duration fix -- identical to Video Production's own (see that
+  // page's fixWebmDuration for the full reasoning): MediaRecorder's WebM
+  // muxer never writes a Duration element at all, so video.duration reads
+  // Infinity and external editors trim against whatever fallback they
+  // invent for "unknown". Patches a real, JS-timed duration in after the
+  // fact -- bails out (returns null, caller keeps the original bytes)
+  // rather than guess if anything looks unexpected.
+  // ============================================================
+  const EBML_SEGMENT_ID = 0x18538067;
+  const EBML_INFO_ID = 0x1549A966;
+  const EBML_TIMECODE_SCALE_ID = 0x2AD7B1;
+  const EBML_DURATION_ID = 0x4489;
+  const EBML_SEEKHEAD_ID = 0x114D9B74;
+  const EBML_CUES_ID = 0x1C53BB6B;
+
+  function ebmlReadVint(bytes, offset, keepMarker) {
+    const first = bytes[offset];
+    let length = 1, mask = 0x80;
+    while (length <= 8 && !(first & mask)) { length++; mask >>= 1; }
+    if (length > 8 || offset + length > bytes.length) return null;
+    let value = keepMarker ? first : (first & (mask - 1));
+    for (let i = 1; i < length; i++) value = value * 256 + bytes[offset + i];
+    return { value, length };
+  }
+
+  function ebmlSizeVintCapacity(width) { return Math.pow(2, 7 * width) - 2; }
+
+  function ebmlEncodeSizeVint(value, width) {
+    const out = new Uint8Array(width);
+    let v = value;
+    for (let i = width - 1; i >= 0; i--) { out[i] = v & 0xff; v = Math.floor(v / 256); }
+    out[0] |= (0x80 >> (width - 1));
+    return out;
+  }
+
+  function fixWebmDuration(bytes, durationMs) {
+    if (!(durationMs > 0) || !Number.isFinite(durationMs)) return null;
+
+    let offset = 0, segmentDataStart = -1;
+    while (offset < bytes.length) {
+      const idInfo = ebmlReadVint(bytes, offset, true);
+      if (!idInfo) return null;
+      const sizeOffset = offset + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) return null;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_SEGMENT_ID) { segmentDataStart = dataStart; break; }
+      if (!Number.isFinite(sizeInfo.value)) return null;
+      offset = dataStart + sizeInfo.value;
+    }
+    if (segmentDataStart === -1) return null;
+
+    let o = segmentDataStart;
+    let infoSizeVintStart = -1, infoSizeVintWidth = -1, infoDataStart = -1, infoDataSize = -1;
+    while (o < bytes.length - 1) {
+      const idInfo = ebmlReadVint(bytes, o, true);
+      if (!idInfo) break;
+      const sizeOffset = o + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) break;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_SEEKHEAD_ID || idInfo.value === EBML_CUES_ID) return null;
+      if (idInfo.value === EBML_INFO_ID) {
+        infoSizeVintStart = sizeOffset;
+        infoSizeVintWidth = sizeInfo.length;
+        infoDataStart = dataStart;
+        infoDataSize = sizeInfo.value;
+      }
+      if (!Number.isFinite(sizeInfo.value)) break; // an unknown-size Cluster — nothing past it matters here
+      o = dataStart + sizeInfo.value;
+    }
+    if (infoDataStart === -1) return null;
+
+    let timecodeScaleNs = 1000000; // EBML default when TimecodeScale is absent
+    let existingDuration = null;
+    let io = infoDataStart;
+    const infoDataEnd = infoDataStart + infoDataSize;
+    while (io < infoDataEnd) {
+      const idInfo = ebmlReadVint(bytes, io, true);
+      if (!idInfo) break;
+      const sizeOffset = io + idInfo.length;
+      const sizeInfo = ebmlReadVint(bytes, sizeOffset, false);
+      if (!sizeInfo) break;
+      const dataStart = sizeOffset + sizeInfo.length;
+      if (idInfo.value === EBML_TIMECODE_SCALE_ID) {
+        let v = 0;
+        for (let i = 0; i < sizeInfo.value; i++) v = v * 256 + bytes[dataStart + i];
+        timecodeScaleNs = v;
+      }
+      if (idInfo.value === EBML_DURATION_ID) existingDuration = { dataStart, size: sizeInfo.value };
+      io = dataStart + sizeInfo.value;
+    }
+
+    const durationUnits = (durationMs * 1e6) / timecodeScaleNs;
+    const durationBytes = new Uint8Array(8);
+    new DataView(durationBytes.buffer).setFloat64(0, durationUnits, false);
+
+    if (existingDuration) {
+      if (existingDuration.size !== 8 && existingDuration.size !== 4) return null;
+      const out = bytes.slice();
+      if (existingDuration.size === 8) {
+        out.set(durationBytes, existingDuration.dataStart);
+      } else {
+        const f32 = new Uint8Array(4);
+        new DataView(f32.buffer).setFloat32(0, durationUnits, false);
+        out.set(f32, existingDuration.dataStart);
+      }
+      return out;
+    }
+
+    const durationElement = new Uint8Array(11); // 2-byte ID + 1-byte size(8) + 8-byte float
+    durationElement.set([0x44, 0x89, 0x88], 0);
+    durationElement.set(durationBytes, 3);
+    const newInfoSize = infoDataSize + durationElement.length;
+    if (newInfoSize > ebmlSizeVintCapacity(infoSizeVintWidth)) return null;
+    const newSizeVint = ebmlEncodeSizeVint(newInfoSize, infoSizeVintWidth);
+
+    const out = new Uint8Array(bytes.length + durationElement.length);
+    let w = 0;
+    out.set(bytes.subarray(0, infoSizeVintStart), w); w += infoSizeVintStart;
+    out.set(newSizeVint, w); w += newSizeVint.length;
+    out.set(durationElement, w); w += durationElement.length;
+    out.set(bytes.subarray(infoDataStart), w);
+    return out;
+  }
+
+  function extensionForVideoMime(type) {
+    return type && type.includes("mp4") ? "mp4" : "webm";
+  }
+
+  function updateTakesCount() {
+    takesCount.textContent = String(loadTakesMeta().length);
+  }
+
+  function makeTakeActions(meta, videoUrl) {
+    const actions = document.createElement("div");
+    actions.className = "take-actions";
+    if (videoUrl) {
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.className = "hud-btn reticle-btn-secondary";
+      downloadBtn.textContent = "Download";
+      downloadBtn.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = videoUrl;
+        a.download = `sound-colour-take-${meta.id}.${extensionForVideoMime(meta.videoMimeType)}`;
+        a.addEventListener("click", (e) => e.stopPropagation());
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+      actions.appendChild(downloadBtn);
+    }
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "hud-btn reticle-btn-secondary";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", () => deleteTake(meta.id));
+    actions.appendChild(deleteBtn);
+    return actions;
+  }
+
+  function takeInfoHtml(meta) {
+    const channelsText = meta.channelsUsed.length ? meta.channelsUsed.join(", ") : "none";
+    return `<strong>${new Date(meta.startedAt).toLocaleString()}</strong><br>${(meta.duration / 1000).toFixed(1)}s &middot; ${meta.hasAudio ? "with audio (" + channelsText + ")" : "silent"}`;
+  }
+
+  function renderTakesList() {
+    takesList.innerHTML = "";
+    const anyTakes = takesInMemory.length > 0 || loadTakesMeta().length > 0;
+    takesEmptyHint.classList.toggle("hide", anyTakes);
+    takesInMemory.slice().reverse().forEach(({ meta, videoUrl }) => {
+      const card = document.createElement("div");
+      card.className = "take-card";
+      const v = document.createElement("video");
+      v.src = videoUrl;
+      v.controls = true;
+      v.playsInline = true;
+      const info = document.createElement("div");
+      info.className = "take-info";
+      info.innerHTML = takeInfoHtml(meta);
+      card.append(v, info, makeTakeActions(meta, videoUrl));
+      takesList.appendChild(card);
+    });
+    // Metadata from a prior session -- the video blob itself doesn't
+    // survive a reload (a blob: URL only lives as long as the tab that
+    // created it), so these render info-only, no player and no download.
+    const persistedOnly = loadTakesMeta().filter((m) => !takesInMemory.some((k) => k.meta.id === m.id));
+    persistedOnly.slice().reverse().forEach((meta) => {
+      const card = document.createElement("div");
+      card.className = "take-card take-card-novideo";
+      const info = document.createElement("div");
+      info.className = "take-info";
+      info.innerHTML = takeInfoHtml(meta) + "<br>video not kept across reloads";
+      card.append(info, makeTakeActions(meta, null));
+      takesList.appendChild(card);
+    });
+    updateTakesCount();
+  }
+
+  function deleteTake(id) {
+    const idx = takesInMemory.findIndex((k) => k.meta.id === id);
+    if (idx !== -1) {
+      URL.revokeObjectURL(takesInMemory[idx].videoUrl);
+      takesInMemory.splice(idx, 1);
+    }
+    saveTakesMeta(loadTakesMeta().filter((m) => m.id !== id));
+    renderTakesList();
+  }
+
+  async function onRecordingStopped(recordingMimeTypeAtStart, channelsUsedAtStart, startedAtIso, durationMs) {
+    teardownRecordingMixdown();
+    let videoMimeType = recordedChunks[0] ? recordedChunks[0].type : recordingMimeTypeAtStart;
+    let blob = new Blob(recordedChunks, { type: videoMimeType });
+    recordedChunks = [];
+    if (blob.size === 0) {
+      showCameraStatus("Recording produced no data — try again.");
+      return;
+    }
+    if (videoMimeType.indexOf("webm") !== -1) {
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const fixed = fixWebmDuration(bytes, durationMs);
+        if (fixed) blob = new Blob([fixed], { type: videoMimeType });
+      } catch (e) { /* keep the original, unpatched blob */ }
+    }
+    const url = URL.createObjectURL(blob);
+    const meta = {
+      id: "take_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      startedAt: startedAtIso,
+      duration: durationMs,
+      videoMimeType,
+      hasAudio: channelsUsedAtStart.length > 0,
+      channelsUsed: channelsUsedAtStart
+    };
+    takesInMemory.push({ meta, videoUrl: url });
+    const persisted = loadTakesMeta();
+    persisted.push(meta);
+    saveTakesMeta(persisted);
+    renderTakesList();
+  }
+
   function startRecording() {
     if (isRecording || !gl || typeof stage.captureStream !== "function") return;
     recordingMimeType = pickRecordingMimeType();
@@ -6408,6 +6677,14 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
       return;
     }
+    // Captured now (not recomputed in the stop handler) -- which channels
+    // actually fed this specific recording, for the Take's own metadata.
+    const channelsUsed = [
+      chimeRecordDest && "chime",
+      domToneRecordDest && "dominant tone",
+      edgeToneRecordDest && "edge texture",
+      instrumentRecordDest && "instrument"
+    ].filter(Boolean);
     const audioTracks = buildSonificationAudioTracks();
     const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     recordedChunks = [];
@@ -6418,19 +6695,13 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
       return;
     }
+    const startedAtIso = new Date().toISOString();
     mediaRecorder.addEventListener("dataavailable", (e) => {
       if (e.data && e.data.size > 0) recordedChunks.push(e.data);
     });
     mediaRecorder.addEventListener("stop", () => {
-      teardownRecordingMixdown();
-      const ext = recordingMimeType.includes("mp4") ? "mp4" : "webm";
-      const blob = new Blob(recordedChunks, { type: recordingMimeType });
-      recordedChunks = [];
-      if (blob.size > 0) {
-        downloadBlob(blob, `sound-colour-video-${timestampForFilename()}.${ext}`);
-      } else {
-        showCameraStatus("Recording produced no data — try again.");
-      }
+      const durationMs = Date.now() - recordingStartedAt;
+      onRecordingStopped(recordingMimeType, channelsUsed, startedAtIso, durationMs);
     });
     mediaRecorder.start();
     isRecording = true;
@@ -6464,6 +6735,20 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   recordBtn.addEventListener("click", toggleRecording);
   floatingRecordBtn.addEventListener("click", toggleRecording);
+
+  function closeTakesPanel() {
+    takesPanel.classList.add("hide");
+    takesBtn.focus();
+  }
+  function openTakesPanel() {
+    hideOverlayPanels();
+    renderTakesList();
+    takesPanel.classList.remove("hide");
+    closeTakesBtn.focus();
+  }
+  takesBtn.addEventListener("click", openTakesPanel);
+  closeTakesBtn.addEventListener("click", closeTakesPanel);
+  renderTakesList();
 
   // The in-HUD #recordBtn and the floating #floatingRecordBtn are the same
   // control shown in two places -- only one is ever needed at once, so the
@@ -6609,6 +6894,8 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       closePointsPanel();
     } else if (!choosePanel.classList.contains("hide")) {
       closeChoosePanel();
+    } else if (!takesPanel.classList.contains("hide")) {
+      closeTakesPanel();
     } else if (aiming) {
       stopAiming();
     }
@@ -6622,7 +6909,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #fullscreenBtn, #floatingCaptureBar"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #takesPanel, #fullscreenBtn, #floatingCaptureBar"
     ));
   }
 

@@ -185,7 +185,8 @@ video#cameraFeed, canvas#sampleCanvas {
    while tuning. */
 #tunePanel,
 #pointsPanel,
-#viewerPanel {
+#viewerPanel,
+#takesPanel {
   position: fixed;
   left: 0;
   right: 0;
@@ -197,13 +198,15 @@ video#cameraFeed, canvas#sampleCanvas {
 
 #tunePanel.hide,
 #pointsPanel.hide,
-#viewerPanel.hide {
+#viewerPanel.hide,
+#takesPanel.hide {
   display: none;
 }
 
 #tunePanelInner,
 #pointsPanelInner,
-#viewerPanelInner {
+#viewerPanelInner,
+#takesPanelInner {
   width: 100%;
   max-width: 480px;
   background: rgba(15, 15, 25, 0.92);
@@ -216,7 +219,8 @@ video#cameraFeed, canvas#sampleCanvas {
 
 #tunePanelInner h2,
 #pointsPanelInner h2,
-#viewerPanelInner h2 {
+#viewerPanelInner h2,
+#takesPanelInner h2 {
   margin: 0 0 8px;
   font-size: 18px;
   letter-spacing: 0.02em;
@@ -497,4 +501,50 @@ input[type="color"]:focus-visible,
   #overlay {
     transition: none;
   }
+}
+
+/* ---- Recordings (Takes) list -- same layout as Video Production's own
+   Takes cards, adapted to this page's hud-btn styling instead of vp-btn. */
+#takesList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.take-card {
+  background: rgba(10, 10, 16, 0.7);
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.take-card video {
+  width: 100%;
+  border-radius: 10px;
+  display: block;
+}
+
+.take-card-novideo {
+  grid-template-columns: 1fr auto;
+}
+
+.take-info {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.85);
+}
+
+.take-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}
+
+.take-card-novideo .take-actions {
+  grid-column: auto;
 }
