@@ -528,7 +528,7 @@
       <option value="chord_cluster">Chord cluster</option>
     </select>
   </label>
-  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally).">Dominant colour tone: Off</button>
+  <button id="domToneBtn" class="hud-btn" aria-pressed="false" title="Tracks the whole scene's average colour -- hue drives pitch, lightness drives volume. A more general, ambient counterpart to the proximity chime above (that one reacts to a specific saved colour; this one to whatever's in view generally). Also brightens or dulls the tone (a filter, same idea as edge texture's Continuous style) based on how varied the scene's colours actually are, not just their average -- so a scene split between two very different colours doesn't play identically to a solid scene that happens to average to the same shade.">Dominant colour tone: Off</button>
   <label id="domToneVolumeWrap" class="hud-slider hide" title="How loud the dominant colour tone plays, independent of your device's system volume.">
     Tone volume: <span id="domToneVolumeLabel">40%</span>
     <input id="domToneVolumeSlider" type="range" min="0" max="100" value="40">

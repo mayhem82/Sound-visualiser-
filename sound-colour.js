@@ -4002,6 +4002,12 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let domToneRecordDest = null; // see instrumentRecordDest above
   let domToneOsc = null;
   let domToneGainNode = null;
+  // Lowpass between domToneOsc and domToneGainNode (Continuous/Synth only)
+  // whose cutoff tracks sampleSceneColorSpread() -- see that function for
+  // why hue/lightness alone can't tell two genuinely different scenes
+  // apart, and playDomTonePadNote's own per-note filter for Melodic's
+  // equivalent.
+  let domToneFilter = null;
   let domToneTimerId = null;
   // Melodic mode's groove: the same major-pentatonic shape as the chime's
   // scale, but rooted a tritone away (F#3 instead of C4) -- a tritone
@@ -4107,6 +4113,54 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // Averaging RGB first (as sampleDominantColor does) throws away exactly
+  // the information that makes two scenes different: a frame split evenly
+  // between pure red and pure green averages to the same dull yellow-green
+  // as a frame that's that solid colour everywhere, so the dominant tone
+  // plays the identical pitch for both -- "different by every account" but
+  // sounding otherwise. This measures the one thing a plain average can't:
+  // how spread out the hues actually in view are, via the mean resultant
+  // length of their (weighted) unit vectors on the hue circle -- standard
+  // circular statistics, the same idea used to average angles/times-of-day.
+  // Every hue pixel contributes at full weight regardless of which hue it
+  // is, so this can't just rediscover the average hue; it can only measure
+  // agreement/disagreement between hues. All hues aligned (a uniform scene,
+  // whatever its colour) -> the vectors reinforce -> length near 1 -> spread
+  // near 0. Hues scattered or opposed (that red/green split; a colourful,
+  // varied scene) -> vectors cancel -> length near 0 -> spread near 1.
+  // Weighted by chroma (saturation scaled down near black/white) the same
+  // way sampleDominantColor's own downstream hue reads already discount
+  // grey pixels, so a mostly-grey scene with one bright fleck isn't treated
+  // as internally contradictory.
+  function sampleSceneColorSpread() {
+    if (!gl || !stage.width || !stage.height) return 0;
+    sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = sceneSampleCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    let sumWeight = 0, sumCos = 0, sumSin = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const [h, s, l] = rgb2hsl(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
+      const weight = s * (1 - Math.abs(2 * l - 1));
+      if (weight <= 0) continue;
+      const rad = h * Math.PI / 180;
+      sumWeight += weight;
+      sumCos += weight * Math.cos(rad);
+      sumSin += weight * Math.sin(rad);
+    }
+    if (sumWeight <= 0) return 0;
+    const meanResultantLength = Math.sqrt(sumCos * sumCos + sumSin * sumSin) / sumWeight;
+    return Math.max(0, Math.min(1, 1 - meanResultantLength));
+  }
+
+  // Maps sampleSceneColorSpread()'s 0..1 into a lowpass cutoff -- a uniform
+  // scene stays dark/muffled, a colour-varied one opens up and brightens,
+  // the same brightness-as-a-signal vocabulary edge texture's own Continuous
+  // style already uses for density.
+  const DOM_TONE_SPREAD_MIN_HZ = 500;
+  const DOM_TONE_SPREAD_MAX_HZ = 6000;
+  function domToneSpreadToFilterHz(spread) {
+    return DOM_TONE_SPREAD_MIN_HZ * Math.pow(DOM_TONE_SPREAD_MAX_HZ / DOM_TONE_SPREAD_MIN_HZ, spread);
+  }
+
   function ensureDomToneAudio() {
     if (domToneAudioCtx) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -4116,9 +4170,13 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     domToneOsc = domToneAudioCtx.createOscillator();
     domToneOsc.type = "sine";
     domToneOsc.frequency.value = 220;
+    domToneFilter = domToneAudioCtx.createBiquadFilter();
+    domToneFilter.type = "lowpass";
+    domToneFilter.frequency.value = DOM_TONE_SPREAD_MIN_HZ;
     domToneGainNode = domToneAudioCtx.createGain();
     domToneGainNode.gain.value = 0;
-    domToneOsc.connect(domToneGainNode);
+    domToneOsc.connect(domToneFilter);
+    domToneFilter.connect(domToneGainNode);
     domToneGainNode.connect(domToneAudioCtx.destination);
     domToneGainNode.connect(domToneRecordDest);
     domToneOsc.start();
@@ -4128,7 +4186,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // envelope, same one-shot pattern as the chime's pluck but with a slower
   // attack and a longer decay, so overlapping notes blend into a pad
   // instead of standing apart as separate hits.
-  function playDomTonePadNote(freq, velocity) {
+  function playDomTonePadNote(freq, velocity, spread) {
     const totalCents = domToneDetuneCents + randomCentsJitter(domToneRandomness, DOM_TONE_RANDOMNESS_MAX_CENTS);
     if (domToneOutput === "midi") {
       const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "marimba");
@@ -4143,12 +4201,19 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const osc = domToneAudioCtx.createOscillator();
     osc.type = "sine";
     osc.frequency.value = freq * centsToRateFactor(totalCents);
+    // Melodic's own equivalent of domToneFilter (Continuous's persistent
+    // one) -- each pad note is its own throwaway oscillator, so it gets its
+    // own throwaway filter too, same spread-to-brightness mapping.
+    const filter = domToneAudioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = domToneSpreadToFilterHz(spread || 0);
     const gain = domToneAudioCtx.createGain();
     const peak = Math.max(0.001, velocity * (domToneVolume / 100) * SONIFICATION_ONESHOT_PEAK);
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(peak, now + 0.12);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
-    osc.connect(gain);
+    osc.connect(filter);
+    filter.connect(gain);
     gain.connect(domToneAudioCtx.destination);
     gain.connect(domToneRecordDest);
     osc.start(now);
@@ -4285,6 +4350,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * SONIFICATION_CONTINUOUS_PEAK;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
+      domToneFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(sampleSceneColorSpread()), now, 0.2);
       return;
     }
     // Melodic: hue picks the chord root, an arpeggio step plays every few
@@ -4351,7 +4417,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
         playedIndex = Math.min(activeScaleHz.length - 1, rootIndex + randOffset);
       }
     }
-    playDomTonePadNote(activeScaleHz[playedIndex], Math.min(1, l * 1.3));
+    playDomTonePadNote(activeScaleHz[playedIndex], Math.min(1, l * 1.3), sampleSceneColorSpread());
   }
 
   function updateDomToneSamplingTimer() {
