@@ -35,21 +35,52 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
+  // Same rgb2hsl this repo's other colour tools (Sound Colour) already
+  // use -- needed here only for hue/saturation, to measure colour variety
+  // below (see colourVariety in computeSceneStats).
+  function rgb2hsl(r, g, b) {
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2, d = max - min;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      switch (max) {
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  }
+
   // Reads one small RGBA frame once and gets the "Dominant colour" signal
   // (the frame's average colour), the "Structural complexity" signal (how
   // much adjacent cells' brightness actually varies -- a flat wall or sky
-  // averages near 0, a detailed/busy scene reads higher), and a
+  // averages near 0, a detailed/busy scene reads higher), a
   // brightness-weighted centroid (WHERE the light actually is, not just
-  // how much of it there is -- see Pan/Tilt below) out of it. All three
-  // come off a single downscaled sample instead of separate passes.
+  // how much of it there is -- see Pan/Tilt below), and "Colour variety"
+  // (see below) out of it. All four come off a single downscaled sample
+  // instead of separate passes.
   function computeSceneStats(pixels, w, h) {
     let sumR = 0, sumG = 0, sumB = 0;
     const n = w * h;
     const lumaGrid = new Float32Array(n);
+    // Circular-statistics accumulators for Colour variety -- see below.
+    let hueWeightSum = 0, hueCosSum = 0, hueSinSum = 0;
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2];
       sumR += r; sumG += g; sumB += b;
       lumaGrid[i] = luma709(r, g, b) / 255;
+      const [h1, s1, l1] = rgb2hsl(r / 255, g / 255, b / 255);
+      const weight = s1 * (1 - Math.abs(2 * l1 - 1));
+      if (weight > 0) {
+        const rad = h1 * Math.PI / 180;
+        hueWeightSum += weight;
+        hueCosSum += weight * Math.cos(rad);
+        hueSinSum += weight * Math.sin(rad);
+      }
     }
     let diffSum = 0, diffCount = 0;
     for (let y = 0; y < h; y++) {
@@ -78,7 +109,24 @@
     }
     const centroidX = sumLuma > 0 ? (sumX / sumLuma) / (w - 1) : 0.5;
     const centroidY = sumLuma > 0 ? (sumY / sumLuma) / (h - 1) : 0.5;
-    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity, centroidX, centroidY };
+    // Colour variety: the same real circular-statistics measure Sound
+    // Colour's dominant tone uses (mean resultant length of every pixel's
+    // hue as a unit vector on the hue circle, weighted by chroma) -- 0
+    // when the scene's colours all agree (however saturated), 1 when they
+    // scatter or oppose. Deliberately NOT used to correct the averaged
+    // r/g/b above the way it is in Sound Colour: a single RGB fixture
+    // really can only ever show one blended colour at once, and a scene
+    // split between opposing hues genuinely DOES mix down to grey on a
+    // real light the same way it averages down to grey here -- that's
+    // correct physical colour mixing, not the same information-loss bug a
+    // symbolic pitch choice has no such excuse for. This is offered as its
+    // own independent Source instead (Colour variety), for driving a
+    // Dimmer/Trigger/tinted effect off "how varied is the colour" without
+    // pretending a single fixture could ever display that variety directly.
+    const colourVariety = hueWeightSum > 0
+      ? Math.max(0, Math.min(1, 1 - Math.sqrt(hueCosSum * hueCosSum + hueSinSum * hueSinSum) / hueWeightSum))
+      : 0;
+    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity, centroidX, centroidY, colourVariety };
   }
 
   // Average FFT bin energy (0..1) across a real Hz range, independent of
@@ -145,13 +193,14 @@
   const SOURCES = {
     camera_colour: "Dominant colour (camera)",
     camera_complexity: "Structural complexity (camera)",
+    camera_colour_variety: "Colour variety (camera)",
     audio_bass: "Audio: Bass",
     audio_mid: "Audio: Mid",
     audio_treble: "Audio: Treble",
     audio_beat: "Audio: Beat trigger",
     manual: "Manual test slider",
   };
-  const SCALAR_SOURCES = new Set(["camera_complexity", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "manual"]);
+  const SCALAR_SOURCES = new Set(["camera_complexity", "camera_colour_variety", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "manual"]);
 
   function byte(v) { return Math.max(0, Math.min(255, Math.round(v * 255))); }
 
@@ -207,7 +256,8 @@
       });
     }
     const scalarMap = {
-      camera_complexity: state.complexity, audio_bass: state.bass, audio_mid: state.mid,
+      camera_complexity: state.complexity, camera_colour_variety: state.colourVariety,
+      audio_bass: state.bass, audio_mid: state.mid,
       audio_treble: state.treble, audio_beat: state.beat, manual: (fixture.manualValue || 0) / 100,
     };
     const scalar = Math.max(0, Math.min(1, scalarMap[fixture.source] || 0));
@@ -319,7 +369,7 @@
   if (savedBaud && [...baudSelect.options].some((o) => o.value === savedBaud)) baudSelect.value = savedBaud;
 
   // Live signal state, refreshed once per tick.
-  const state = { r: 0, g: 0, b: 0, complexity: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5 };
+  const state = { r: 0, g: 0, b: 0, complexity: 0, colourVariety: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5 };
   const beatTracker = makeBeatTracker();
   const dmxBuffer = new Uint8Array(513); // index 0 = DMX start code (0x00)
 
@@ -597,6 +647,7 @@
     const stats = computeSceneStats(data, SCENE_GRID_W, SCENE_GRID_H);
     state.r = stats.r; state.g = stats.g; state.b = stats.b; state.complexity = stats.complexity;
     state.centroidX = stats.centroidX; state.centroidY = stats.centroidY;
+    state.colourVariety = stats.colourVariety;
   }
   function sampleAudioIfEnabled(nowMs) {
     if (!micEnabled || !analyser) return;
