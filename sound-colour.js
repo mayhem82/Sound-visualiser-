@@ -4088,6 +4088,14 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let domToneContinuousInstrumentBaseMidiNote = null;
   let domToneContinuousInstrumentFolder = null;
 
+  // Reads `stage` -- the final rendered canvas -- not the raw video feed, so
+  // every shader effect actually applied to the picture (CVD correction,
+  // outlines, freeze isolate, and Cartoon mode's posterize/duotone) is what
+  // the chime/dominant tone/edge texture hear too. Cartoon mode in
+  // particular means the sound is genuinely responsive to it: fewer
+  // posterize Levels collapses the sampled colour toward one of a handful of
+  // flat bands, and a duotone theme replaces its hue outright -- both shift
+  // the pitch this produces, not just the picture.
   function sampleDominantColor() {
     if (!gl || !stage.width || !stage.height) return null;
     sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
@@ -4639,6 +4647,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     return pattern;
   }
 
+  // Same reasoning as sampleDominantColor above: reads `stage`, so Cartoon
+  // mode's ink-line edges (uCartoonEdgeThickness/Strength) add to whatever
+  // edge density the camera image already had, feeding back into how busy
+  // the edge texture sounds.
   function sampleEdgeDensity() {
     if (!gl || !stage.width || !stage.height) return null;
     sceneSampleCtx.drawImage(stage, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
