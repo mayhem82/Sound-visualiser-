@@ -109,6 +109,14 @@
     }
     const centroidX = sumLuma > 0 ? (sumX / sumLuma) / (w - 1) : 0.5;
     const centroidY = sumLuma > 0 ? (sumY / sumLuma) / (h - 1) : 0.5;
+    // Distinct bright regions -- see computeBrightRegions above. A
+    // Pan/Tilt fixture normally tracks regions[0] (the single brightest
+    // cluster, usually near-identical to the whole-frame centroid above
+    // for a simple one-bright-spot scene, but correct instead of dragged
+    // off-target when there's more than one); a second fixture can be set
+    // to track regions[1] independently. Falls back to the plain centroid
+    // above when the scene has too little contrast for any region at all.
+    const regions = computeBrightRegions(lumaGrid, w, h);
     // Colour variety: the same real circular-statistics measure Sound
     // Colour's dominant tone uses (mean resultant length of every pixel's
     // hue as a unit vector on the hue circle, weighted by chroma) -- 0
@@ -126,7 +134,49 @@
     const colourVariety = hueWeightSum > 0
       ? Math.max(0, Math.min(1, 1 - Math.sqrt(hueCosSum * hueCosSum + hueSinSum * hueSinSum) / hueWeightSum))
       : 0;
-    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity, centroidX, centroidY, colourVariety };
+    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity, centroidX, centroidY, regions, colourVariety };
+  }
+
+  // Finds every DISTINCT bright region in the frame (4-connected flood
+  // fill over cells above a threshold), not one single global average --
+  // the same technique, verbatim, Sound Colour's own particle attractors
+  // use (sampleSceneAttractors) for exactly the same reason: a single
+  // shared centroid across a scene with two separate bright spots (two
+  // spotlights on opposite walls, say) lands in the empty space between
+  // them, not on either one. Returns regions sorted by weight (brightest
+  // cluster first), each { x, y } normalized 0..1 -- empty when the frame
+  // doesn't have enough contrast to have any meaningful region at all.
+  function computeBrightRegions(lumaGrid, w, h) {
+    let maxLum = 0, minLum = 1;
+    for (let i = 0; i < lumaGrid.length; i++) {
+      if (lumaGrid[i] > maxLum) maxLum = lumaGrid[i];
+      if (lumaGrid[i] < minLum) minLum = lumaGrid[i];
+    }
+    if (maxLum - minLum < 20 / 255) return [];
+    const threshold = minLum + (maxLum - minLum) * 0.6;
+    const visited = new Uint8Array(w * h);
+    const clusters = [];
+    for (let startIdx = 0; startIdx < w * h; startIdx++) {
+      if (visited[startIdx] || lumaGrid[startIdx] < threshold) continue;
+      const stack = [startIdx];
+      visited[startIdx] = 1;
+      let sumX = 0, sumY = 0, sumW = 0;
+      while (stack.length) {
+        const idx = stack.pop();
+        const cx = idx % w, cy = (idx / w) | 0;
+        const weight = lumaGrid[idx] - threshold;
+        sumX += ((cx + 0.5) / w) * weight;
+        sumY += ((cy + 0.5) / h) * weight;
+        sumW += weight;
+        if (cx > 0 && !visited[idx - 1] && lumaGrid[idx - 1] >= threshold) { visited[idx - 1] = 1; stack.push(idx - 1); }
+        if (cx < w - 1 && !visited[idx + 1] && lumaGrid[idx + 1] >= threshold) { visited[idx + 1] = 1; stack.push(idx + 1); }
+        if (cy > 0 && !visited[idx - w] && lumaGrid[idx - w] >= threshold) { visited[idx - w] = 1; stack.push(idx - w); }
+        if (cy < h - 1 && !visited[idx + w] && lumaGrid[idx + w] >= threshold) { visited[idx + w] = 1; stack.push(idx + w); }
+      }
+      if (sumW > 0) clusters.push({ x: sumX / sumW, y: sumY / sumW, weight: sumW });
+    }
+    clusters.sort((a, b) => b.weight - a.weight);
+    return clusters.slice(0, 8);
   }
 
   // Average FFT bin energy (0..1) across a real Hz range, independent of
@@ -222,16 +272,24 @@
   function computeFixtureChannelValues(fixture, state) {
     const profile = PROFILES[fixture.profile] || PROFILES.dimmer;
     const names = profile.channels;
-    // Pan/Tilt are positional, not colour/dimmer -- they always follow the
-    // scene's own brightness-weighted centroid (computeSceneStats above),
-    // regardless of which Source the fixture's colour/dimmer channels are
-    // set to. A profile with no pan/tilt channels never reads these.
+    // Pan/Tilt are positional, not colour/dimmer -- they always follow a
+    // distinct bright region (computeBrightRegions above), regardless of
+    // which Source the fixture's colour/dimmer channels are set to. A
+    // profile with no pan/tilt channels never reads these. fixture.region
+    // (default 0) picks WHICH region: 0 is the single brightest cluster,
+    // so a rig with two moving heads can have a second fixture set to 1
+    // and genuinely track a second, separate bright spot instead of both
+    // converging on one shared point. Falls back to the whole-frame
+    // centroid when that many distinct regions aren't currently detected
+    // (a dim/flat scene, or fewer bright spots than configured fixtures)
+    // rather than snapping to a stale region or an undefined position.
     // Real moving heads vary in physical range/orientation, so this maps
     // the full 0..1 frame directly onto the full 0..255 DMX range and
     // leaves matching that to the fixture's own physical mounting/homing,
     // not a value this app has any way to know.
-    const panByte = byte(state.centroidX != null ? state.centroidX : 0.5);
-    const tiltByte = byte(state.centroidY != null ? state.centroidY : 0.5);
+    const region = state.regions && state.regions[fixture.region || 0];
+    const panByte = byte(region ? region.x : (state.centroidX != null ? state.centroidX : 0.5));
+    const tiltByte = byte(region ? region.y : (state.centroidY != null ? state.centroidY : 0.5));
     if (fixture.source === "camera_colour") {
       const r = state.r || 0, g = state.g || 0, b = state.b || 0;
       const dim = luma709(r, g, b);
@@ -290,7 +348,7 @@
   // Exposed for the same kind of outside-the-browser sanity check this
   // repo's other complex logic gets -- see the pure functions above.
   window.__dmxTestables = {
-    computeSceneStats, bandEnergyHz, updateBeatTracker, makeBeatTracker,
+    computeSceneStats, computeBrightRegions, bandEnergyHz, updateBeatTracker, makeBeatTracker,
     computeFixtureChannelValues, buildEnttecFrame, hexToRgb01, byte, PROFILES,
   };
 
@@ -369,7 +427,7 @@
   if (savedBaud && [...baudSelect.options].some((o) => o.value === savedBaud)) baudSelect.value = savedBaud;
 
   // Live signal state, refreshed once per tick.
-  const state = { r: 0, g: 0, b: 0, complexity: 0, colourVariety: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5 };
+  const state = { r: 0, g: 0, b: 0, complexity: 0, colourVariety: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5, regions: [] };
   const beatTracker = makeBeatTracker();
   const dmxBuffer = new Uint8Array(513); // index 0 = DMX start code (0x00)
 
@@ -406,7 +464,7 @@
   // ---- Fixtures UI -------------------------------------------------
 
   function defaultFixture() {
-    return { id: nextFixtureId++, name: "Fixture " + (fixtures.length + 1), startChannel: 1, profile: "rgb", source: "camera_colour", tint: "#ffffff", manualValue: 50 };
+    return { id: nextFixtureId++, name: "Fixture " + (fixtures.length + 1), startChannel: 1, profile: "rgb", source: "camera_colour", tint: "#ffffff", manualValue: 50, region: 0 };
   }
 
   function renderFixtures() {
@@ -498,6 +556,23 @@
       manualSlider.addEventListener("input", () => { fixture.manualValue = Number(manualSlider.value); });
       manualSlider.addEventListener("change", saveFixtures);
       row2.append(manualLabel, manualSlider);
+    }
+
+    if (PROFILES[fixture.profile].channels.includes("pan")) {
+      const regionLabel = document.createElement("span");
+      regionLabel.className = "dmx-fixture-label";
+      regionLabel.title = "Which distinct bright region this fixture's Pan/Tilt tracks -- 0 is the single brightest spot in the frame. Give a second moving-head fixture Region 1 to have it independently track the next-brightest spot instead of both converging on the same point.";
+      regionLabel.textContent = "Region:";
+      const regionInput = document.createElement("input");
+      regionInput.type = "number";
+      regionInput.min = "0"; regionInput.max = "7";
+      regionInput.value = String(fixture.region || 0);
+      regionInput.addEventListener("change", () => {
+        fixture.region = Math.max(0, Math.min(7, parseInt(regionInput.value, 10) || 0));
+        regionInput.value = String(fixture.region);
+        saveFixtures();
+      });
+      row2.append(regionLabel, regionInput);
     }
 
     const meter = document.createElement("div");
@@ -646,7 +721,7 @@
     const data = sceneCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
     const stats = computeSceneStats(data, SCENE_GRID_W, SCENE_GRID_H);
     state.r = stats.r; state.g = stats.g; state.b = stats.b; state.complexity = stats.complexity;
-    state.centroidX = stats.centroidX; state.centroidY = stats.centroidY;
+    state.centroidX = stats.centroidX; state.centroidY = stats.centroidY; state.regions = stats.regions;
     state.colourVariety = stats.colourVariety;
   }
   function sampleAudioIfEnabled(nowMs) {
