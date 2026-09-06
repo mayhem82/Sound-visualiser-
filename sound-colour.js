@@ -109,6 +109,16 @@
   const EDGE_TONE_DEFAULT_MAX_HITS = 12;
   const EDGE_TONE_TEMPO_KEY = "edgeToneTempo_colorVision_v1";
   const EDGE_TONE_DEFAULT_TEMPO_BPM = 100;
+  // Spatial scan's own Tempo -- one full left-to-right sweep's duration
+  // (see the "Spatial scan" section below), not a note-repeat rate like
+  // the other three channels' Tempo controls.
+  const SPATIAL_SCAN_ENABLED_KEY = "spatialScanEnabled_colorVision_v1";
+  const SPATIAL_SCAN_VOLUME_KEY = "spatialScanVolume_colorVision_v1";
+  const SPATIAL_SCAN_DEFAULT_VOLUME = 40;
+  const SPATIAL_SCAN_OUTPUT_KEY = "spatialScanOutput_colorVision_v1";
+  const SPATIAL_SCAN_INSTRUMENT_KEY = "spatialScanInstrument_colorVision_v1";
+  const SPATIAL_SCAN_TEMPO_KEY = "spatialScanTempo_colorVision_v1";
+  const SPATIAL_SCAN_DEFAULT_TEMPO_MS = 1200;
   // Pitch range: edge texture used to have no pitch at all -- every
   // Melodic hit struck one fixed MIDI note, leaving its own timbre to
   // carry the percussive character (chime and dominant tone always had
@@ -558,6 +568,17 @@
   const edgeToneBarsLabel = document.getElementById("edgeToneBarsLabel");
   const edgeTonePatternWrap = document.getElementById("edgeTonePatternWrap");
   const edgeTonePatternSelect = document.getElementById("edgeTonePatternSelect");
+  const spatialScanBtn = document.getElementById("spatialScanBtn");
+  const spatialScanVolumeWrap = document.getElementById("spatialScanVolumeWrap");
+  const spatialScanVolumeSlider = document.getElementById("spatialScanVolumeSlider");
+  const spatialScanVolumeLabel = document.getElementById("spatialScanVolumeLabel");
+  const spatialScanOutputWrap = document.getElementById("spatialScanOutputWrap");
+  const spatialScanOutputSelect = document.getElementById("spatialScanOutputSelect");
+  const spatialScanInstrumentWrap = document.getElementById("spatialScanInstrumentWrap");
+  const spatialScanInstrumentSelect = document.getElementById("spatialScanInstrumentSelect");
+  const spatialScanTempoWrap = document.getElementById("spatialScanTempoWrap");
+  const spatialScanTempoSlider = document.getElementById("spatialScanTempoSlider");
+  const spatialScanTempoLabel = document.getElementById("spatialScanTempoLabel");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
   const recordBtn = document.getElementById("recordBtn");
@@ -1276,6 +1297,11 @@
       edgeToneRandomness: 0,
       edgeToneBars: EDGE_TONE_DEFAULT_BARS,
       edgeTonePattern: "euclidean",
+      spatialScanEnabled: false,
+      spatialScanVolume: SPATIAL_SCAN_DEFAULT_VOLUME,
+      spatialScanOutput: "synth",
+      spatialScanInstrument: "pad_1_new_age",
+      spatialScanTempo: SPATIAL_SCAN_DEFAULT_TEMPO_MS,
       audioReactEnabled: false,
       audioReactStrength: AUDIO_REACT_DEFAULT_STRENGTH,
       audioTintEnabled: false,
@@ -3407,6 +3433,35 @@
   // means whichever list a saved instrument came from still resolves
   // correctly everywhere, regardless of which channel picked it.
   const GM_ALL_INSTRUMENTS = GM_INSTRUMENTS.concat(GM_PERCUSSIVE_INSTRUMENTS);
+  // The standard General MIDI 1 instrument family table -- programs 0-127
+  // split into 16 families of 8 consecutive programs each (family = program
+  // div 8), the same grouping chime/dominant tone/edge texture's own
+  // hand-written <optgroup> markup already uses. Spatial scan's instrument
+  // select builds its <optgroup>s from this instead of a fourth copy of
+  // that same ~130-line markup block.
+  const GM_FAMILY_NAMES = [
+    "Piano", "Chromatic Percussion", "Organ", "Guitar", "Bass", "Strings",
+    "Ensemble", "Brass", "Reed", "Pipe", "Synth Lead", "Synth Pad",
+    "Synth Effects", "Ethnic", "Percussive", "Sound Effects"
+  ];
+  function populateGmInstrumentSelect(selectEl, instruments) {
+    selectEl.innerHTML = "";
+    let currentFamily = -1;
+    let currentGroup = null;
+    instruments.forEach((inst) => {
+      const family = Math.floor(inst.program / 8);
+      if (family !== currentFamily) {
+        currentFamily = family;
+        currentGroup = document.createElement("optgroup");
+        currentGroup.label = GM_FAMILY_NAMES[family] || "Other";
+        selectEl.appendChild(currentGroup);
+      }
+      const opt = document.createElement("option");
+      opt.value = inst.folder;
+      opt.textContent = inst.name;
+      currentGroup.appendChild(opt);
+    });
+  }
 const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   function hzToMidiNote(freq) {
@@ -5206,6 +5261,362 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     saveEdgeTonePatternPref();
   }
 
+  // ---- Spatial scan ----
+  // A fourth sonification channel, genuinely different in KIND from the
+  // other three: chime/dominant tone/edge texture each collapse the whole
+  // scene into a single number (a proximity, a colour, a density) before
+  // turning it into sound -- however many colour bands or filters get
+  // layered onto that number, none of them carry WHERE in the frame
+  // something actually is. This one does, using the same core technique
+  // real sensory-substitution devices for blind users actually use (Peter
+  // Meijer's The vOICe, 1992-present, whose published parameters this
+  // borrows rather than inventing new ones): the scene is swept left to
+  // right over a fixed period. At any instant only the current column
+  // sounds, as a chord of one voice per row -- pitched high for the top of
+  // the frame down to low for the bottom (real vOICe's own convention, and
+  // simple intuition), loud in proportion to that pixel's brightness,
+  // panned left-to-right to match the column's own horizontal position. A
+  // full sweep is a literal soundscape of the scene's actual shape, not a
+  // statistic describing it.
+  //
+  // Reuses the SCENE_GRID_W x SCENE_GRID_H grid the other three channels
+  // already sample `stage` into (see sampleDominantColor/sampleEdgeDensity)
+  // -- one scan column per grid column, one voice per grid row, no separate
+  // resolution to keep in sync.
+  const SPATIAL_SCAN_ROWS = SCENE_GRID_H;
+  const SPATIAL_SCAN_COLS = SCENE_GRID_W;
+  // The real vOICe's own published row-bank frequency range (500Hz-5000Hz),
+  // matched here rather than picked for looks -- same spirit as this
+  // file's other from-real-sources constants (CIE 1931 data, just-
+  // intonation ratios). Row 0 is the TOP of the frame -> the highest
+  // pitch; the last row (bottom) -> the lowest.
+  const SPATIAL_SCAN_MIN_HZ = 500;
+  const SPATIAL_SCAN_MAX_HZ = 5000;
+  const SPATIAL_SCAN_ROW_HZ = (() => {
+    const freqs = [];
+    for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+      const t = (SPATIAL_SCAN_ROWS - 1 - row) / (SPATIAL_SCAN_ROWS - 1);
+      freqs.push(SPATIAL_SCAN_MIN_HZ * Math.pow(SPATIAL_SCAN_MAX_HZ / SPATIAL_SCAN_MIN_HZ, t));
+    }
+    return freqs;
+  })();
+
+  let spatialScanEnabled = (() => {
+    try { return localStorage.getItem(SPATIAL_SCAN_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let spatialScanVolume = loadOutlineNumberPref(SPATIAL_SCAN_VOLUME_KEY, SPATIAL_SCAN_DEFAULT_VOLUME);
+  let spatialScanOutput = (() => {
+    try {
+      const raw = localStorage.getItem(SPATIAL_SCAN_OUTPUT_KEY);
+      return raw === "midi" || raw === "instrument" ? raw : "synth";
+    } catch (e) { return "synth"; }
+  })();
+  let spatialScanInstrument = (() => {
+    try {
+      const raw = localStorage.getItem(SPATIAL_SCAN_INSTRUMENT_KEY);
+      return GM_ALL_INSTRUMENTS.some((i) => i.folder === raw) ? raw : "pad_1_new_age";
+    } catch (e) { return "pad_1_new_age"; }
+  })();
+  let spatialScanTempoMs = loadOutlineNumberPref(SPATIAL_SCAN_TEMPO_KEY, SPATIAL_SCAN_DEFAULT_TEMPO_MS);
+
+  let spatialScanTimerId = null;
+  let spatialScanCol = 0;
+  // One brightness (0..1) per grid cell -- refreshed once per sweep, at
+  // column 0, not resampled every column-step, so a full sweep scans one
+  // stable snapshot the same way a real vOICe frame grab does.
+  let spatialScanGrid = null;
+
+  // Synth: one persistent sine oscillator per row (pitch never changes --
+  // it encodes vertical position, not colour), each through its own gain
+  // (brightness) into a single shared panner (scan position).
+  let spatialScanAudioCtx = null;
+  let spatialScanRecordDest = null;
+  let spatialScanRowOscs = null;
+  let spatialScanRowGains = null;
+  let spatialScanPanner = null;
+  let spatialScanMasterGain = null;
+
+  // Instrument: the same per-row bank, but each row is a real looped GM
+  // sample (playbackRate-tuned once to that row's frequency -- same
+  // technique as dominant tone's continuous-instrument loop) instead of an
+  // oscillator, so a ~50ms column step never has to fetch or re-trigger
+  // anything.
+  let spatialScanRowInstrumentSrcs = null;
+  let spatialScanRowInstrumentGains = null;
+  let spatialScanInstrumentPanner = null;
+  let spatialScanInstrumentMasterGain = null;
+  let spatialScanInstrumentLoadedFolder = null;
+
+  // MIDI: one Note On per row, held for as long as this channel is enabled,
+  // continuously modulated via real Polyphonic Key Pressure (0xA0 -- MIDI
+  // 1.0's own per-note continuous-value message, exactly the "one channel,
+  // many simultaneously-held notes, each independently wobbling" shape
+  // this needs) instead of one-shot Note On/Off pairs -- 24 columns/sweep
+  // at up to a couple of seconds per sweep is far too fast a churn rate
+  // for real Note On/Off pairs to mean anything. Shared CC10 (Pan) carries
+  // scan position across all held notes at once.
+  const SPATIAL_SCAN_MIDI_CHANNEL = 3;
+  let spatialScanMidiNotesOn = false;
+  const midiPanSentPerChannel = {};
+
+  function sampleSpatialScanGrid() {
+    if (!gl || !stage.width || !stage.height) return null;
+    sceneSampleCtx.drawImage(stage, 0, 0, SPATIAL_SCAN_COLS, SPATIAL_SCAN_ROWS);
+    const data = sceneSampleCtx.getImageData(0, 0, SPATIAL_SCAN_COLS, SPATIAL_SCAN_ROWS).data;
+    const grid = new Float32Array(SPATIAL_SCAN_ROWS * SPATIAL_SCAN_COLS);
+    for (let i = 0, p = 0; i < grid.length; i++, p += 4) {
+      grid[i] = (0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2]) / 255;
+    }
+    return grid;
+  }
+
+  function ensureSpatialScanAudio() {
+    if (spatialScanAudioCtx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    spatialScanAudioCtx = new Ctx();
+    spatialScanRecordDest = spatialScanAudioCtx.createMediaStreamDestination();
+    spatialScanMasterGain = spatialScanAudioCtx.createGain();
+    spatialScanMasterGain.gain.value = 0;
+    spatialScanPanner = spatialScanAudioCtx.createStereoPanner();
+    spatialScanPanner.connect(spatialScanMasterGain);
+    spatialScanMasterGain.connect(spatialScanAudioCtx.destination);
+    spatialScanMasterGain.connect(spatialScanRecordDest);
+    spatialScanRowOscs = [];
+    spatialScanRowGains = [];
+    for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+      const osc = spatialScanAudioCtx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = SPATIAL_SCAN_ROW_HZ[row];
+      const gain = spatialScanAudioCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(spatialScanPanner);
+      osc.start();
+      spatialScanRowOscs.push(osc);
+      spatialScanRowGains.push(gain);
+    }
+  }
+
+  function stopSpatialScanInstrumentAudio() {
+    if (spatialScanRowInstrumentSrcs) {
+      spatialScanRowInstrumentSrcs.forEach((s) => { try { s.stop(); } catch (e) {} s.disconnect(); });
+    }
+    if (spatialScanRowInstrumentGains) spatialScanRowInstrumentGains.forEach((g) => g.disconnect());
+    if (spatialScanInstrumentPanner) spatialScanInstrumentPanner.disconnect();
+    if (spatialScanInstrumentMasterGain) spatialScanInstrumentMasterGain.disconnect();
+    spatialScanRowInstrumentSrcs = null;
+    spatialScanRowInstrumentGains = null;
+    spatialScanInstrumentPanner = null;
+    spatialScanInstrumentMasterGain = null;
+    spatialScanInstrumentLoadedFolder = null;
+  }
+
+  async function ensureSpatialScanInstrumentAudio() {
+    if (spatialScanOutput !== "instrument" || !spatialScanEnabled) return;
+    if (spatialScanRowInstrumentSrcs && spatialScanInstrumentLoadedFolder === spatialScanInstrument) return;
+    const ctx = ensureInstrumentAudio();
+    if (!ctx) return;
+    const folderRequested = spatialScanInstrument;
+    // Torn down (not left to build alongside a stale one) so a switch away
+    // from Instrument, or to a different instrument, can't leave an
+    // unreachable bank of loops still quietly running.
+    stopSpatialScanInstrumentAudio();
+    const gainNodes = [];
+    const srcNodes = [];
+    const panner = ctx.createStereoPanner();
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = 0;
+    panner.connect(masterGain);
+    masterGain.connect(ctx.destination);
+    masterGain.connect(instrumentRecordDest);
+    try {
+      for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+        const nearest = midiNoteToNearestSample(hzToMidiNote(SPATIAL_SCAN_ROW_HZ[row]));
+        if (!nearest) continue;
+        const buffer = await loadInstrumentSample(ctx, folderRequested, nearest.sampleName);
+        // Another load, a disable, or an output/instrument switch happened
+        // while this row's fetch was in flight -- abandon the whole bank,
+        // same "settings this load was FOR no longer apply" reasoning as
+        // dominant tone's own continuous-instrument loader.
+        if (spatialScanOutput !== "instrument" || !spatialScanEnabled || spatialScanInstrument !== folderRequested) {
+          srcNodes.forEach((s) => { try { s.stop(); } catch (e2) {} s.disconnect(); });
+          panner.disconnect();
+          masterGain.disconnect();
+          return;
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = true;
+        src.playbackRate.value = Math.pow(2, nearest.semitoneOffset / 12);
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        src.connect(gain);
+        gain.connect(panner);
+        src.start();
+        srcNodes.push(src);
+        gainNodes.push(gain);
+      }
+      spatialScanRowInstrumentSrcs = srcNodes;
+      spatialScanRowInstrumentGains = gainNodes;
+      spatialScanInstrumentPanner = panner;
+      spatialScanInstrumentMasterGain = masterGain;
+      spatialScanInstrumentLoadedFolder = folderRequested;
+    } catch (e) {
+      // Network/decode failure -- stays silent, same spirit as playInstrumentNote.
+    }
+  }
+
+  function stopSpatialScanMidi() {
+    if (!spatialScanMidiNotesOn) return;
+    for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+      sendMidiNoteOff(SPATIAL_SCAN_MIDI_CHANNEL, hzToMidiNote(SPATIAL_SCAN_ROW_HZ[row]));
+    }
+    spatialScanMidiNotesOn = false;
+  }
+
+  function ensureSpatialScanMidi() {
+    if (spatialScanMidiNotesOn || !midiOutput) return;
+    const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === spatialScanInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "pad_1_new_age");
+    sendMidiProgramChange(SPATIAL_SCAN_MIDI_CHANNEL, inst.program);
+    for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+      sendMidiNoteOn(SPATIAL_SCAN_MIDI_CHANNEL, hzToMidiNote(SPATIAL_SCAN_ROW_HZ[row]), 0.6);
+    }
+    spatialScanMidiNotesOn = true;
+  }
+
+  // Real MIDI 1.0 Polyphonic Key Pressure (Poly AT) -- a per-NOTE
+  // continuous value on a single channel, exactly the mechanism this
+  // channel's held chord needs and standard Channel Pressure (mono
+  // aftertouch) can't provide (one value for the whole channel, not one
+  // per held note).
+  function sendMidiPolyPressure(channel, midiNote, value0to1) {
+    if (!midiOutput) return;
+    const note = Math.max(0, Math.min(127, Math.round(midiNote)));
+    const value = Math.max(0, Math.min(127, Math.round(value0to1 * 127)));
+    midiOutput.send([0xa0 | channel, note, value]);
+  }
+
+  // Standard MIDI CC10 (Pan) -- carries scan position across the whole
+  // held chord at once, the MIDI-out equivalent of spatialScanPanner.
+  function sendMidiPan(channel, panMinus1To1) {
+    if (!midiOutput) return;
+    const value = Math.max(0, Math.min(127, Math.round((panMinus1To1 + 1) * 63.5)));
+    if (midiPanSentPerChannel[channel] === value) return;
+    midiPanSentPerChannel[channel] = value;
+    midiOutput.send([0xb0 | channel, 10, value]);
+  }
+
+  // Advances the scan by one column-step: grabs a fresh grid snapshot at
+  // the start of every sweep (column 0), then updates whichever output is
+  // active with the current column's per-row brightness and the column's
+  // own pan position.
+  function stepSpatialScan() {
+    if (spatialScanCol === 0 || !spatialScanGrid) spatialScanGrid = sampleSpatialScanGrid();
+    if (!spatialScanGrid) { spatialScanCol = 0; return; }
+    const pan = (spatialScanCol / (SPATIAL_SCAN_COLS - 1)) * 2 - 1;
+    if (spatialScanOutput === "synth" && spatialScanAudioCtx) {
+      const now = spatialScanAudioCtx.currentTime;
+      spatialScanPanner.pan.setTargetAtTime(pan, now, 0.03);
+      spatialScanMasterGain.gain.setTargetAtTime((spatialScanVolume / 100) * SONIFICATION_CONTINUOUS_PEAK, now, 0.05);
+      for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+        const brightness = spatialScanGrid[row * SPATIAL_SCAN_COLS + spatialScanCol];
+        spatialScanRowGains[row].gain.setTargetAtTime(brightness * 0.5, now, 0.03);
+      }
+    } else if (spatialScanOutput === "instrument") {
+      if (!spatialScanRowInstrumentSrcs || spatialScanInstrumentLoadedFolder !== spatialScanInstrument) {
+        ensureSpatialScanInstrumentAudio(); // async, fire-and-forget -- nothing plays until it resolves
+      } else {
+        const now = instrumentAudioCtx.currentTime;
+        spatialScanInstrumentPanner.pan.setTargetAtTime(pan, now, 0.03);
+        spatialScanInstrumentMasterGain.gain.setTargetAtTime((spatialScanVolume / 100) * SONIFICATION_CONTINUOUS_PEAK, now, 0.05);
+        for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+          const brightness = spatialScanGrid[row * SPATIAL_SCAN_COLS + spatialScanCol];
+          spatialScanRowInstrumentGains[row].gain.setTargetAtTime(brightness * 0.5, now, 0.03);
+        }
+      }
+    } else if (spatialScanOutput === "midi") {
+      ensureSpatialScanMidi();
+      sendMidiPan(SPATIAL_SCAN_MIDI_CHANNEL, pan);
+      for (let row = 0; row < SPATIAL_SCAN_ROWS; row++) {
+        const brightness = spatialScanGrid[row * SPATIAL_SCAN_COLS + spatialScanCol];
+        sendMidiPolyPressure(SPATIAL_SCAN_MIDI_CHANNEL, hzToMidiNote(SPATIAL_SCAN_ROW_HZ[row]), brightness);
+      }
+    }
+    spatialScanCol = (spatialScanCol + 1) % SPATIAL_SCAN_COLS;
+  }
+
+  function updateSpatialScanTimer() {
+    if (spatialScanTimerId) { clearInterval(spatialScanTimerId); spatialScanTimerId = null; }
+    if (!spatialScanEnabled) {
+      if (spatialScanAudioCtx) spatialScanMasterGain.gain.setTargetAtTime(0, spatialScanAudioCtx.currentTime, 0.1);
+      stopSpatialScanInstrumentAudio();
+      stopSpatialScanMidi();
+      spatialScanCol = 0;
+      spatialScanGrid = null;
+      return;
+    }
+    if (spatialScanOutput === "synth") ensureSpatialScanAudio();
+    if (spatialScanOutput === "midi") ensureMidiAccess();
+    if (spatialScanOutput === "instrument") ensureSpatialScanInstrumentAudio();
+    const stepMs = Math.max(10, spatialScanTempoMs / SPATIAL_SCAN_COLS);
+    spatialScanTimerId = setInterval(stepSpatialScan, stepMs);
+  }
+
+  function updateSpatialScanControlsVisibility() {
+    spatialScanTempoWrap.classList.toggle("hide", !spatialScanEnabled);
+    spatialScanOutputWrap.classList.toggle("hide", !spatialScanEnabled);
+    spatialScanInstrumentWrap.classList.toggle("hide", !spatialScanEnabled || spatialScanOutput === "synth");
+  }
+
+  function setSpatialScanEnabled(next) {
+    if (next === spatialScanEnabled) return;
+    spatialScanEnabled = next;
+    spatialScanBtn.textContent = `Spatial scan: ${spatialScanEnabled ? "On" : "Off"}`;
+    spatialScanBtn.setAttribute("aria-pressed", String(spatialScanEnabled));
+    spatialScanVolumeWrap.classList.toggle("hide", !spatialScanEnabled);
+    updateSpatialScanControlsVisibility();
+    try { localStorage.setItem(SPATIAL_SCAN_ENABLED_KEY, spatialScanEnabled ? "1" : "0"); } catch (e) {}
+    updateSpatialScanTimer();
+  }
+
+  function setSpatialScanVolume(next) {
+    spatialScanVolume = Math.max(0, Math.min(100, Math.round(next)));
+    try { localStorage.setItem(SPATIAL_SCAN_VOLUME_KEY, String(spatialScanVolume)); } catch (e) {}
+  }
+
+  function setSpatialScanOutput(next) {
+    if (next !== "synth" && next !== "midi" && next !== "instrument") return;
+    if (next === spatialScanOutput) return;
+    // Silence whichever output was active before switching -- otherwise a
+    // gain left mid-fade when the switch happens keeps sounding forever,
+    // since nothing will ever update it again once it's no longer selected.
+    if (spatialScanOutput === "synth" && spatialScanAudioCtx) spatialScanMasterGain.gain.setTargetAtTime(0, spatialScanAudioCtx.currentTime, 0.05);
+    if (spatialScanOutput === "instrument") stopSpatialScanInstrumentAudio();
+    if (spatialScanOutput === "midi") stopSpatialScanMidi();
+    spatialScanOutput = next;
+    updateSpatialScanControlsVisibility();
+    if (spatialScanEnabled) {
+      if (spatialScanOutput === "midi") ensureMidiAccess();
+      if (spatialScanOutput === "synth") ensureSpatialScanAudio();
+      if (spatialScanOutput === "instrument") ensureSpatialScanInstrumentAudio();
+    }
+    try { localStorage.setItem(SPATIAL_SCAN_OUTPUT_KEY, spatialScanOutput); } catch (e) {}
+  }
+
+  function setSpatialScanInstrument(next) {
+    if (!GM_ALL_INSTRUMENTS.some((i) => i.folder === next)) return;
+    spatialScanInstrument = next;
+    try { localStorage.setItem(SPATIAL_SCAN_INSTRUMENT_KEY, spatialScanInstrument); } catch (e) {}
+    if (spatialScanOutput === "instrument" && spatialScanEnabled) ensureSpatialScanInstrumentAudio();
+  }
+
+  function setSpatialScanTempo(next) {
+    spatialScanTempoMs = Math.max(300, Math.min(6000, Math.round(next)));
+    try { localStorage.setItem(SPATIAL_SCAN_TEMPO_KEY, String(spatialScanTempoMs)); } catch (e) {}
+    if (spatialScanEnabled) updateSpatialScanTimer(); // restart the step clock at the new interval
+  }
+
   // Converts a tap position (viewport CSS pixels) into a fraction of the
   // raw video frame (0,0 top-left .. 1,1 bottom-right) — the same
   // object-fit:cover cropping and rotate180 flip the correction shader
@@ -5546,6 +5957,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       edgeToneRandomness,
       edgeToneBars,
       edgeTonePattern,
+      spatialScanEnabled,
+      spatialScanVolume,
+      spatialScanOutput,
+      spatialScanInstrument,
+      spatialScanTempo: spatialScanTempoMs,
       audioReactEnabled,
       audioReactStrength,
       audioTintEnabled,
@@ -5918,6 +6334,27 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     if (s.edgeTonePattern === "euclidean" || s.edgeTonePattern === "steady_pulse" || s.edgeTonePattern === "swing" || s.edgeTonePattern === "random_walk") {
       setEdgeTonePattern(s.edgeTonePattern);
       edgeTonePatternSelect.value = edgeTonePattern;
+    }
+    if (typeof s.spatialScanEnabled === "boolean" && s.spatialScanEnabled !== spatialScanEnabled) {
+      setSpatialScanEnabled(s.spatialScanEnabled);
+    }
+    if (Number.isFinite(s.spatialScanVolume)) {
+      setSpatialScanVolume(s.spatialScanVolume);
+      spatialScanVolumeSlider.value = String(spatialScanVolume);
+      spatialScanVolumeLabel.textContent = `${spatialScanVolume}%`;
+    }
+    if (s.spatialScanOutput === "synth" || s.spatialScanOutput === "midi" || s.spatialScanOutput === "instrument") {
+      setSpatialScanOutput(s.spatialScanOutput);
+      spatialScanOutputSelect.value = spatialScanOutput;
+    }
+    if (typeof s.spatialScanInstrument === "string" && GM_ALL_INSTRUMENTS.some((i) => i.folder === s.spatialScanInstrument)) {
+      setSpatialScanInstrument(s.spatialScanInstrument);
+      spatialScanInstrumentSelect.value = spatialScanInstrument;
+    }
+    if (Number.isFinite(s.spatialScanTempo)) {
+      setSpatialScanTempo(s.spatialScanTempo);
+      spatialScanTempoSlider.value = String(spatialScanTempoMs);
+      spatialScanTempoLabel.textContent = `${spatialScanTempoMs}ms`;
     }
     if (Number.isFinite(s.audioReactStrength)) {
       audioReactStrength = Math.max(0, Math.min(100, s.audioReactStrength));
@@ -6607,6 +7044,27 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   edgeTonePatternSelect.value = edgeTonePattern;
   updateEdgeToneSamplingTimer();
 
+  spatialScanBtn.addEventListener("click", () => setSpatialScanEnabled(!spatialScanEnabled));
+  spatialScanVolumeSlider.addEventListener("input", () => {
+    setSpatialScanVolume(parseFloat(spatialScanVolumeSlider.value));
+    spatialScanVolumeLabel.textContent = `${spatialScanVolume}%`;
+  });
+  spatialScanVolumeSlider.value = String(spatialScanVolume);
+  spatialScanVolumeLabel.textContent = `${spatialScanVolume}%`;
+  spatialScanTempoSlider.addEventListener("input", () => {
+    setSpatialScanTempo(parseFloat(spatialScanTempoSlider.value));
+    spatialScanTempoLabel.textContent = `${spatialScanTempoMs}ms`;
+  });
+  spatialScanTempoSlider.value = String(spatialScanTempoMs);
+  spatialScanTempoLabel.textContent = `${spatialScanTempoMs}ms`;
+  spatialScanOutputSelect.addEventListener("change", () => setSpatialScanOutput(spatialScanOutputSelect.value));
+  spatialScanOutputSelect.value = spatialScanOutput;
+  populateGmInstrumentSelect(spatialScanInstrumentSelect, GM_ALL_INSTRUMENTS);
+  spatialScanInstrumentSelect.addEventListener("change", () => setSpatialScanInstrument(spatialScanInstrumentSelect.value));
+  spatialScanInstrumentSelect.value = spatialScanInstrument;
+  updateSpatialScanControlsVisibility();
+  updateSpatialScanTimer();
+
   audioTintBtn.addEventListener("click", toggleAudioTint);
   audioTintResetBtn.addEventListener("click", resetAudioTint);
 
@@ -6880,7 +7338,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   recordMicVolumeLabel.textContent = `${recordingMicVolume}%`;
 
   function buildRecordingAudioTracks() {
-    const musicSources = [chimeRecordDest, domToneRecordDest, edgeToneRecordDest, instrumentRecordDest].filter(Boolean);
+    const musicSources = [chimeRecordDest, domToneRecordDest, edgeToneRecordDest, spatialScanRecordDest, instrumentRecordDest].filter(Boolean);
     const wantMic = recordingMicEnabled && recordingMicStream;
     if (!musicSources.length && !wantMic) return []; // nothing enabled right now -- video-only recording, not an error
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -7224,6 +7682,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       chimeRecordDest && "chime",
       domToneRecordDest && "dominant tone",
       edgeToneRecordDest && "edge texture",
+      spatialScanRecordDest && "spatial scan",
       instrumentRecordDest && "instrument",
       (recordingMicEnabled && recordingMicStream) && "microphone"
     ].filter(Boolean);

@@ -963,6 +963,27 @@
       <option value="random_walk">Random walk</option>
     </select>
   </label>
+  <button id="spatialScanBtn" class="hud-btn" aria-pressed="false" title="A fourth sonification channel, different in kind from the three above: instead of collapsing the scene into one number (a proximity, a colour, a density), this sweeps the whole frame left to right and plays it as an actual soundscape -- a chord of one voice per row (high pitch at the top of frame down to low at the bottom), loud where that row is bright, panned to follow the sweep's left-to-right position. The same core technique real sensory-substitution devices for blind users use (Peter Meijer's The vOICe) -- a full sweep genuinely traces the scene's shape, not a statistic about it.">Spatial scan: Off</button>
+  <label id="spatialScanVolumeWrap" class="hud-slider hide" title="How loud the spatial scan plays, independent of your device's system volume.">
+    Scan volume: <span id="spatialScanVolumeLabel">40%</span>
+    <input id="spatialScanVolumeSlider" type="range" min="0" max="100" value="40">
+  </label>
+  <label id="spatialScanTempoWrap" class="hud-slider hide" title="How long one full left-to-right sweep of the frame takes -- lower is a quicker, more urgent scan; higher spaces it out into a slower, easier-to-follow trace.">
+    Sweep time: <span id="spatialScanTempoLabel">1200ms</span>
+    <input id="spatialScanTempoSlider" type="range" min="300" max="6000" step="50" value="1200">
+  </label>
+  <label id="spatialScanOutputWrap" class="hud-slider hide" title="Synth: 14 sine oscillators, one per row, always available. MIDI: sends the same 14-row chord to a connected MIDI output as held notes, each independently modulated via real Polyphonic Key Pressure -- an actual per-note continuous value on one channel, not 14 separate channels. Instrument: the same 14 rows as real looped General MIDI samples instead of oscillators.">
+    Sound:
+    <select id="spatialScanOutputSelect">
+      <option value="synth">Synth</option>
+      <option value="midi">MIDI out</option>
+      <option value="instrument">Instrument</option>
+    </select>
+  </label>
+  <label id="spatialScanInstrumentWrap" class="hud-slider hide" title="Which instrument the 14-row chord plays through -- the same full General MIDI set as chime/dominant tone/edge texture. Defaults to a sustained pad, since every row loops continuously rather than being struck like a note.">
+    Instrument:
+    <select id="spatialScanInstrumentSelect"></select>
+  </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record this view as a video, with the chime/dominant tone/edge texture sonification mixed in as its audio track. Also reachable via the floating Record button when the HUD is hidden or in fullscreen. Saved recordings appear under Recordings below.">&#9210; Record</button>
   <button id="takesBtn" class="hud-btn">Recordings (<span id="takesCount">0</span>)</button>
