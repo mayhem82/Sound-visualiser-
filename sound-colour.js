@@ -6894,6 +6894,16 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     takesCount.textContent = String(loadTakesMeta().length);
   }
 
+  function downloadTakeVideo(meta, videoUrl) {
+    const a = document.createElement("a");
+    a.href = videoUrl;
+    a.download = `sound-colour-take-${meta.id}.${extensionForVideoMime(meta.videoMimeType)}`;
+    a.addEventListener("click", (e) => e.stopPropagation());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function makeTakeActions(meta, videoUrl) {
     const actions = document.createElement("div");
     actions.className = "take-actions";
@@ -6902,15 +6912,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       downloadBtn.type = "button";
       downloadBtn.className = "hud-btn reticle-btn-secondary";
       downloadBtn.textContent = "Download";
-      downloadBtn.addEventListener("click", () => {
-        const a = document.createElement("a");
-        a.href = videoUrl;
-        a.download = `sound-colour-take-${meta.id}.${extensionForVideoMime(meta.videoMimeType)}`;
-        a.addEventListener("click", (e) => e.stopPropagation());
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      });
+      downloadBtn.addEventListener("click", () => downloadTakeVideo(meta, videoUrl));
       actions.appendChild(downloadBtn);
     }
     const deleteBtn = document.createElement("button");
@@ -7000,6 +7002,14 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     persisted.push(meta);
     saveTakesMeta(persisted);
     renderTakesList();
+    // Stopping used to only add the take to Recordings, silently -- nothing
+    // downloaded and nothing on screen changed unless you knew to open that
+    // panel yourself. Downloading it immediately (still kept in Recordings
+    // too, for re-download or deletion later) means the file actually
+    // reaches you the moment recording stops, the same way a phone's own
+    // camera app hands you the clip straight away.
+    downloadTakeVideo(meta, url);
+    showCameraStatus(`Recording saved — ${(durationMs / 1000).toFixed(1)}s, downloading now (also kept in Recordings).`);
   }
 
   function startRecording() {
