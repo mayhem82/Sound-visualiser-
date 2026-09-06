@@ -927,6 +927,15 @@
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record this view as a video, with the chime/dominant tone/edge texture sonification mixed in as its audio track. Also reachable via the floating Record button when the HUD is hidden or in fullscreen. Saved recordings appear under Recordings below.">&#9210; Record</button>
   <button id="takesBtn" class="hud-btn">Recordings (<span id="takesCount">0</span>)</button>
+  <button id="recordMicBtn" class="hud-btn" aria-pressed="false" title="Capture the microphone into recordings too, mixed in with the sonification -- its own separate permission prompt, never bundled into the camera's. Off by default: recordings are sonification-only (chime/dominant tone/edge texture/Instrument) until this is on.">Mic in recording: Off</button>
+  <label id="recordMusicVolumeWrap" class="hud-slider" title="How loud the sonification (chime/dominant tone/edge texture/Instrument) is in recordings -- independent of each channel's own live Volume slider, so a recording can be rebalanced without changing what you actually hear while working. Set it before you start (or live, mid-recording) once you know the scene.">
+    Recording music: <span id="recordMusicVolumeLabel">100%</span>
+    <input id="recordMusicVolumeSlider" type="range" min="0" max="100" value="100">
+  </label>
+  <label id="recordMicVolumeWrap" class="hud-slider hide" title="How loud the microphone is in the recording mix, relative to the sonification. Only applies once Mic in recording is on.">
+    Recording mic: <span id="recordMicVolumeLabel">100%</span>
+    <input id="recordMicVolumeSlider" type="range" min="0" max="100" value="100">
+  </label>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
   <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see — a phone's own lenses, or a USB webcam / HDMI-to-USB capture card feeding a dedicated camera into this device — appear here the same way, labelled straight from the OS/driver. The browser doesn't distinguish 'phone lens' from 'camera hardware'.">

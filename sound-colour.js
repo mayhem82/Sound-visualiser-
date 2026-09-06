@@ -561,6 +561,13 @@
   const takesList = document.getElementById("takesList");
   const takesEmptyHint = document.getElementById("takesEmptyHint");
   const closeTakesBtn = document.getElementById("closeTakesBtn");
+  const recordMicBtn = document.getElementById("recordMicBtn");
+  const recordMusicVolumeWrap = document.getElementById("recordMusicVolumeWrap");
+  const recordMusicVolumeSlider = document.getElementById("recordMusicVolumeSlider");
+  const recordMusicVolumeLabel = document.getElementById("recordMusicVolumeLabel");
+  const recordMicVolumeWrap = document.getElementById("recordMicVolumeWrap");
+  const recordMicVolumeSlider = document.getElementById("recordMicVolumeSlider");
+  const recordMicVolumeLabel = document.getElementById("recordMicVolumeLabel");
 
   const pointsPanel = document.getElementById("pointsPanel");
   const pointsGrid = document.getElementById("pointsGrid");
@@ -6357,24 +6364,98 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // above), so there's no single node to hand MediaRecorder directly --
   // recordingMixdownCtx below is a throwaway context that exists only for
   // the life of one recording, pulling in whichever of those contexts'
-  // MediaStreamDestination taps actually exist right now and mixing them
-  // into one real audio track alongside the video.
+  // MediaStreamDestination taps actually exist right now, plus the
+  // microphone if it's been turned on for recording, mixing all of it into
+  // one real audio track alongside the video -- through two independent
+  // gain buses (music, mic) so the balance between them is something you
+  // actually control, not whatever the raw levels happen to be.
+  const RECORD_MUSIC_VOLUME_KEY = "scRecordMusicVolume_v1";
+  const RECORD_MIC_VOLUME_KEY = "scRecordMicVolume_v1";
+  let recordingMusicVolume = loadOutlineNumberPref(RECORD_MUSIC_VOLUME_KEY, 100);
+  let recordingMicVolume = loadOutlineNumberPref(RECORD_MIC_VOLUME_KEY, 100);
+  let recordingMicStream = null;
+  let recordingMicEnabled = false;
   let recordingMixdownCtx = null;
+  let recordingMusicGainNode = null; // live only while recordingMixdownCtx exists
+  let recordingMicGainNode = null;
 
-  function buildSonificationAudioTracks() {
-    const sources = [chimeRecordDest, domToneRecordDest, edgeToneRecordDest, instrumentRecordDest].filter(Boolean);
-    if (!sources.length) return []; // nothing enabled right now -- video-only recording, not an error
+  async function enableRecordingMic() {
+    try {
+      recordingMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+      showCameraStatus("Microphone error: " + e.message);
+      return;
+    }
+    recordingMicEnabled = true;
+    recordMicBtn.textContent = "Mic in recording: On";
+    recordMicBtn.classList.add("active");
+    recordMicBtn.setAttribute("aria-pressed", "true");
+    recordMicVolumeWrap.classList.remove("hide");
+  }
+
+  function disableRecordingMic() {
+    if (recordingMicStream) { for (const t of recordingMicStream.getTracks()) t.stop(); }
+    recordingMicStream = null;
+    recordingMicEnabled = false;
+    recordMicBtn.textContent = "Mic in recording: Off";
+    recordMicBtn.classList.remove("active");
+    recordMicBtn.setAttribute("aria-pressed", "false");
+    recordMicVolumeWrap.classList.add("hide");
+  }
+
+  recordMicBtn.addEventListener("click", () => {
+    if (recordingMicEnabled) disableRecordingMic(); else enableRecordingMic();
+  });
+
+  recordMusicVolumeSlider.addEventListener("input", () => {
+    recordingMusicVolume = parseFloat(recordMusicVolumeSlider.value);
+    recordMusicVolumeLabel.textContent = `${recordingMusicVolume}%`;
+    if (recordingMusicGainNode) recordingMusicGainNode.gain.value = recordingMusicVolume / 100;
+  });
+  recordMusicVolumeSlider.addEventListener("change", () => {
+    try { localStorage.setItem(RECORD_MUSIC_VOLUME_KEY, String(recordingMusicVolume)); } catch (e) {}
+  });
+  recordMusicVolumeSlider.value = String(recordingMusicVolume);
+  recordMusicVolumeLabel.textContent = `${recordingMusicVolume}%`;
+
+  recordMicVolumeSlider.addEventListener("input", () => {
+    recordingMicVolume = parseFloat(recordMicVolumeSlider.value);
+    recordMicVolumeLabel.textContent = `${recordingMicVolume}%`;
+    if (recordingMicGainNode) recordingMicGainNode.gain.value = recordingMicVolume / 100;
+  });
+  recordMicVolumeSlider.addEventListener("change", () => {
+    try { localStorage.setItem(RECORD_MIC_VOLUME_KEY, String(recordingMicVolume)); } catch (e) {}
+  });
+  recordMicVolumeSlider.value = String(recordingMicVolume);
+  recordMicVolumeLabel.textContent = `${recordingMicVolume}%`;
+
+  function buildRecordingAudioTracks() {
+    const musicSources = [chimeRecordDest, domToneRecordDest, edgeToneRecordDest, instrumentRecordDest].filter(Boolean);
+    const wantMic = recordingMicEnabled && recordingMicStream;
+    if (!musicSources.length && !wantMic) return []; // nothing enabled right now -- video-only recording, not an error
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return [];
     recordingMixdownCtx = new Ctx();
     const dest = recordingMixdownCtx.createMediaStreamDestination();
-    for (const source of sources) {
-      recordingMixdownCtx.createMediaStreamSource(source.stream).connect(dest);
+    if (musicSources.length) {
+      recordingMusicGainNode = recordingMixdownCtx.createGain();
+      recordingMusicGainNode.gain.value = recordingMusicVolume / 100;
+      recordingMusicGainNode.connect(dest);
+      for (const source of musicSources) {
+        recordingMixdownCtx.createMediaStreamSource(source.stream).connect(recordingMusicGainNode);
+      }
+    }
+    if (wantMic) {
+      recordingMicGainNode = recordingMixdownCtx.createGain();
+      recordingMicGainNode.gain.value = recordingMicVolume / 100;
+      recordingMixdownCtx.createMediaStreamSource(recordingMicStream).connect(recordingMicGainNode).connect(dest);
     }
     return dest.stream.getAudioTracks();
   }
 
   function teardownRecordingMixdown() {
+    recordingMusicGainNode = null;
+    recordingMicGainNode = null;
     if (recordingMixdownCtx) {
       recordingMixdownCtx.close().catch(() => {});
       recordingMixdownCtx = null;
@@ -6683,9 +6764,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       chimeRecordDest && "chime",
       domToneRecordDest && "dominant tone",
       edgeToneRecordDest && "edge texture",
-      instrumentRecordDest && "instrument"
+      instrumentRecordDest && "instrument",
+      (recordingMicEnabled && recordingMicStream) && "microphone"
     ].filter(Boolean);
-    const audioTracks = buildSonificationAudioTracks();
+    const audioTracks = buildRecordingAudioTracks();
     const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     recordedChunks = [];
     try {
