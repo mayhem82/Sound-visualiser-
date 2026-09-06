@@ -35,11 +35,13 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  // Reads one small RGBA frame once and gets both the "Dominant colour"
-  // signal (the frame's average colour) and the "Structural complexity"
-  // signal (how much adjacent cells' brightness actually varies) out of it
-  // — a flat wall or sky averages near 0, a detailed/busy scene reads
-  // higher. Both come off a single downscaled sample instead of two passes.
+  // Reads one small RGBA frame once and gets the "Dominant colour" signal
+  // (the frame's average colour), the "Structural complexity" signal (how
+  // much adjacent cells' brightness actually varies -- a flat wall or sky
+  // averages near 0, a detailed/busy scene reads higher), and a
+  // brightness-weighted centroid (WHERE the light actually is, not just
+  // how much of it there is -- see Pan/Tilt below) out of it. All three
+  // come off a single downscaled sample instead of separate passes.
   function computeSceneStats(pixels, w, h) {
     let sumR = 0, sumG = 0, sumB = 0;
     const n = w * h;
@@ -63,7 +65,20 @@
     // surface sits near 0) -- scaled so "complexity" uses its full 0..1
     // range instead of only ever reading the bottom of the dial.
     const complexity = Math.max(0, Math.min(1, meanDiff / 0.25));
-    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity };
+    // Brightness-weighted centroid, same technique Sound Colour's own
+    // particle attractors use for "where's the bright region" -- falls
+    // back to dead centre on a totally black frame (sumLuma === 0) rather
+    // than a NaN from a 0/0 divide.
+    let sumLuma = 0, sumX = 0, sumY = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const l = lumaGrid[y * w + x];
+        sumLuma += l; sumX += l * x; sumY += l * y;
+      }
+    }
+    const centroidX = sumLuma > 0 ? (sumX / sumLuma) / (w - 1) : 0.5;
+    const centroidY = sumLuma > 0 ? (sumY / sumLuma) / (h - 1) : 0.5;
+    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, complexity, centroidX, centroidY };
   }
 
   // Average FFT bin energy (0..1) across a real Hz range, independent of
@@ -114,8 +129,19 @@
     rgbw: { label: "RGBW (4ch)", channels: ["red", "green", "blue", "white"] },
     dimmer_rgb: { label: "Dimmer + RGB (4ch)", channels: ["dimmer", "red", "green", "blue"] },
     strobe: { label: "Strobe / laser trigger (1ch)", channels: ["trigger"] },
+    // A common cheap-LED-PAR channel order -- adds Amber and UV alongside
+    // RGBW's own White, the two colours a plain RGB(W) fixture can't
+    // reach at all (amber for a warm, saturated near-orange no RGB mix
+    // reproduces cleanly; UV for actual blacklight/fluorescent-reactive
+    // output, not just a very blue-violet RGB).
+    rgbaw_uv: { label: "RGBAW+UV (6ch)", channels: ["red", "green", "blue", "amber", "white", "uv"] },
+    // Pan/Tilt/Dimmer/RGB -- a common simple moving-head channel order.
+    // Pan/Tilt aren't colour or dimmer channels at all: see the Pan/Tilt
+    // handling in computeFixtureChannelValues below for what actually
+    // drives them (the scene's own brightness centroid, not a Source).
+    moving_head: { label: "Moving head: Pan/Tilt/Dimmer/RGB (6ch)", channels: ["pan", "tilt", "dimmer", "red", "green", "blue"] },
   };
-  const CHANNEL_LABELS = { dimmer: "Dim", red: "R", green: "G", blue: "B", white: "W", trigger: "Trig" };
+  const CHANNEL_LABELS = { dimmer: "Dim", red: "R", green: "G", blue: "B", white: "W", amber: "A", uv: "UV", trigger: "Trig", pan: "Pan", tilt: "Tilt" };
   const SOURCES = {
     camera_colour: "Dominant colour (camera)",
     camera_complexity: "Structural complexity (camera)",
@@ -147,14 +173,36 @@
   function computeFixtureChannelValues(fixture, state) {
     const profile = PROFILES[fixture.profile] || PROFILES.dimmer;
     const names = profile.channels;
+    // Pan/Tilt are positional, not colour/dimmer -- they always follow the
+    // scene's own brightness-weighted centroid (computeSceneStats above),
+    // regardless of which Source the fixture's colour/dimmer channels are
+    // set to. A profile with no pan/tilt channels never reads these.
+    // Real moving heads vary in physical range/orientation, so this maps
+    // the full 0..1 frame directly onto the full 0..255 DMX range and
+    // leaves matching that to the fixture's own physical mounting/homing,
+    // not a value this app has any way to know.
+    const panByte = byte(state.centroidX != null ? state.centroidX : 0.5);
+    const tiltByte = byte(state.centroidY != null ? state.centroidY : 0.5);
     if (fixture.source === "camera_colour") {
       const r = state.r || 0, g = state.g || 0, b = state.b || 0;
       const dim = luma709(r, g, b);
       return names.map((n) => {
+        if (n === "pan") return panByte;
+        if (n === "tilt") return tiltByte;
         if (n === "red") return byte(r);
         if (n === "green") return byte(g);
         if (n === "blue") return byte(b);
         if (n === "white") return byte(Math.min(r, g, b));
+        // Amber approximates a real ~590nm amber diode: it reads strongest
+        // where red and green are both already present in similar amounts
+        // (yellow/orange content), the same shared-minimum idea White's
+        // own approximation above uses for red/green/blue together.
+        if (n === "amber") return byte(Math.min(r, g));
+        // UV (~395nm) sits outside what a camera's RGB sensor -- or human
+        // vision -- can register at all; there's no honest way to derive
+        // it from a visible-light colour, so it stays off for this source
+        // rather than fake a reading no camera could actually produce.
+        if (n === "uv") return 0;
         return byte(dim); // dimmer or trigger
       });
     }
@@ -165,10 +213,12 @@
     const scalar = Math.max(0, Math.min(1, scalarMap[fixture.source] || 0));
     const [tr, tg, tb] = hexToRgb01(fixture.tint);
     return names.map((n) => {
+      if (n === "pan") return panByte;
+      if (n === "tilt") return tiltByte;
       if (n === "red") return byte(tr * scalar);
       if (n === "green") return byte(tg * scalar);
       if (n === "blue") return byte(tb * scalar);
-      return byte(scalar); // white, dimmer, or trigger
+      return byte(scalar); // white, amber, uv, dimmer, or trigger
     });
   }
 
@@ -269,7 +319,7 @@
   if (savedBaud && [...baudSelect.options].some((o) => o.value === savedBaud)) baudSelect.value = savedBaud;
 
   // Live signal state, refreshed once per tick.
-  const state = { r: 0, g: 0, b: 0, complexity: 0, bass: 0, mid: 0, treble: 0, beat: 0 };
+  const state = { r: 0, g: 0, b: 0, complexity: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5 };
   const beatTracker = makeBeatTracker();
   const dmxBuffer = new Uint8Array(513); // index 0 = DMX start code (0x00)
 
@@ -546,6 +596,7 @@
     const data = sceneCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
     const stats = computeSceneStats(data, SCENE_GRID_W, SCENE_GRID_H);
     state.r = stats.r; state.g = stats.g; state.b = stats.b; state.complexity = stats.complexity;
+    state.centroidX = stats.centroidX; state.centroidY = stats.centroidY;
   }
   function sampleAudioIfEnabled(nowMs) {
     if (!micEnabled || !analyser) return;
