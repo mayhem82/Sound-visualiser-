@@ -3470,7 +3470,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // a fetch/decode failure (offline, sample genuinely missing) is silently
   // dropped rather than surfaced, same "never let sonification errors break
   // the page" spirit as everything else in this section.
-  async function playInstrumentNote(folder, midiNote, velocity, durationS, detuneCents = 0) {
+  // filterHz is only ever passed by dominant tone (see domToneSpreadToFilterHz)
+  // -- chime/edge texture's own calls leave it null, which skips the filter
+  // node entirely and connects src straight to gain exactly as before, so
+  // their sound is unaffected.
+  async function playInstrumentNote(folder, midiNote, velocity, durationS, detuneCents = 0, filterHz = null) {
     const ctx = ensureInstrumentAudio();
     if (!ctx) return;
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -3487,7 +3491,15 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       src.playbackRate.value = Math.pow(2, nearest.semitoneOffset / 12) * centsToRateFactor(detuneCents);
       const gain = ctx.createGain();
       gain.gain.value = Math.max(0.0001, Math.min(1, velocity));
-      src.connect(gain);
+      if (filterHz != null) {
+        const filter = ctx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.value = filterHz;
+        src.connect(filter);
+        filter.connect(gain);
+      } else {
+        src.connect(gain);
+      }
       gain.connect(ctx.destination);
       gain.connect(instrumentRecordDest);
       src.start(now);
@@ -3602,15 +3614,36 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     midiOutput.send([0xb0 | channel, 11, value]);
   }
 
+  const midiBrightnessSentPerChannel = {};
+
+  // Standard MIDI CC 74 -- "Sound Controller 5 (Brightness)" in the MIDI 1.0
+  // spec's default controller assignments, and the actual filter-cutoff
+  // control on the vast majority of GM-compliant synths/soft-synths that
+  // implement it at all -- the MIDI-out equivalent of domToneFilter's local
+  // lowpass, for dominant tone's real colour-spread signal (see
+  // sampleSceneColorSpread) on a connected instrument this page can't put a
+  // Web Audio filter in front of.
+  function sendMidiBrightness(channel, value0to1) {
+    if (!midiOutput) return;
+    const value = Math.max(0, Math.min(127, Math.round(value0to1 * 127)));
+    if (midiBrightnessSentPerChannel[channel] === value) return;
+    midiBrightnessSentPerChannel[channel] = value;
+    midiOutput.send([0xb0 | channel, 74, value]);
+  }
+
   // Plays one note out to the currently selected MIDI output: a program
   // change (only sent when it actually changes, so repeated notes on the
   // same instrument don't re-select it every time), a pitch bend representing
   // Detune/Randomness's combined cents offset (also deduped against the last
-  // value sent), then note on, then note off after durationMs.
-  function playMidiNote(channel, program, midiNote, velocity, durationMs, detuneCents = 0) {
+  // value sent), an optional CC74 brightness value (only dominant tone
+  // passes one -- chime/edge texture leave it null and nothing is sent, so
+  // their own MIDI output is unaffected), then note on, then note off after
+  // durationMs.
+  function playMidiNote(channel, program, midiNote, velocity, durationMs, detuneCents = 0, brightness0to1 = null) {
     if (!midiOutput) return;
     sendMidiProgramChange(channel, program);
     sendMidiPitchBend(channel, detuneCents);
+    if (brightness0to1 != null) sendMidiBrightness(channel, brightness0to1);
     sendMidiNoteOn(channel, midiNote, velocity);
     setTimeout(() => sendMidiNoteOff(channel, midiNote), durationMs);
   }
@@ -4091,6 +4124,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // no +-2-semitone ceiling.
   let domToneContinuousInstrumentSrc = null;
   let domToneContinuousInstrumentGain = null;
+  let domToneContinuousInstrumentFilter = null; // spread -> brightness, same as domToneFilter above
   let domToneContinuousInstrumentBaseMidiNote = null;
   let domToneContinuousInstrumentFolder = null;
 
@@ -4190,11 +4224,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const totalCents = domToneDetuneCents + randomCentsJitter(domToneRandomness, DOM_TONE_RANDOMNESS_MAX_CENTS);
     if (domToneOutput === "midi") {
       const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === domToneInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "marimba");
-      playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600, totalCents);
+      playMidiNote(DOM_TONE_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1600, totalCents, spread || 0);
       return;
     }
     if (domToneOutput === "instrument") {
-      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8, totalCents);
+      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8, totalCents, domToneSpreadToFilterHz(spread || 0));
       return;
     }
     const now = domToneAudioCtx.currentTime;
@@ -4227,7 +4261,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     }
   }
 
-  function updateDomToneContinuousMidi(rgb, l) {
+  function updateDomToneContinuousMidi(rgb, l, spread) {
     if (!rgb || l < 0.03) {
       stopDomToneContinuousMidi();
       return;
@@ -4250,6 +4284,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       sendMidiPitchBend(DOM_TONE_MIDI_CHANNEL, bendCents);
     }
     sendMidiExpression(DOM_TONE_MIDI_CHANNEL, (domToneVolume / 100) * Math.min(1, l * 1.3));
+    sendMidiBrightness(DOM_TONE_MIDI_CHANNEL, spread);
   }
 
   function stopDomToneContinuousInstrument() {
@@ -4257,8 +4292,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       try { domToneContinuousInstrumentSrc.stop(); } catch (e) {}
       domToneContinuousInstrumentSrc.disconnect();
     }
+    if (domToneContinuousInstrumentFilter) domToneContinuousInstrumentFilter.disconnect();
     if (domToneContinuousInstrumentGain) domToneContinuousInstrumentGain.disconnect();
     domToneContinuousInstrumentSrc = null;
+    domToneContinuousInstrumentFilter = null;
     domToneContinuousInstrumentGain = null;
     domToneContinuousInstrumentBaseMidiNote = null;
     domToneContinuousInstrumentFolder = null;
@@ -4286,13 +4323,18 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = DOM_TONE_SPREAD_MIN_HZ;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      src.connect(gain);
+      src.connect(filter);
+      filter.connect(gain);
       gain.connect(ctx.destination);
       gain.connect(instrumentRecordDest);
       src.start();
       domToneContinuousInstrumentSrc = src;
+      domToneContinuousInstrumentFilter = filter;
       domToneContinuousInstrumentGain = gain;
       domToneContinuousInstrumentBaseMidiNote = Math.round(centerMidiNote - nearest.semitoneOffset);
       domToneContinuousInstrumentFolder = folderRequested;
@@ -4301,7 +4343,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     }
   }
 
-  function updateDomToneContinuousInstrument(rgb, l) {
+  function updateDomToneContinuousInstrument(rgb, l, spread) {
     if (!rgb || l < 0.03) {
       if (domToneContinuousInstrumentGain) domToneContinuousInstrumentGain.gain.setTargetAtTime(0, instrumentAudioCtx.currentTime, 0.15);
       return;
@@ -4318,19 +4360,26 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     domToneContinuousInstrumentSrc.playbackRate.setTargetAtTime(rate, now, 0.2);
     const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.5;
     domToneContinuousInstrumentGain.gain.setTargetAtTime(targetGain, now, 0.2);
+    domToneContinuousInstrumentFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(spread), now, 0.2);
   }
 
   function updateDominantColorTone() {
     if (!domToneAudioCtx) return;
     const rgb = sampleDominantColor();
+    // Sampled once per tick and threaded through every output path below --
+    // Synth, MIDI, and Instrument alike -- so all three actually hear colour
+    // variety, not just Synth (see sampleSceneColorSpread for why this
+    // exists at all), and so a single frame's spread reads consistently
+    // everywhere instead of each path re-sampling `stage` a moment apart.
+    const spread = sampleSceneColorSpread();
     if (domToneStyle === "continuous") {
       const [, , continuousL] = rgb ? rgb2hsl(rgb[0], rgb[1], rgb[2]) : [0, 0, 0];
       if (domToneOutput === "midi") {
-        updateDomToneContinuousMidi(rgb, continuousL);
+        updateDomToneContinuousMidi(rgb, continuousL, spread);
         return;
       }
       if (domToneOutput === "instrument") {
-        updateDomToneContinuousInstrument(rgb, continuousL);
+        updateDomToneContinuousInstrument(rgb, continuousL, spread);
         return;
       }
       const now = domToneAudioCtx.currentTime;
@@ -4350,7 +4399,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * SONIFICATION_CONTINUOUS_PEAK;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
-      domToneFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(sampleSceneColorSpread()), now, 0.2);
+      domToneFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(spread), now, 0.2);
       return;
     }
     // Melodic: hue picks the chord root, an arpeggio step plays every few
@@ -4417,7 +4466,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
         playedIndex = Math.min(activeScaleHz.length - 1, rootIndex + randOffset);
       }
     }
-    playDomTonePadNote(activeScaleHz[playedIndex], Math.min(1, l * 1.3), sampleSceneColorSpread());
+    playDomTonePadNote(activeScaleHz[playedIndex], Math.min(1, l * 1.3), spread);
   }
 
   function updateDomToneSamplingTimer() {
