@@ -516,6 +516,11 @@
   const edgeTonePatternSelect = document.getElementById("edgeTonePatternSelect");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
+  const recordBtn = document.getElementById("recordBtn");
+  const recordingIndicator = document.getElementById("recordingIndicator");
+  const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
+  const floatingCaptureBar = document.getElementById("floatingCaptureBar");
+  const floatingRecordBtn = document.getElementById("floatingRecordBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const torchBtn = document.getElementById("torchBtn");
@@ -3288,6 +3293,17 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   }
 
   let instrumentAudioCtx = null;
+  // Recording tap: chime, dominant tone, edge texture, and the shared
+  // Instrument-sample playback below each run on their own separate
+  // AudioContext (never merged into one -- each grew independently and nothing
+  // has needed them to interoperate before now), so there's no single node
+  // recording could tap. Instead every one of them gets its own
+  // MediaStreamDestinationNode, connected in parallel alongside its normal
+  // .destination output (never instead of it -- this changes nothing about
+  // what's actually heard); startRecording pulls together whichever of these
+  // actually exist at record time and mixes them into one track. See
+  // buildSonificationRecordingStream.
+  let instrumentRecordDest = null;
   const instrumentSampleCache = new Map(); // "folder/NoteOctave" -> Promise<AudioBuffer>
 
   function ensureInstrumentAudio() {
@@ -3295,6 +3311,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
     instrumentAudioCtx = new Ctx();
+    instrumentRecordDest = instrumentAudioCtx.createMediaStreamDestination();
     return instrumentAudioCtx;
   }
 
@@ -3335,6 +3352,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       gain.gain.value = Math.max(0.0001, Math.min(1, velocity));
       src.connect(gain);
       gain.connect(ctx.destination);
+      gain.connect(instrumentRecordDest);
       src.start(now);
       if (durationS) src.stop(now + durationS);
     } catch (e) {
@@ -3540,6 +3558,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   })();
   let chimeWalkIndex = null;
   let chimeAudioCtx = null;
+  let chimeRecordDest = null; // see instrumentRecordDest above
   let chimeTimerId = null;
   // Which scale step last actually played a note, and how many sampling
   // ticks since -- lets a held-steady "right on the colour" position keep
@@ -3570,6 +3589,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     chimeAudioCtx = new Ctx();
+    chimeRecordDest = chimeAudioCtx.createMediaStreamDestination();
   }
 
   // Plucks one short bell-like note -- its own oscillator + gain envelope,
@@ -3599,6 +3619,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
     osc.connect(gain);
     gain.connect(chimeAudioCtx.destination);
+    gain.connect(chimeRecordDest);
     osc.start(now);
     osc.stop(now + 1.2);
   }
@@ -3841,6 +3862,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     } catch (e) { return "marimba"; }
   })();
   let domToneAudioCtx = null;
+  let domToneRecordDest = null; // see instrumentRecordDest above
   let domToneOsc = null;
   let domToneGainNode = null;
   let domToneTimerId = null;
@@ -3945,6 +3967,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     domToneAudioCtx = new Ctx();
+    domToneRecordDest = domToneAudioCtx.createMediaStreamDestination();
     domToneOsc = domToneAudioCtx.createOscillator();
     domToneOsc.type = "sine";
     domToneOsc.frequency.value = 220;
@@ -3952,6 +3975,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     domToneGainNode.gain.value = 0;
     domToneOsc.connect(domToneGainNode);
     domToneGainNode.connect(domToneAudioCtx.destination);
+    domToneGainNode.connect(domToneRecordDest);
     domToneOsc.start();
   }
 
@@ -3981,6 +4005,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
     osc.connect(gain);
     gain.connect(domToneAudioCtx.destination);
+    gain.connect(domToneRecordDest);
     osc.start(now);
     osc.stop(now + 1.7);
   }
@@ -4055,6 +4080,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       gain.gain.value = 0;
       src.connect(gain);
       gain.connect(ctx.destination);
+      gain.connect(instrumentRecordDest);
       src.start();
       domToneContinuousInstrumentSrc = src;
       domToneContinuousInstrumentGain = gain;
@@ -4387,6 +4413,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let edgeTonePitchRangeOctaves = loadOutlineNumberPref(EDGE_TONE_PITCH_RANGE_KEY, EDGE_TONE_DEFAULT_PITCH_RANGE_OCTAVES);
   let EDGE_TONE_SCALE_HZ = buildWholeToneScaleHz(EDGE_TONE_ROOT_HZ, edgeTonePitchRangeOctaves);
   let edgeToneAudioCtx = null;
+  let edgeToneRecordDest = null; // see instrumentRecordDest above
   let edgeToneNoiseSrc = null;
   let edgeToneFilter = null;
   let edgeToneGainNode = null;
@@ -4505,6 +4532,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     edgeToneAudioCtx = new Ctx();
+    edgeToneRecordDest = edgeToneAudioCtx.createMediaStreamDestination();
     const noiseDurationS = 2;
     const buffer = edgeToneAudioCtx.createBuffer(1, edgeToneAudioCtx.sampleRate * noiseDurationS, edgeToneAudioCtx.sampleRate);
     const channel = buffer.getChannelData(0);
@@ -4520,6 +4548,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     edgeToneNoiseSrc.connect(edgeToneFilter);
     edgeToneFilter.connect(edgeToneGainNode);
     edgeToneGainNode.connect(edgeToneAudioCtx.destination);
+    edgeToneGainNode.connect(edgeToneRecordDest);
     edgeToneNoiseSrc.start();
   }
 
@@ -4575,6 +4604,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     src.connect(filter);
     filter.connect(gain);
     gain.connect(edgeToneAudioCtx.destination);
+    gain.connect(edgeToneRecordDest);
     src.start(now);
     src.stop(now + dur + 0.02);
   }
@@ -5795,6 +5825,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     URL.revokeObjectURL(url);
   }
 
+  function timestampForFilename() {
+    return new Date().toISOString().replace(/[:.]/g, "-");
+  }
+
   function exportPoints() {
     if (points.length === 0) {
       importExportStatus.textContent = "No saved colours to export yet.";
@@ -6306,6 +6340,139 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     saveRotatePref();
   });
 
+  // ---- Recording ----
+  // Captures the fully-composited stage canvas -- calibrated correction,
+  // particle swarm, everything currently on screen -- exactly like Colour
+  // Vision Extreme's own recording. The one thing this page needs that
+  // page never did: real audio. Chime/dominant tone/edge texture/Instrument
+  // each run on their own separate AudioContext (see instrumentRecordDest
+  // above), so there's no single node to hand MediaRecorder directly --
+  // recordingMixdownCtx below is a throwaway context that exists only for
+  // the life of one recording, pulling in whichever of those contexts'
+  // MediaStreamDestination taps actually exist right now and mixing them
+  // into one real audio track alongside the video.
+  let recordingMixdownCtx = null;
+
+  function buildSonificationAudioTracks() {
+    const sources = [chimeRecordDest, domToneRecordDest, edgeToneRecordDest, instrumentRecordDest].filter(Boolean);
+    if (!sources.length) return []; // nothing enabled right now -- video-only recording, not an error
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return [];
+    recordingMixdownCtx = new Ctx();
+    const dest = recordingMixdownCtx.createMediaStreamDestination();
+    for (const source of sources) {
+      recordingMixdownCtx.createMediaStreamSource(source.stream).connect(dest);
+    }
+    return dest.stream.getAudioTracks();
+  }
+
+  function teardownRecordingMixdown() {
+    if (recordingMixdownCtx) {
+      recordingMixdownCtx.close().catch(() => {});
+      recordingMixdownCtx = null;
+    }
+  }
+
+  function pickRecordingMimeType() {
+    if (typeof MediaRecorder === "undefined") return "";
+    // mp4 first: real MP4 output where the platform's MediaRecorder can mux
+    // it (Safari always can; Chrome only on some platforms/versions) --
+    // isTypeSupported rejects these where it can't, falling through to webm.
+    const candidates = [
+      "video/mp4;codecs=avc1,mp4a.40.2", "video/mp4;codecs=h264,aac", "video/mp4",
+      "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"
+    ];
+    return candidates.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+  }
+
+  function updateRecordingLabel() {
+    const secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+    const ss = String(secs % 60).padStart(2, "0");
+    recordBtn.textContent = `⏹ ${mm}:${ss}`;
+    floatingRecordBtn.textContent = `⏹ ${mm}:${ss}`;
+    recordingIndicatorTime.textContent = `${mm}:${ss}`;
+  }
+
+  function startRecording() {
+    if (isRecording || !gl || typeof stage.captureStream !== "function") return;
+    recordingMimeType = pickRecordingMimeType();
+    if (!recordingMimeType) {
+      showCameraStatus("Video recording isn't supported in this browser.");
+      return;
+    }
+    let canvasStream;
+    try {
+      canvasStream = stage.captureStream(30);
+    } catch (err) {
+      showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
+      return;
+    }
+    const audioTracks = buildSonificationAudioTracks();
+    const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+    recordedChunks = [];
+    try {
+      mediaRecorder = new MediaRecorder(recordStream, { mimeType: recordingMimeType });
+    } catch (err) {
+      teardownRecordingMixdown();
+      showCameraStatus("Couldn't start recording: " + (err.message || err.name || "unknown error"));
+      return;
+    }
+    mediaRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+    mediaRecorder.addEventListener("stop", () => {
+      teardownRecordingMixdown();
+      const ext = recordingMimeType.includes("mp4") ? "mp4" : "webm";
+      const blob = new Blob(recordedChunks, { type: recordingMimeType });
+      recordedChunks = [];
+      if (blob.size > 0) {
+        downloadBlob(blob, `sound-colour-video-${timestampForFilename()}.${ext}`);
+      } else {
+        showCameraStatus("Recording produced no data — try again.");
+      }
+    });
+    mediaRecorder.start();
+    isRecording = true;
+    recordingStartedAt = Date.now();
+    recordBtn.classList.add("recording");
+    recordBtn.setAttribute("aria-pressed", "true");
+    floatingRecordBtn.classList.add("recording");
+    floatingRecordBtn.setAttribute("aria-pressed", "true");
+    recordingIndicator.classList.remove("hide");
+    updateRecordingLabel();
+    recordingTimerId = setInterval(updateRecordingLabel, 500);
+  }
+
+  function stopRecording() {
+    if (!isRecording || !mediaRecorder) return;
+    mediaRecorder.stop();
+    isRecording = false;
+    recordBtn.classList.remove("recording");
+    recordBtn.setAttribute("aria-pressed", "false");
+    recordBtn.textContent = "⏺ Record";
+    floatingRecordBtn.classList.remove("recording");
+    floatingRecordBtn.setAttribute("aria-pressed", "false");
+    floatingRecordBtn.textContent = "⏺ Record";
+    recordingIndicator.classList.add("hide");
+    if (recordingTimerId) { clearInterval(recordingTimerId); recordingTimerId = null; }
+  }
+
+  function toggleRecording() {
+    if (isRecording) stopRecording(); else startRecording();
+  }
+
+  recordBtn.addEventListener("click", toggleRecording);
+  floatingRecordBtn.addEventListener("click", toggleRecording);
+
+  // The in-HUD #recordBtn and the floating #floatingRecordBtn are the same
+  // control shown in two places -- only one is ever needed at once, so the
+  // floating one only appears once the HUD itself is hidden (including in
+  // fullscreen, since entering fullscreen hides the HUD too).
+  function updateFloatingCaptureBarVisibility() {
+    floatingCaptureBar.classList.toggle("hide", !hud.classList.contains("hide"));
+  }
+
   // ---- Fullscreen ----
   // Replaced the old "Glasses mode" (fullscreen + HUD hidden + forced
   // landscape, for tethered AR/smart glasses) with a plain fullscreen
@@ -6330,12 +6497,14 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     } catch (e) { /* fullscreen not available/permitted — still hide the HUD below */ }
     fullscreenActive = true;
     hud.classList.add("hide");
+    updateFloatingCaptureBarVisibility();
     setFullscreenBtnState(true);
   }
 
   function exitFullscreenMode() {
     fullscreenActive = false;
     hud.classList.remove("hide");
+    updateFloatingCaptureBarVisibility();
     setFullscreenBtnState(false);
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) {
@@ -6453,14 +6622,16 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #fullscreenBtn"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #fullscreenBtn, #floatingCaptureBar"
     ));
   }
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;
     hud.classList.toggle("hide");
+    updateFloatingCaptureBarVisibility();
   });
+  updateFloatingCaptureBarVisibility();
 
   updatePointsCount();
   seedBuiltinTemplatesIfNeeded();

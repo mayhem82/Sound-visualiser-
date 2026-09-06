@@ -925,6 +925,7 @@
     </select>
   </label>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record this view as a video, with the chime/dominant tone/edge texture sonification mixed in as its audio track. Also reachable via the floating Record button when the HUD is hidden or in fullscreen.">&#9210; Record</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight — useful for calibrating colours in low light.">Flashlight</button>
   <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see — a phone's own lenses, or a USB webcam / HDMI-to-USB capture card feeding a dedicated camera into this device — appear here the same way, labelled straight from the OS/driver. The browser doesn't distinguish 'phone lens' from 'camera hardware'.">
@@ -941,10 +942,20 @@
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
 
+<p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+
 <!-- Always on screen, in both HUD and fullscreen states, so there's one
      large, unmissable, fixed target to get in and back out of fullscreen
      without hunting for a tiny gap of bare video. -->
 <button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
+
+<!-- Duplicates #recordBtn above so recording is reachable with the HUD
+     tapped away or in fullscreen -- same reasoning as #fullscreenBtn, and
+     the same "outside #hud, never given the .hide class" mechanism keeps
+     it on screen regardless of HUD state. -->
+<div id="floatingCaptureBar">
+  <button id="floatingRecordBtn" class="hud-btn" aria-pressed="false" title="Record this view + sonification audio as a video file. Works in fullscreen too.">&#9210; Record</button>
+</div>
 
 <div id="choosePanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="choosePanelTitle">
   <div id="choosePanelInner">
