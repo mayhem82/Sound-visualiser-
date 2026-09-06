@@ -3470,11 +3470,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // a fetch/decode failure (offline, sample genuinely missing) is silently
   // dropped rather than surfaced, same "never let sonification errors break
   // the page" spirit as everything else in this section.
-  // filterHz is only ever passed by dominant tone (see domToneSpreadToFilterHz)
-  // -- chime/edge texture's own calls leave it null, which skips the filter
-  // node entirely and connects src straight to gain exactly as before, so
-  // their sound is unaffected.
-  async function playInstrumentNote(folder, midiNote, velocity, durationS, detuneCents = 0, filterHz = null) {
+  // filterHz/filterQ are only ever passed by dominant tone (see
+  // domToneSpreadToFilterHz/Q) -- chime/edge texture's own calls leave them
+  // null, which skips the filter node entirely and connects src straight to
+  // gain exactly as before, so their sound is unaffected.
+  async function playInstrumentNote(folder, midiNote, velocity, durationS, detuneCents = 0, filterHz = null, filterQ = null) {
     const ctx = ensureInstrumentAudio();
     if (!ctx) return;
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -3495,6 +3495,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
         const filter = ctx.createBiquadFilter();
         filter.type = "lowpass";
         filter.frequency.value = filterHz;
+        if (filterQ != null) filter.Q.value = filterQ;
         src.connect(filter);
         filter.connect(gain);
       } else {
@@ -3631,19 +3632,38 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     midiOutput.send([0xb0 | channel, 74, value]);
   }
 
+  const midiResonanceSentPerChannel = {};
+
+  // Standard MIDI CC 71 -- "Sound Controller 2 (Timbre/Harmonic
+  // Intensity)" in the same MIDI 1.0 default controller table as CC74 --
+  // most synths that implement it map it straight to filter resonance
+  // (Q). The MIDI-out equivalent of domToneFilter.Q, sent alongside CC74
+  // so a connected instrument gets both halves of the spread signal
+  // (where the cutoff sits, and how sharply it rings there), not just one.
+  function sendMidiResonance(channel, value0to1) {
+    if (!midiOutput) return;
+    const value = Math.max(0, Math.min(127, Math.round(value0to1 * 127)));
+    if (midiResonanceSentPerChannel[channel] === value) return;
+    midiResonanceSentPerChannel[channel] = value;
+    midiOutput.send([0xb0 | channel, 71, value]);
+  }
+
   // Plays one note out to the currently selected MIDI output: a program
   // change (only sent when it actually changes, so repeated notes on the
   // same instrument don't re-select it every time), a pitch bend representing
   // Detune/Randomness's combined cents offset (also deduped against the last
-  // value sent), an optional CC74 brightness value (only dominant tone
-  // passes one -- chime/edge texture leave it null and nothing is sent, so
-  // their own MIDI output is unaffected), then note on, then note off after
-  // durationMs.
+  // value sent), an optional CC74 brightness + CC71 resonance pair (only
+  // dominant tone passes one -- chime/edge texture leave it null and
+  // nothing is sent, so their own MIDI output is unaffected), then note on,
+  // then note off after durationMs.
   function playMidiNote(channel, program, midiNote, velocity, durationMs, detuneCents = 0, brightness0to1 = null) {
     if (!midiOutput) return;
     sendMidiProgramChange(channel, program);
     sendMidiPitchBend(channel, detuneCents);
-    if (brightness0to1 != null) sendMidiBrightness(channel, brightness0to1);
+    if (brightness0to1 != null) {
+      sendMidiBrightness(channel, brightness0to1);
+      sendMidiResonance(channel, brightness0to1);
+    }
     sendMidiNoteOn(channel, midiNote, velocity);
     setTimeout(() => sendMidiNoteOff(channel, midiNote), durationMs);
   }
@@ -4036,11 +4056,19 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let domToneOsc = null;
   let domToneGainNode = null;
   // Lowpass between domToneOsc and domToneGainNode (Continuous/Synth only)
-  // whose cutoff tracks sampleSceneColorSpread() -- see that function for
-  // why hue/lightness alone can't tell two genuinely different scenes
-  // apart, and playDomTonePadNote's own per-note filter for Melodic's
-  // equivalent.
+  // whose cutoff AND resonance (Q) track sampleSceneColorSpread() -- see
+  // that function for why hue/lightness alone can't tell two genuinely
+  // different scenes apart, and playDomTonePadNote's own per-note filter
+  // for Melodic's equivalent.
   let domToneFilter = null;
+  // A sine oscillator alone has no harmonic content for a filter to actually
+  // shape -- cutoff can only ever mute/pass the bare fundamental, never
+  // change its timbre. domToneOsc2 is a sawtooth running at the exact same
+  // frequency, mixed in via domToneOsc2Gain (0 at spread=0, audible at
+  // spread=1) purely so domToneFilter has real harmonics to brighten --
+  // spread now changes the tone's actual colour, not just its volume.
+  let domToneOsc2 = null;
+  let domToneOsc2Gain = null;
   let domToneTimerId = null;
   // Melodic mode's groove: the same major-pentatonic shape as the chime's
   // scale, but rooted a tritone away (F#3 instead of C4) -- a tritone
@@ -4188,11 +4216,30 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // Maps sampleSceneColorSpread()'s 0..1 into a lowpass cutoff -- a uniform
   // scene stays dark/muffled, a colour-varied one opens up and brightens,
   // the same brightness-as-a-signal vocabulary edge texture's own Continuous
-  // style already uses for density.
-  const DOM_TONE_SPREAD_MIN_HZ = 500;
-  const DOM_TONE_SPREAD_MAX_HZ = 6000;
+  // style already uses for density. Runs the full practical range: 120Hz
+  // sits below every fundamental this channel ever plays (Continuous's
+  // 220-440Hz floor, Melodic's 185Hz just-intonation/pentatonic root), so
+  // spread=0 always genuinely mutes the tone down to near-silence rather
+  // than sitting above the fundamental and doing nothing; 18kHz is
+  // effectively the top of human hearing, so spread=1 is as fully open as a
+  // lowpass can meaningfully get.
+  const DOM_TONE_SPREAD_MIN_HZ = 120;
+  const DOM_TONE_SPREAD_MAX_HZ = 18000;
   function domToneSpreadToFilterHz(spread) {
     return DOM_TONE_SPREAD_MIN_HZ * Math.pow(DOM_TONE_SPREAD_MAX_HZ / DOM_TONE_SPREAD_MIN_HZ, spread);
+  }
+
+  // Filter resonance (Q) -- a second, independent way a BiquadFilter can
+  // express "how colour-varied is this scene" beyond just where the cutoff
+  // sits: a bare/gentle response at spread=0, an emphasized, ringing peak
+  // right at the cutoff at spread=1. Applied everywhere domToneSpreadToFilterHz
+  // is (Synth's domToneFilter/playDomTonePadNote's per-note filter,
+  // Instrument's filterHz path) so a highly-varied scene doesn't just sound
+  // brighter, it sounds like it's being pushed harder against a resonant edge.
+  const DOM_TONE_SPREAD_MIN_Q = 0.7; // Web Audio's own default Q -- no emphasis
+  const DOM_TONE_SPREAD_MAX_Q = 14; // a sharp, whistling resonant peak
+  function domToneSpreadToFilterQ(spread) {
+    return DOM_TONE_SPREAD_MIN_Q + (DOM_TONE_SPREAD_MAX_Q - DOM_TONE_SPREAD_MIN_Q) * spread;
   }
 
   function ensureDomToneAudio() {
@@ -4204,16 +4251,25 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     domToneOsc = domToneAudioCtx.createOscillator();
     domToneOsc.type = "sine";
     domToneOsc.frequency.value = 220;
+    domToneOsc2 = domToneAudioCtx.createOscillator();
+    domToneOsc2.type = "sawtooth";
+    domToneOsc2.frequency.value = 220;
+    domToneOsc2Gain = domToneAudioCtx.createGain();
+    domToneOsc2Gain.gain.value = 0;
     domToneFilter = domToneAudioCtx.createBiquadFilter();
     domToneFilter.type = "lowpass";
     domToneFilter.frequency.value = DOM_TONE_SPREAD_MIN_HZ;
+    domToneFilter.Q.value = DOM_TONE_SPREAD_MIN_Q;
     domToneGainNode = domToneAudioCtx.createGain();
     domToneGainNode.gain.value = 0;
     domToneOsc.connect(domToneFilter);
+    domToneOsc2.connect(domToneOsc2Gain);
+    domToneOsc2Gain.connect(domToneFilter);
     domToneFilter.connect(domToneGainNode);
     domToneGainNode.connect(domToneAudioCtx.destination);
     domToneGainNode.connect(domToneRecordDest);
     domToneOsc.start();
+    domToneOsc2.start();
   }
 
   // Melodic mode's single arpeggio note -- its own oscillator + gain
@@ -4228,30 +4284,45 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       return;
     }
     if (domToneOutput === "instrument") {
-      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8, totalCents, domToneSpreadToFilterHz(spread || 0));
+      playInstrumentNote(domToneInstrument, hzToMidiNote(freq), velocity * (domToneVolume / 100), 1.8, totalCents, domToneSpreadToFilterHz(spread || 0), domToneSpreadToFilterQ(spread || 0));
       return;
     }
     const now = domToneAudioCtx.currentTime;
+    const noteFreq = freq * centsToRateFactor(totalCents);
     const osc = domToneAudioCtx.createOscillator();
     osc.type = "sine";
-    osc.frequency.value = freq * centsToRateFactor(totalCents);
+    osc.frequency.value = noteFreq;
+    // Same reasoning as domToneOsc2 on the Continuous side: a bare sine has
+    // no harmonics for a filter to shape, so a sawtooth voice (silent at
+    // spread=0, mixed in at spread=1) gives domToneFilter's brightness/Q
+    // sweep something real to act on.
+    const osc2 = domToneAudioCtx.createOscillator();
+    osc2.type = "sawtooth";
+    osc2.frequency.value = noteFreq;
+    const osc2Gain = domToneAudioCtx.createGain();
+    osc2Gain.gain.value = (spread || 0) * 0.6;
     // Melodic's own equivalent of domToneFilter (Continuous's persistent
     // one) -- each pad note is its own throwaway oscillator, so it gets its
-    // own throwaway filter too, same spread-to-brightness mapping.
+    // own throwaway filter too, same spread-to-brightness/resonance mapping.
     const filter = domToneAudioCtx.createBiquadFilter();
     filter.type = "lowpass";
     filter.frequency.value = domToneSpreadToFilterHz(spread || 0);
+    filter.Q.value = domToneSpreadToFilterQ(spread || 0);
     const gain = domToneAudioCtx.createGain();
     const peak = Math.max(0.001, velocity * (domToneVolume / 100) * SONIFICATION_ONESHOT_PEAK);
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(peak, now + 0.12);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
     osc.connect(filter);
+    osc2.connect(osc2Gain);
+    osc2Gain.connect(filter);
     filter.connect(gain);
     gain.connect(domToneAudioCtx.destination);
     gain.connect(domToneRecordDest);
     osc.start(now);
     osc.stop(now + 1.7);
+    osc2.start(now);
+    osc2.stop(now + 1.7);
   }
 
   function stopDomToneContinuousMidi() {
@@ -4285,6 +4356,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     }
     sendMidiExpression(DOM_TONE_MIDI_CHANNEL, (domToneVolume / 100) * Math.min(1, l * 1.3));
     sendMidiBrightness(DOM_TONE_MIDI_CHANNEL, spread);
+    sendMidiResonance(DOM_TONE_MIDI_CHANNEL, spread);
   }
 
   function stopDomToneContinuousInstrument() {
@@ -4326,6 +4398,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
       filter.frequency.value = DOM_TONE_SPREAD_MIN_HZ;
+      filter.Q.value = DOM_TONE_SPREAD_MIN_Q;
       const gain = ctx.createGain();
       gain.gain.value = 0;
       src.connect(filter);
@@ -4361,6 +4434,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * 0.5;
     domToneContinuousInstrumentGain.gain.setTargetAtTime(targetGain, now, 0.2);
     domToneContinuousInstrumentFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(spread), now, 0.2);
+    domToneContinuousInstrumentFilter.Q.setTargetAtTime(domToneSpreadToFilterQ(spread), now, 0.2);
   }
 
   function updateDominantColorTone() {
@@ -4399,7 +4473,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       const targetGain = (domToneVolume / 100) * Math.min(1, l * 1.3) * SONIFICATION_CONTINUOUS_PEAK;
       domToneGainNode.gain.setTargetAtTime(targetGain, now, 0.2);
       domToneOsc.frequency.setTargetAtTime(targetFreq, now, 0.2);
+      domToneOsc2.frequency.setTargetAtTime(targetFreq, now, 0.2);
+      domToneOsc2Gain.gain.setTargetAtTime(spread * 0.6, now, 0.2);
       domToneFilter.frequency.setTargetAtTime(domToneSpreadToFilterHz(spread), now, 0.2);
+      domToneFilter.Q.setTargetAtTime(domToneSpreadToFilterQ(spread), now, 0.2);
       return;
     }
     // Melodic: hue picks the chord root, an arpeggio step plays every few
