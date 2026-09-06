@@ -3886,7 +3886,18 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
         return;
       }
       const [, s, l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
-      closeness = Math.max(0, Math.min(1, s * Math.min(1, l * 1.5)));
+      // Averaged saturation alone has the same degenerate blind spot
+      // sampleSceneColorSpread was written to catch on dominant tone: a
+      // scene split evenly between two fully-saturated OPPOSING hues (say
+      // pure red and pure cyan) averages to flat grey -- s=0 -- the exact
+      // same arithmetic that makes a colourful scene cancel itself out.
+      // That scene is obviously vivid, just not vivid ON AVERAGE, so
+      // vividness here is whichever of the two actually says so: a real
+      // saturated single/similar colour (s), or real disagreement between
+      // per-pixel hues (spread) -- either one means "not a dull/grey
+      // scene," which is all this signal is actually trying to detect.
+      const vividness = Math.max(s, sampleSceneColorSpread());
+      closeness = Math.max(0, Math.min(1, vividness * Math.min(1, l * 1.5)));
     } else {
       const dist = nearestSavedPointLabDistance(sampleCenterColor());
       if (dist == null) {
