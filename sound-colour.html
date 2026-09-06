@@ -274,6 +274,45 @@
     Outline colour
     <input id="outlineColorInput" type="color" value="#ffffff" aria-label="Outline colour">
   </label>
+  <button id="cartoonBtn" class="hud-btn" aria-pressed="false" title="Flattens the view into bold flat colour bands with dark edge lines, for a hand-drawn cartoon look.">Cartoon mode: Off</button>
+  <label id="cartoonLevelsWrap" class="hud-slider hide" title="How many flat colour bands the cartoon effect uses. Fewer levels look bolder/more graphic; more levels look closer to the original colours.">
+    Cartoon levels: <span id="cartoonLevelsLabel">6</span>
+    <input id="cartoonLevelsSlider" type="range" min="2" max="24" step="1" value="6">
+  </label>
+  <label id="cartoonEdgeThicknessWrap" class="hud-slider hide" title="How wide the cartoon ink lines are.">
+    Cartoon edge thickness: <span id="cartoonEdgeThicknessLabel">2px</span>
+    <input id="cartoonEdgeThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+  </label>
+  <label id="cartoonEdgeStrengthWrap" class="hud-slider hide" title="How bold/dark the cartoon ink lines are, and how easily they trigger on softer edges.">
+    Cartoon edge strength: <span id="cartoonEdgeStrengthLabel">60%</span>
+    <input id="cartoonEdgeStrengthSlider" type="range" min="0" max="100" step="5" value="60">
+  </label>
+  <label id="cartoonSaturationWrap" class="hud-slider hide" title="How vivid the flat cartoon colour bands are.">
+    Cartoon saturation: <span id="cartoonSaturationLabel">135%</span>
+    <input id="cartoonSaturationSlider" type="range" min="100" max="300" step="5" value="135">
+  </label>
+  <label id="cartoonThemeWrap" class="hud-slider hide" title="Presets that fill in the duotone shadow/highlight colours below. Original colours turns the duotone recolour off.">
+    Cartoon colour theme:
+    <select id="cartoonThemeSelect">
+      <option value="none">Original colours</option>
+      <option value="greyscale">Greyscale</option>
+      <option value="sepia">Sepia</option>
+      <option value="desert">Desert</option>
+      <option value="oasis">Oasis</option>
+    </select>
+  </label>
+  <label id="cartoonThemeEnabledWrap" class="hud-slider camera-only-mode-wrap hide" title="Turns the duotone recolour on or off. When off, cartoon mode keeps its normal flat colours regardless of the shadow/highlight colours below.">
+    <input id="cartoonThemeEnabledCheckbox" type="checkbox">
+    Duotone recolour
+  </label>
+  <label id="cartoonThemeLoWrap" class="hud-btn choose-picker-btn hide" title="Shadow colour for the cartoon duotone recolour.">
+    Duotone shadows
+    <input id="cartoonThemeLoInput" type="color" value="#0d0d0d" aria-label="Cartoon duotone shadow colour">
+  </label>
+  <label id="cartoonThemeHiWrap" class="hud-btn choose-picker-btn hide" title="Highlight colour for the cartoon duotone recolour.">
+    Duotone highlights
+    <input id="cartoonThemeHiInput" type="color" value="#f2f2f2" aria-label="Cartoon duotone highlight colour">
+  </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
   <label id="midiOutputWrap" class="hud-slider hide" title="Which connected MIDI output any feature below set to MIDI sends its notes to -- a hardware synth, or a virtual MIDI port feeding software on this device. Appears once a MIDI output is actually detected.">

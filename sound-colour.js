@@ -21,10 +21,33 @@
   const FREEZE_DEFAULT_BLEND = 1;
   const FREEZE_DEFAULT_SPREAD = 15;
   const FREEZE_DEFAULT_TONE = 0;
+  // Cartoon mode came from Colour Vision Extreme -- brought back here (this
+  // page trimmed it away early on, see the note above cartoonEnabled below)
+  // with the exact same keys/defaults/preset shapes, so a preference set on
+  // either page is shared rather than tracked twice.
+  const CARTOON_ENABLED_KEY = "cartoonEnabled_colorVision_v1";
+  const CARTOON_LEVELS_KEY = "cartoonLevels_colorVision_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
+  const CARTOON_EDGE_THICKNESS_KEY = "cartoonEdgeThickness_colorVision_v1";
+  const CARTOON_EDGE_STRENGTH_KEY = "cartoonEdgeStrength_colorVision_v1";
+  const CARTOON_SATURATION_KEY = "cartoonSaturation_colorVision_v1";
   const CARTOON_DEFAULT_EDGE_THICKNESS = 2;
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
+  const CARTOON_THEME_KEY = "cartoonTheme_colorVision_v1";
+  const CARTOON_THEME_NAMES = ["none", "greyscale", "sepia", "desert", "oasis"];
+  const CARTOON_DEFAULT_THEME = "none";
+  // Presets just populate the two duotone colour pickers below — the shader
+  // itself only ever knows about the live lo/hi colours, not named themes.
+  const CARTOON_THEME_PRESETS = {
+    greyscale: { lo: "#0d0d0d", hi: "#f2f2f2" },
+    sepia: { lo: "#24170f", hi: "#e8d6a8" },
+    desert: { lo: "#4c240f", hi: "#e8b866" },
+    oasis: { lo: "#053d3b", hi: "#8fe3bf" }
+  };
+  const CARTOON_THEME_ENABLED_KEY = "cartoonThemeEnabled_colorVision_v1";
+  const CARTOON_THEME_LO_KEY = "cartoonThemeLo_colorVision_v1";
+  const CARTOON_THEME_HI_KEY = "cartoonThemeHi_colorVision_v1";
   const CARTOON_THEME_DEFAULT_LO = "#0d0d0d";
   const CARTOON_THEME_DEFAULT_HI = "#f2f2f2";
   const PARTICLES_ENABLED_KEY = "particlesEnabled_colorVision_v1";
@@ -427,6 +450,27 @@
   const outlineOpacityLabel = document.getElementById("outlineOpacityLabel");
   const outlineColorWrap = document.getElementById("outlineColorWrap");
   const outlineColorInput = document.getElementById("outlineColorInput");
+  const cartoonBtn = document.getElementById("cartoonBtn");
+  const cartoonLevelsWrap = document.getElementById("cartoonLevelsWrap");
+  const cartoonLevelsSlider = document.getElementById("cartoonLevelsSlider");
+  const cartoonLevelsLabel = document.getElementById("cartoonLevelsLabel");
+  const cartoonEdgeThicknessWrap = document.getElementById("cartoonEdgeThicknessWrap");
+  const cartoonEdgeThicknessSlider = document.getElementById("cartoonEdgeThicknessSlider");
+  const cartoonEdgeThicknessLabel = document.getElementById("cartoonEdgeThicknessLabel");
+  const cartoonEdgeStrengthWrap = document.getElementById("cartoonEdgeStrengthWrap");
+  const cartoonEdgeStrengthSlider = document.getElementById("cartoonEdgeStrengthSlider");
+  const cartoonEdgeStrengthLabel = document.getElementById("cartoonEdgeStrengthLabel");
+  const cartoonSaturationWrap = document.getElementById("cartoonSaturationWrap");
+  const cartoonSaturationSlider = document.getElementById("cartoonSaturationSlider");
+  const cartoonSaturationLabel = document.getElementById("cartoonSaturationLabel");
+  const cartoonThemeWrap = document.getElementById("cartoonThemeWrap");
+  const cartoonThemeSelect = document.getElementById("cartoonThemeSelect");
+  const cartoonThemeEnabledWrap = document.getElementById("cartoonThemeEnabledWrap");
+  const cartoonThemeEnabledCheckbox = document.getElementById("cartoonThemeEnabledCheckbox");
+  const cartoonThemeLoWrap = document.getElementById("cartoonThemeLoWrap");
+  const cartoonThemeLoInput = document.getElementById("cartoonThemeLoInput");
+  const cartoonThemeHiWrap = document.getElementById("cartoonThemeHiWrap");
+  const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const midiOutputWrap = document.getElementById("midiOutputWrap");
@@ -638,11 +682,12 @@
   // a manual per-device toggle instead, persisted once the user sets it.
   let rotate180 = loadRotatePref();
   let spread = loadSpreadPref();
-  // CVD-type correction and Cartoon mode belong to Colour Vision Extreme's
-  // own broader toolset, not this page's Sight <-> Sound focus -- their UI
-  // is gone here, but these stay hardcoded at their neutral/off defaults so
-  // the shared correction shader (which still expects these uniforms) keeps
-  // compiling and rendering unchanged.
+  // CVD-type correction belongs to Colour Vision Extreme's own broader
+  // toolset, not this page's Sight <-> Sound focus -- its UI is gone here,
+  // but these stay hardcoded at their neutral/off defaults so the shared
+  // correction shader (which still expects these uniforms) keeps compiling
+  // and rendering unchanged. (Cartoon mode used to be excluded the same
+  // way -- see cartoonEnabled below for why that's no longer true.)
   const cvdType = "none";
   const cvdStrength = 1;
   let outlinesEnabled = (() => {
@@ -766,14 +811,38 @@
   let beatTorchBusy = false;
   let beatTorchFailCount = 0;
   const vibrateSupported = typeof navigator.vibrate === "function";
-  const cartoonEnabled = false;
-  const cartoonLevels = CARTOON_DEFAULT_LEVELS;
-  const cartoonEdgeThickness = CARTOON_DEFAULT_EDGE_THICKNESS;
-  const cartoonEdgeStrength = CARTOON_DEFAULT_EDGE_STRENGTH;
-  const cartoonSaturation = CARTOON_DEFAULT_SATURATION;
-  const cartoonThemeEnabled = false;
-  const cartoonThemeLoRgb = hexToRgb01(CARTOON_THEME_DEFAULT_LO);
-  const cartoonThemeHiRgb = hexToRgb01(CARTOON_THEME_DEFAULT_HI);
+  // Brought back from Colour Vision Extreme -- this page trimmed Cartoon
+  // mode's UI away early on, keeping the shader plumbing but hardcoding
+  // these to their off defaults (see the CVD-type comment above, which
+  // used to say the same about this). Real, adjustable state again now,
+  // same keys as Colour Vision Extreme so a preference carries over.
+  function loadCartoonThemePref() {
+    try {
+      const raw = localStorage.getItem(CARTOON_THEME_KEY);
+      return CARTOON_THEME_NAMES.includes(raw) ? raw : CARTOON_DEFAULT_THEME;
+    } catch (e) { return CARTOON_DEFAULT_THEME; }
+  }
+  function loadCartoonThemeColorPref(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return /^#[0-9a-f]{6}$/i.test(raw) ? raw : fallback;
+    } catch (e) { return fallback; }
+  }
+  let cartoonEnabled = (() => {
+    try { return localStorage.getItem(CARTOON_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let cartoonLevels = loadOutlineNumberPref(CARTOON_LEVELS_KEY, CARTOON_DEFAULT_LEVELS);
+  let cartoonEdgeThickness = loadOutlineNumberPref(CARTOON_EDGE_THICKNESS_KEY, CARTOON_DEFAULT_EDGE_THICKNESS);
+  let cartoonEdgeStrength = loadOutlineNumberPref(CARTOON_EDGE_STRENGTH_KEY, CARTOON_DEFAULT_EDGE_STRENGTH);
+  let cartoonSaturation = loadOutlineNumberPref(CARTOON_SATURATION_KEY, CARTOON_DEFAULT_SATURATION);
+  let cartoonTheme = loadCartoonThemePref();
+  let cartoonThemeEnabled = (() => {
+    try { return localStorage.getItem(CARTOON_THEME_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let cartoonThemeLo = loadCartoonThemeColorPref(CARTOON_THEME_LO_KEY, CARTOON_THEME_DEFAULT_LO);
+  let cartoonThemeHi = loadCartoonThemeColorPref(CARTOON_THEME_HI_KEY, CARTOON_THEME_DEFAULT_HI);
+  let cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+  let cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
   let torchTrack = null;
   let torchOn = false;
   let torchSupported = false;
@@ -1155,6 +1224,15 @@
       outlineBlend: OUTLINE_DEFAULT_BLEND,
       outlineOpacity: OUTLINE_DEFAULT_OPACITY,
       outlineColor: OUTLINE_DEFAULT_COLOR,
+      cartoonEnabled: false,
+      cartoonLevels: CARTOON_DEFAULT_LEVELS,
+      cartoonEdgeThickness: CARTOON_DEFAULT_EDGE_THICKNESS,
+      cartoonEdgeStrength: CARTOON_DEFAULT_EDGE_STRENGTH,
+      cartoonSaturation: CARTOON_DEFAULT_SATURATION,
+      cartoonTheme: CARTOON_DEFAULT_THEME,
+      cartoonThemeEnabled: false,
+      cartoonThemeLo: CARTOON_THEME_DEFAULT_LO,
+      cartoonThemeHi: CARTOON_THEME_DEFAULT_HI,
       particlesEnabled: false,
       particleOpacity: PARTICLE_DEFAULT_OPACITY,
       particleOrbitPath: true,
@@ -1333,6 +1411,51 @@
   }
   function saveOutlineOpacityPref() {
     try { localStorage.setItem(OUTLINE_OPACITY_KEY, String(outlineOpacity)); } catch (e) {}
+  }
+  function saveCartoonEnabledPref() {
+    try { localStorage.setItem(CARTOON_ENABLED_KEY, cartoonEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveCartoonLevelsPref() {
+    try { localStorage.setItem(CARTOON_LEVELS_KEY, String(cartoonLevels)); } catch (e) {}
+  }
+  function saveCartoonEdgeThicknessPref() {
+    try { localStorage.setItem(CARTOON_EDGE_THICKNESS_KEY, String(cartoonEdgeThickness)); } catch (e) {}
+  }
+  function saveCartoonEdgeStrengthPref() {
+    try { localStorage.setItem(CARTOON_EDGE_STRENGTH_KEY, String(cartoonEdgeStrength)); } catch (e) {}
+  }
+  function saveCartoonSaturationPref() {
+    try { localStorage.setItem(CARTOON_SATURATION_KEY, String(cartoonSaturation)); } catch (e) {}
+  }
+  function saveCartoonThemePref() {
+    try { localStorage.setItem(CARTOON_THEME_KEY, cartoonTheme); } catch (e) {}
+  }
+  function saveCartoonThemeEnabledPref() {
+    try { localStorage.setItem(CARTOON_THEME_ENABLED_KEY, cartoonThemeEnabled ? "1" : "0"); } catch (e) {}
+  }
+  function saveCartoonThemeLoPref() {
+    try { localStorage.setItem(CARTOON_THEME_LO_KEY, cartoonThemeLo); } catch (e) {}
+  }
+  function saveCartoonThemeHiPref() {
+    try { localStorage.setItem(CARTOON_THEME_HI_KEY, cartoonThemeHi); } catch (e) {}
+  }
+  // Cartoon mode and Outlines mode can both be on at once — the shader
+  // applies Cartoon's posterize + ink lines first, then layers Outlines'
+  // own coloured edge overlay on top of that result (see the fragment
+  // shader source).
+  function updateCartoonUi() {
+    cartoonBtn.textContent = cartoonEnabled ? "Cartoon mode: On" : "Cartoon mode: Off";
+    cartoonBtn.classList.toggle("active", cartoonEnabled);
+    cartoonBtn.setAttribute("aria-pressed", String(cartoonEnabled));
+    [
+      cartoonLevelsWrap, cartoonEdgeThicknessWrap, cartoonEdgeStrengthWrap, cartoonSaturationWrap,
+      cartoonThemeWrap, cartoonThemeEnabledWrap, cartoonThemeLoWrap, cartoonThemeHiWrap
+    ].forEach((el) => el.classList.toggle("hide", !cartoonEnabled));
+  }
+  function toggleCartoonMode() {
+    cartoonEnabled = !cartoonEnabled;
+    saveCartoonEnabledPref();
+    updateCartoonUi();
   }
   function loadOutlineColorPref() {
     try {
@@ -5162,6 +5285,15 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       outlineBlend,
       outlineOpacity,
       outlineColor,
+      cartoonEnabled,
+      cartoonLevels,
+      cartoonEdgeThickness,
+      cartoonEdgeStrength,
+      cartoonSaturation,
+      cartoonTheme,
+      cartoonThemeEnabled,
+      cartoonThemeLo,
+      cartoonThemeHi,
       // audioTintEnabled/beatFlashEnabled ARE captured — loading a template
       // is an explicit user action (clicking Load), so restoring them tries
       // the same silent-resume path already used for a page reload (works
@@ -5322,6 +5454,53 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       outlineColorRgb = hexToRgb01(outlineColor);
       outlineColorInput.value = outlineColor;
       saveOutlineColorPref();
+    }
+    if (typeof s.cartoonEnabled === "boolean" && s.cartoonEnabled !== cartoonEnabled) toggleCartoonMode();
+    if (Number.isFinite(s.cartoonLevels)) {
+      cartoonLevels = s.cartoonLevels;
+      cartoonLevelsSlider.value = String(cartoonLevels);
+      cartoonLevelsLabel.textContent = String(cartoonLevels);
+      saveCartoonLevelsPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeThickness)) {
+      cartoonEdgeThickness = s.cartoonEdgeThickness;
+      cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
+      cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+      saveCartoonEdgeThicknessPref();
+    }
+    if (Number.isFinite(s.cartoonEdgeStrength)) {
+      cartoonEdgeStrength = s.cartoonEdgeStrength;
+      cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
+      cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+      saveCartoonEdgeStrengthPref();
+    }
+    if (Number.isFinite(s.cartoonSaturation)) {
+      cartoonSaturation = s.cartoonSaturation;
+      cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
+      cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+      saveCartoonSaturationPref();
+    }
+    if (CARTOON_THEME_NAMES.includes(s.cartoonTheme)) {
+      cartoonTheme = s.cartoonTheme;
+      cartoonThemeSelect.value = cartoonTheme;
+      saveCartoonThemePref();
+    }
+    if (typeof s.cartoonThemeEnabled === "boolean") {
+      cartoonThemeEnabled = s.cartoonThemeEnabled;
+      cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+      saveCartoonThemeEnabledPref();
+    }
+    if (typeof s.cartoonThemeLo === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeLo)) {
+      cartoonThemeLo = s.cartoonThemeLo;
+      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+      cartoonThemeLoInput.value = cartoonThemeLo;
+      saveCartoonThemeLoPref();
+    }
+    if (typeof s.cartoonThemeHi === "string" && /^#[0-9a-f]{6}$/i.test(s.cartoonThemeHi)) {
+      cartoonThemeHi = s.cartoonThemeHi;
+      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+      cartoonThemeHiInput.value = cartoonThemeHi;
+      saveCartoonThemeHiPref();
     }
     if (Number.isFinite(s.particleOpacity)) {
       particleOpacity = s.particleOpacity;
@@ -5939,6 +6118,73 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   outlineOpacityLabel.textContent = `${outlineOpacitySlider.value}%`;
   outlineColorInput.value = outlineColor;
   updateOutlinesUi();
+
+  cartoonBtn.addEventListener("click", toggleCartoonMode);
+  cartoonLevelsSlider.addEventListener("input", () => {
+    cartoonLevels = parseFloat(cartoonLevelsSlider.value);
+    cartoonLevelsLabel.textContent = String(cartoonLevels);
+    saveCartoonLevelsPref();
+  });
+  cartoonLevelsSlider.value = String(cartoonLevels);
+  cartoonLevelsLabel.textContent = String(cartoonLevels);
+  cartoonEdgeThicknessSlider.addEventListener("input", () => {
+    cartoonEdgeThickness = parseFloat(cartoonEdgeThicknessSlider.value);
+    cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+    saveCartoonEdgeThicknessPref();
+  });
+  cartoonEdgeThicknessSlider.value = String(cartoonEdgeThickness);
+  cartoonEdgeThicknessLabel.textContent = `${cartoonEdgeThickness}px`;
+  cartoonEdgeStrengthSlider.addEventListener("input", () => {
+    cartoonEdgeStrength = parseFloat(cartoonEdgeStrengthSlider.value) / 100;
+    cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+    saveCartoonEdgeStrengthPref();
+  });
+  cartoonEdgeStrengthSlider.value = String(Math.round(cartoonEdgeStrength * 100));
+  cartoonEdgeStrengthLabel.textContent = `${cartoonEdgeStrengthSlider.value}%`;
+  cartoonSaturationSlider.addEventListener("input", () => {
+    cartoonSaturation = parseFloat(cartoonSaturationSlider.value) / 100;
+    cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+    saveCartoonSaturationPref();
+  });
+  cartoonSaturationSlider.value = String(Math.round(cartoonSaturation * 100));
+  cartoonSaturationLabel.textContent = `${cartoonSaturationSlider.value}%`;
+  cartoonThemeSelect.addEventListener("change", () => {
+    cartoonTheme = cartoonThemeSelect.value;
+    saveCartoonThemePref();
+    const preset = CARTOON_THEME_PRESETS[cartoonTheme];
+    cartoonThemeEnabled = !!preset;
+    if (preset) {
+      cartoonThemeLo = preset.lo;
+      cartoonThemeHi = preset.hi;
+      cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+      cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+      cartoonThemeLoInput.value = cartoonThemeLo;
+      cartoonThemeHiInput.value = cartoonThemeHi;
+      saveCartoonThemeLoPref();
+      saveCartoonThemeHiPref();
+    }
+    cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+    saveCartoonThemeEnabledPref();
+  });
+  cartoonThemeSelect.value = cartoonTheme;
+  cartoonThemeEnabledCheckbox.addEventListener("change", () => {
+    cartoonThemeEnabled = cartoonThemeEnabledCheckbox.checked;
+    saveCartoonThemeEnabledPref();
+  });
+  cartoonThemeEnabledCheckbox.checked = cartoonThemeEnabled;
+  cartoonThemeLoInput.addEventListener("input", () => {
+    cartoonThemeLo = cartoonThemeLoInput.value;
+    cartoonThemeLoRgb = hexToRgb01(cartoonThemeLo);
+    saveCartoonThemeLoPref();
+  });
+  cartoonThemeLoInput.value = cartoonThemeLo;
+  cartoonThemeHiInput.addEventListener("input", () => {
+    cartoonThemeHi = cartoonThemeHiInput.value;
+    cartoonThemeHiRgb = hexToRgb01(cartoonThemeHi);
+    saveCartoonThemeHiPref();
+  });
+  cartoonThemeHiInput.value = cartoonThemeHi;
+  updateCartoonUi();
 
   particlesBtn.addEventListener("click", toggleParticles);
   particleOpacitySlider.addEventListener("input", () => {
