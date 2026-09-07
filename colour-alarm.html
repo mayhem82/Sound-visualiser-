@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Colour Alarm</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚨</text></svg>">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="colour-alarm.css">
+</head>
+<body>
+<video id="cameraFeed" playsinline muted></video>
+<canvas id="sampleCanvas" hidden></canvas>
+<div id="flashOverlay" aria-hidden="true"></div>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Colour Alarm</h1>
+    <p>Calibrate one or more real colours -- a hi-vis vest, a specific shirt, a warning label -- and this sounds a real audible siren the moment that colour appears anywhere in the camera's view, not just at whatever's in the center. Built to notice something entering frame, not to identify what's already there.</p>
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="sound-colour.html">Sound Colour &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see appears here.">
+    Camera: <select id="cameraSelect"></select>
+  </label>
+  <button id="calibrateAlarmBtn" class="hud-btn">Calibrate alarm colour</button>
+  <button id="alarmColorsBtn" class="hud-btn">Watching (<span id="alarmColorsCount">0</span>)</button>
+  <label id="sensitivityWrap" class="hud-slider" title="How close a match has to be before it counts -- higher reaches further from the exact calibrated colour (catches more lighting variation, but risks false alarms on similar colours); lower requires a closer, stricter match.">
+    Sensitivity: <span id="sensitivityLabel">50%</span>
+    <input id="sensitivitySlider" type="range" min="0" max="100" value="50">
+  </label>
+  <label id="dwellWrap" class="hud-slider" title="How long the colour has to keep matching, continuously, before the alarm actually triggers -- higher rides out a brief flicker or a momentary false match without sounding; lower reacts faster but is more sensitive to noise.">
+    Confirm time: <span id="dwellLabel">600ms</span>
+    <input id="dwellSlider" type="range" min="150" max="3000" step="50" value="600">
+  </label>
+  <label id="volumeWrap" class="hud-slider" title="How loud the siren plays, independent of your device's system volume.">
+    Siren volume: <span id="volumeLabel">70%</span>
+    <input id="volumeSlider" type="range" min="0" max="100" value="70">
+  </label>
+  <button id="testAlarmBtn" class="hud-btn">Test alarm</button>
+  <button id="silenceBtn" class="hud-btn hide" aria-pressed="false" title="Stops the siren for 10 seconds even if the colour is still in view -- it comes back on its own after that if the colour is still there.">Silence (10s)</button>
+  <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <a href="index.html" class="hud-btn">&larr; All features</a>
+  <a href="sound-colour.html" class="hud-btn">Sound Colour &rarr;</a>
+  <a href="colorvision.html" class="hud-btn">Colour Vision Extreme &rarr;</a>
+  <a href="colorassist.html" class="hud-btn">Colour Assist &rarr;</a>
+  <a href="nebula.html" class="hud-btn">Sound Nebula &rarr;</a>
+</div>
+
+<div id="alarmIndicator" class="hide" role="alert" aria-live="assertive">
+  <p id="alarmIndicatorText">ALARM &mdash; colour detected</p>
+</div>
+
+<div id="reticleLayer" class="hide">
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="reticleSwatch" class="reticle-swatch" aria-hidden="true"></div>
+  <p id="reticleColorName" class="color-name reticle-color-name" aria-live="polite"></p>
+  <button id="freezeBtn" class="hud-btn reticle-btn">Freeze this colour</button>
+  <button id="cancelAimBtn" class="hud-btn reticle-btn reticle-btn-secondary">Cancel</button>
+</div>
+
+<div id="nameColorPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="nameColorTitle">
+  <div id="nameColorPanelInner">
+    <h2 id="nameColorTitle">Name this alarm colour</h2>
+    <div class="swatch-row">
+      <div class="swatch-block">
+        <div id="alarmSwatch" class="swatch"></div>
+        <p id="alarmSwatchName" class="color-name"></p>
+      </div>
+    </div>
+    <label class="hud-slider">
+      Label (optional)
+      <input id="alarmLabelInput" type="text" placeholder="e.g. hi-vis vest" maxlength="40">
+    </label>
+    <div class="tune-actions">
+      <button id="saveAlarmColorBtn" class="hud-btn">Save this colour</button>
+      <button id="closeNameColorBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="alarmColorsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="alarmColorsTitle">
+  <div id="alarmColorsPanelInner">
+    <h2 id="alarmColorsTitle">Watching for</h2>
+    <p class="hint">Tap a colour to delete it.</p>
+    <div id="alarmColorsGrid"></div>
+    <button id="closeAlarmColorsBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
+
+<script src="colour-alarm.js"></script>
+</body>
+</html>

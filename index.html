@@ -56,6 +56,7 @@
     <p>Pan/Tilt itself had a real gap of its own, the moment a rig has more than one moving head: it aimed every fixture at the same single whole-frame brightness centroid, which lands in the empty space between two separate bright spots (two spotlights on opposite walls, say) rather than on either one. It now finds every distinct bright region in the frame (the same flood-fill technique, verbatim, Sound Colour's own particle attractors already use for the identical reason), and each fixture gets a Region number: 0 tracks the single brightest spot, 1 the next-brightest, and so on — a second moving head set to Region 1 genuinely tracks a different spot instead of both converging on one point. Falls back to the old whole-frame centroid when a fixture's assigned region isn't currently detected (a dim scene, or fewer distinct spots than configured fixtures), rather than snapping to a stale or undefined position.</p>
     <p>DMX fixtures can now be saved and recalled as a named <strong>rig</strong> — the same save/load/delete-by-name shape Sound Colour's own settings templates already use, just for a whole fixture list instead of one correction setup. Switching between a home setup and a venue's used to mean re-adding every fixture, its channel, profile, source, tint, and region by hand each time; now it's Save rig, then Load whenever you're back.</p>
     <p>A new <strong>Calibrate sound</strong> button on Sound Colour, alongside Calibrate a colour: aim at (or pick) a real colour the same way, but link it to a specific instrument and note range instead of a visual correction. The proximity chime's new "Calibrated sounds" source plays through whichever calibrated colour is actually nearest, each with its own instrument and range -- however many colours get calibrated this way is exactly how many distinct instruments the chime can reach, not one shared Instrument setting for every colour. Kept as its own separate "Saved sounds" list rather than folded into the existing saved colours, since those are shared visual-calibration data other pages in this suite also read, and an instrument means nothing to a page that isn't sonifying anything.</p>
+    <p>A whole new page: <a href="colour-alarm.html">Colour Alarm</a>. Calibrate one or more real colours the same aim-and-freeze way as everywhere else in this suite, and it sounds a real wailing siren (an oscillator's own frequency swept between two bounds by a second oscillator acting as an LFO -- a genuine Web Audio siren, not a looped recording) the moment any of them appears anywhere in the camera's view -- sampled across the whole frame every ~150ms, not just a fixed centre point, so it notices something entering from any side. A Confirm time control rides out a brief flicker before actually triggering; Sensitivity sets how close a match has to be; Silence mutes it for 10 seconds without needing the colour to leave frame first.</p>
   </section>
 
   <section id="homeFeatures" aria-labelledby="homeFeaturesTitle">
@@ -80,6 +81,11 @@
         <span class="feature-icon" aria-hidden="true">🎛️</span>
         <h3>DMX Lighting Control</h3>
         <p>Sight and sound reaching past the screen entirely — dominant colour, scene complexity, and bass/mid/treble/beat, live over real DMX512, driving actual LED bars, PAR lights, and a laser/strobe trigger in the room.</p>
+      </a>
+      <a class="feature-card" href="colour-alarm.html">
+        <span class="feature-icon" aria-hidden="true">🚨</span>
+        <h3>Colour Alarm</h3>
+        <p>Calibrate a real colour — a hi-vis vest, a specific shirt — and a real audible siren sounds the moment it appears anywhere in the camera's view, not just at a fixed aim point. Built to notice something entering frame, not to identify what's already there.</p>
       </a>
       <a class="feature-card" href="colorassist.html">
         <span class="feature-icon" aria-hidden="true">🎯</span>
