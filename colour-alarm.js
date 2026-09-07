@@ -133,45 +133,14 @@
   let switchingCamera = false;
   let paused = false;
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
-  let torchTrack = null, torchSupported = false, torchOn = false;
+  const torch = createTorchController(torchBtn);
   let zoomTrack = null, zoomSupported = false, zoomMin = 1, zoomMax = 1, zoomStep = 0.1;
   let wakeLock = null;
 
   function setStatus(msg) { status.textContent = msg; }
 
-  // ---- Torch ----
-
-  function setupTorch(track) {
-    torchTrack = track;
-    torchOn = false;
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    torchSupported = !!(caps && caps.torch);
-    torchBtn.classList.toggle("hide", !torchSupported);
-    torchBtn.classList.remove("active");
-    torchBtn.setAttribute("aria-pressed", "false");
-    torchBtn.textContent = "Flashlight";
-    if (!torchSupported) return;
-    track.addEventListener("ended", () => {
-      torchSupported = false;
-      torchOn = false;
-      torchBtn.classList.add("hide");
-    });
-  }
-
-  async function toggleTorch() {
-    if (!torchTrack || !torchSupported) return;
-    const next = !torchOn;
-    try {
-      await torchTrack.applyConstraints({ advanced: [{ torch: next }] });
-      torchOn = next;
-      torchBtn.classList.toggle("active", torchOn);
-      torchBtn.setAttribute("aria-pressed", String(torchOn));
-      torchBtn.textContent = torchOn ? "Flashlight: On" : "Flashlight";
-    } catch (err) {
-      torchSupported = false;
-      torchBtn.classList.add("hide");
-    }
-  }
+  // setupTorch/toggleTorch now live in camera-hardware.js's
+  // createTorchController, shared across every page that has a torch.
 
   // ---- Zoom ----
   // A real camera-hardware zoom (the Image Capture API's `zoom`
@@ -182,19 +151,10 @@
   // supported (most desktop webcams; only some phone cameras/browsers
   // expose it), same as Colour Vision Extreme's own zoom control.
 
-  // Pure -- no DOM/track access -- so the range/step/initial-value math
-  // can be sanity-checked with plain synthetic capability objects, the
-  // same reasoning as dmx.js's own pure logic (see __colourAlarmTestables
-  // below). Returns null wherever this camera/browser doesn't genuinely
-  // report zoom support at all.
-  function deriveZoomRange(caps, settings) {
-    const range = caps && caps.zoom;
-    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) return null;
-    const min = range.min, max = range.max;
-    const step = Number.isFinite(range.step) && range.step > 0 ? range.step : (max - min) / 10 || 0.1;
-    const initial = Number.isFinite(settings && settings.zoom) ? settings.zoom : min;
-    return { min, max, step, initial };
-  }
+  // deriveZoomRange now lives in camera-hardware.js, shared with
+  // colorvision.js's own (differently-shaped, button-stepped) zoom UI --
+  // only this pure detection math is shared; each page still wires its own
+  // controls to it.
 
   function setupZoom(track) {
     zoomTrack = track;
@@ -255,7 +215,7 @@
     currentStream = stream;
     video.srcObject = stream;
     await video.play();
-    setupTorch(stream.getVideoTracks()[0]);
+    torch.setup(stream.getVideoTracks()[0]);
     setupZoom(stream.getVideoTracks()[0]);
     setupStreamRecovery(stream.getVideoTracks()[0]);
   }
@@ -396,7 +356,7 @@
   rotateBtn.classList.toggle("active", rotate180);
   rotateBtn.setAttribute("aria-pressed", String(rotate180));
 
-  torchBtn.addEventListener("click", toggleTorch);
+  torchBtn.addEventListener("click", torch.toggle);
 
   // ---- Fullscreen ----
 

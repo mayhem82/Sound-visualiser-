@@ -3139,16 +3139,20 @@
     zoomSupported = false;
     zoomControl.classList.add("hide");
 
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const settings = track.getSettings ? track.getSettings() : {};
-    const range = caps && caps.zoom;
-    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) return;
+    // deriveZoomRange is shared with colour-alarm.js's own zoom control
+    // (camera-hardware.js) -- verified to compute exactly this same
+    // min/max/step/initial math this function used to inline.
+    const derived = deriveZoomRange(
+      track.getCapabilities ? track.getCapabilities() : {},
+      track.getSettings ? track.getSettings() : {}
+    );
+    if (!derived) return;
 
     zoomSupported = true;
-    zoomMin = range.min;
-    zoomMax = range.max;
-    zoomStep = Number.isFinite(range.step) && range.step > 0 ? range.step : (zoomMax - zoomMin) / 10 || 0.1;
-    zoomValue = Number.isFinite(settings.zoom) ? settings.zoom : zoomMin;
+    zoomMin = derived.min;
+    zoomMax = derived.max;
+    zoomStep = derived.step;
+    zoomValue = derived.initial;
     updateZoomLabel();
     zoomControl.classList.remove("hide");
   }

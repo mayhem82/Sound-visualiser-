@@ -40,44 +40,10 @@
   let switchingCamera = false;
   let paused = false;
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
-  let torchTrack = null;
-  let torchSupported = false;
-  let torchOn = false;
+  const torch = createTorchController(torchBtn);
 
   function setStatus(msg) {
     status.textContent = msg;
-  }
-
-  function setupTorch(track) {
-    torchTrack = track;
-    torchOn = false;
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    torchSupported = !!(caps && caps.torch);
-    torchBtn.classList.toggle("hide", !torchSupported);
-    torchBtn.classList.remove("active");
-    torchBtn.setAttribute("aria-pressed", "false");
-    torchBtn.textContent = "Flashlight";
-    if (!torchSupported) return;
-    track.addEventListener("ended", () => {
-      torchSupported = false;
-      torchOn = false;
-      torchBtn.classList.add("hide");
-    });
-  }
-
-  async function toggleTorch() {
-    if (!torchTrack || !torchSupported) return;
-    const next = !torchOn;
-    try {
-      await torchTrack.applyConstraints({ advanced: [{ torch: next }] });
-      torchOn = next;
-      torchBtn.classList.toggle("active", torchOn);
-      torchBtn.setAttribute("aria-pressed", String(torchOn));
-      torchBtn.textContent = torchOn ? "Flashlight: On" : "Flashlight";
-    } catch (err) {
-      torchSupported = false;
-      torchBtn.classList.add("hide");
-    }
   }
 
   // ---- Sensor controls ----
@@ -443,7 +409,7 @@
     currentStream = stream;
     video.srcObject = stream;
     await video.play();
-    setupTorch(stream.getVideoTracks()[0]);
+    torch.setup(stream.getVideoTracks()[0]);
     buildSensorControls(stream.getVideoTracks()[0]);
   }
 
@@ -544,7 +510,7 @@
   rotateBtn.classList.toggle("active", rotate180);
   rotateBtn.setAttribute("aria-pressed", String(rotate180));
 
-  torchBtn.addEventListener("click", toggleTorch);
+  torchBtn.addEventListener("click", torch.toggle);
 
   // ---- Fullscreen ----
   // A single button, pinned outside both #hud and the normal flow, so it

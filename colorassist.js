@@ -191,9 +191,7 @@
   let outlineOpacity = loadOutlineNumberPref(OUTLINE_OPACITY_KEY, OUTLINE_DEFAULT_OPACITY);
   let outlineColor = loadOutlineColorPref();
   let outlineColorRgb = hexToRgb01(outlineColor);
-  let torchTrack = null;
-  let torchOn = false;
-  let torchSupported = false;
+  const torch = createTorchController(torchBtn);
   let exposureTrack = null;
   let currentExposureMode = "continuous";
   let exposureModeSupported = false;
@@ -809,7 +807,7 @@
     video.srcObject = stream;
     await video.play();
     const track = stream.getVideoTracks()[0];
-    setupTorch(track);
+    torch.setup(track);
     setupExposure(track);
   }
 
@@ -893,41 +891,8 @@
   // torch-capable camera — so the button only appears once capability is
   // actually confirmed on the live track, rather than assumed.
 
-  function setupTorch(track) {
-    torchTrack = track;
-    torchOn = false;
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    torchSupported = !!(caps && caps.torch);
-    torchBtn.classList.toggle("hide", !torchSupported);
-    torchBtn.classList.remove("active");
-    torchBtn.setAttribute("aria-pressed", "false");
-    torchBtn.textContent = "Flashlight";
-    if (!torchSupported) return;
-    track.addEventListener("ended", () => {
-      // Commonly fires when the screen locks or the tab loses focus, which
-      // can end the camera connection outright — the torch goes with it.
-      torchSupported = false;
-      torchOn = false;
-      torchBtn.classList.add("hide");
-    });
-  }
-
-  async function toggleTorch() {
-    if (!torchTrack || !torchSupported) return;
-    const next = !torchOn;
-    try {
-      await torchTrack.applyConstraints({ advanced: [{ torch: next }] });
-      torchOn = next;
-      torchBtn.classList.toggle("active", torchOn);
-      torchBtn.setAttribute("aria-pressed", String(torchOn));
-      torchBtn.textContent = torchOn ? "Flashlight: On" : "Flashlight";
-    } catch (err) {
-      // Some devices report the capability but reject the constraint in
-      // practice — stop offering it rather than leave a dead button.
-      torchSupported = false;
-      torchBtn.classList.add("hide");
-    }
-  }
+  // setupTorch/toggleTorch now live in camera-hardware.js's
+  // createTorchController, shared across every page that has a torch.
 
   // ---- Manual exposure ----
   // Auto-exposure constantly re-adjusts brightness in response to the
@@ -1658,7 +1623,7 @@
     saveRotatePref();
   });
 
-  torchBtn.addEventListener("click", toggleTorch);
+  torchBtn.addEventListener("click", torch.toggle);
   exposureModeBtn.addEventListener("click", toggleExposureMode);
   shutterSlider.addEventListener("input", applyShutter);
   isoSlider.addEventListener("input", applyIso);
