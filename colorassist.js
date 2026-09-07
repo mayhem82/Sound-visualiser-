@@ -1757,11 +1757,7 @@
   // other pages: taps on any button, panel, or status readout are excluded
   // so those keep working normally; only taps on the clear corrected feed
   // itself toggle the HUD away.
-  function isHudTapTarget(el) {
-    return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #floatingCaptureBar"
-    ));
-  }
+  const isHudTapTarget = makeIsHudTapTarget();
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;

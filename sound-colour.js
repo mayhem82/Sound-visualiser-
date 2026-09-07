@@ -8153,11 +8153,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // main Sound Nebula page: taps on any button, panel, or status readout
   // are excluded so those keep working normally; only taps on the clear
   // corrected feed itself toggle the HUD away.
-  function isHudTapTarget(el) {
-    return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #takesPanel, #tuneSoundPanel, #soundPointsPanel, #fullscreenBtn, #floatingCaptureBar"
-    ));
-  }
+  const isHudTapTarget = makeIsHudTapTarget("#takesPanel, #tuneSoundPanel, #soundPointsPanel, #fullscreenBtn");
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;

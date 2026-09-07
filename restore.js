@@ -3570,11 +3570,7 @@
   // main Sound Nebula page: taps on any button, panel, or status readout
   // are excluded so those keep working normally; only taps on the clear
   // corrected feed itself toggle the HUD away.
-  function isHudTapTarget(el) {
-    return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #quickPresetsPanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge, #floatingCaptureBar"
-    ));
-  }
+  const isHudTapTarget = makeIsHudTapTarget("#quickPresetsPanel, #viewerPanel, #maskCanvas, #maskLayer, #cameraOnlyBadge, #receiverStatusBadge");
 
   document.body.addEventListener("click", (e) => {
     if (isHudTapTarget(e.target)) return;
