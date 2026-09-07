@@ -152,6 +152,13 @@
       hostId = msg.from;
       applySplitVisibility(dual);
 
+      // A retried offer after "failed"/"disconnected"/"closed" reaches here
+      // (the guard above only screens out a live negotiation) -- without
+      // closing the previous peer connection first, each retry left its
+      // native resources and its own "track"/"connectionstatechange"
+      // listeners running indefinitely, so a flaky link accumulated one
+      // more leaked RTCPeerConnection per retry.
+      if (pc) { pc.close(); pc = null; }
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
       pc.addEventListener("track", (e) => {

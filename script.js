@@ -1475,11 +1475,11 @@
   const MAX_POINTS = 32;
   const CV_STORAGE_KEY = "cvCalibrationPoints_soundNebula_v1";
   const CV_PROFILES_KEY = "cvProfiles_soundNebula_v1";
-  const CV_ROTATE_KEY = "cvRotate180_v1";
-  const CV_SPREAD_KEY = "cvSpread_v1";
+  const CV_ROTATE_KEY = "cvRotate180_soundNebula_v1";
+  const CV_SPREAD_KEY = "cvSpread_soundNebula_v1";
   const CV_DEFAULT_SPREAD = 4;
-  const CV_CVD_TYPE_KEY = "cvCvdType_v1";
-  const CV_CVD_STRENGTH_KEY = "cvCvdStrength_v1";
+  const CV_CVD_TYPE_KEY = "cvCvdType_soundNebula_v1";
+  const CV_CVD_STRENGTH_KEY = "cvCvdStrength_soundNebula_v1";
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
 
   // Colours commonly reported as confusable in red-green and blue-yellow CVD.
@@ -3644,7 +3644,10 @@
     return new Promise((resolve, reject) => {
       if (window.mqtt) { resolve(); return; }
       const s = document.createElement("script");
-      s.src = "https://unpkg.com/mqtt@5/dist/mqtt.min.js";
+      // Pinned to an exact release, not the @5 floating tag -- a new
+      // minor/patch published upstream used to reach every open tab
+      // silently, with no way to roll back if it broke or was compromised.
+      s.src = "https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js";
       s.onload = () => resolve();
       s.onerror = () => reject(new Error("Could not load the live-pairing library — check your internet connection."));
       document.head.appendChild(s);

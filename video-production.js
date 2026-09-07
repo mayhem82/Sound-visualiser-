@@ -21,7 +21,7 @@
   // Live mode. See PARAMS/Recorder/Player/TemplateStore below.
   // ============================================================
 
-  const CALIBRATION_STORAGE_KEY = "cvCalibrationPoints_v1";
+  const CALIBRATION_STORAGE_KEY = "cvCalibrationPoints_videoProduction_v1";
   const MAX_POINTS = 32;
   const TEMPLATES_KEY = "vpTemplates_v1";
   const TAKES_META_KEY = "vpTakesMeta_v1";

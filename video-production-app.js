@@ -1022,7 +1022,13 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "vp-template-btn";
-      btn.innerHTML = `<span class="vp-template-btn-name">${t.name}</span><span class="vp-template-btn-dur">${(t.duration / 1000).toFixed(1)}s</span>`;
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "vp-template-btn-name";
+      nameSpan.textContent = t.name;
+      const durSpan = document.createElement("span");
+      durSpan.className = "vp-template-btn-dur";
+      durSpan.textContent = (t.duration / 1000).toFixed(1) + "s";
+      btn.append(nameSpan, durSpan);
       btn.addEventListener("click", () => triggerTemplate(t));
       // Reorder: press-and-hold not implemented as drag — simple move
       // left/right buttons keep this usable one-handed while filming.

@@ -132,6 +132,7 @@
   const pauseBtn = document.getElementById("pauseBtn");
   const alarmIndicator = document.getElementById("alarmIndicator");
   const alarmIndicatorText = document.getElementById("alarmIndicatorText");
+  const streamLostBanner = document.getElementById("streamLostBanner");
   const reticleLayer = document.getElementById("reticleLayer");
   const reticleSwatch = document.getElementById("reticleSwatch");
   const reticleColorName = document.getElementById("reticleColorName");
@@ -289,6 +290,7 @@
     await video.play();
     setupTorch(stream.getVideoTracks()[0]);
     setupZoom(stream.getVideoTracks()[0]);
+    setupStreamRecovery(stream.getVideoTracks()[0]);
   }
 
   function stopCurrentStream() {
@@ -333,6 +335,54 @@
     }
   }
   cameraSelect.addEventListener("change", () => switchToDevice(cameraSelect.value));
+
+  // ---- Camera-loss recovery ----
+  // This is a "walk away and trust it" alarm -- silently going blind (device
+  // unplugged, OS revokes the stream for another app, camera sleeps) is the
+  // one failure mode this page can't get away with, since the whole armed
+  // HUD keeps looking identical to normal while it's actually watching
+  // nothing. `ended` fires on the video track itself for any of those
+  // causes; `switchingCamera` (already used by switchToDevice's own
+  // deliberate stop+reacquire) tells a real loss apart from that intentional
+  // teardown so this never fights the camera-picker.
+  let recoveringStream = false;
+  let recoverRetryMs = 1000;
+
+  function setupStreamRecovery(track) {
+    track.addEventListener("ended", () => {
+      if (switchingCamera) return;
+      handleStreamLost();
+    });
+  }
+
+  function handleStreamLost() {
+    if (recoveringStream) return;
+    recoveringStream = true;
+    currentStream = null;
+    if (alarmActive) setAlarmActive(false);
+    updateDetectionTimer();
+    streamLostBanner.classList.remove("hide");
+    recoverRetryMs = 1000;
+    attemptStreamRecover();
+  }
+
+  async function attemptStreamRecover() {
+    try {
+      const preferredId = cameraSelect && cameraSelect.value;
+      const constraints = preferredId
+        ? { video: { deviceId: { exact: preferredId } }, audio: false }
+        : { video: { facingMode: { ideal: "environment" } }, audio: false };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      await attachStream(stream);
+      await refreshVideoDevices();
+      updateDetectionTimer();
+      recoveringStream = false;
+      streamLostBanner.classList.add("hide");
+    } catch (err) {
+      recoverRetryMs = Math.min(recoverRetryMs * 2, 8000);
+      setTimeout(() => { if (recoveringStream) attemptStreamRecover(); }, recoverRetryMs);
+    }
+  }
 
   async function startCamera() {
     setStatus("Requesting camera…");
@@ -819,7 +869,9 @@
   // outside otherwise.
   window.__colourAlarmTestables = {
     getSirenContextState: () => (sirenCtx ? sirenCtx.state : null),
-    deriveZoomRange
+    deriveZoomRange,
+    isRecoveringStream: () => recoveringStream,
+    simulateStreamLoss: () => handleStreamLost(),
   };
 
   let testAlarmTimeoutId = null;

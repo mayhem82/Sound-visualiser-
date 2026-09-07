@@ -44,6 +44,25 @@
 }
 #alarmIndicator p { margin: 0; }
 
+/* Distinct from #alarmIndicator (amber, not red) -- this means the opposite
+   of an alarm: the camera feed died, so nothing is being watched at all
+   until it reconnects. Never let that state look identical to "armed and
+   quiet". */
+#streamLostBanner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  text-align: center;
+  padding: 14px 12px;
+  background: rgba(217, 119, 6, 0.94);
+  color: #1a1200;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+#streamLostBanner p { margin: 0; }
+
 /* Aim reticle -- same shape as Sound Colour's own */
 #reticleLayer {
   position: fixed;

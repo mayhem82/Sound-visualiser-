@@ -2,27 +2,31 @@
   "use strict";
 
   const MAX_POINTS = 32;
-  const STORAGE_KEY = "cvCalibrationPoints_v1";
-  // Sound points are this page's own thing, deliberately separate from the
-  // "cv"-prefixed keys above -- those are shared visual-calibration data
-  // Colour Vision Extreme and friends also read/write, and an instrument +
-  // note range means nothing to a page that isn't sonifying anything.
+  const STORAGE_KEY = "cvCalibrationPoints_soundColour_v1";
+  // Sound points carry this page's own instrument/range metadata, keyed off
+  // a calibrated point's id -- kept in a separate key from the points
+  // themselves for the same reason SOUND_POINTS_KEY has always been
+  // separate. The points list itself used to share its key with Colour
+  // Vision Extreme (and Video Production), which meant deleting a point on
+  // either page silently deleted it -- and orphaned its sound-point entry
+  // here -- on this one too. Each page now keeps its own independent set,
+  // the same fix already applied to Sound Nebula's copy for the same bug.
   const MAX_SOUND_POINTS = 32;
   const SOUND_POINTS_KEY = "scSoundPoints_v1";
-  const PROFILES_KEY = "cvProfiles_colorVision_v1";
-  const BUILTIN_TEMPLATES_SEEDED_KEY = "builtinTemplatesSeeded_colorVision_v1";
-  const ROTATE_KEY = "cvRotate180_v1";
-  const SPREAD_KEY = "cvSpread_v1";
+  const PROFILES_KEY = "cvProfiles_soundColour_v1";
+  const BUILTIN_TEMPLATES_SEEDED_KEY = "builtinTemplatesSeeded_soundColour_v1";
+  const ROTATE_KEY = "cvRotate180_soundColour_v1";
+  const SPREAD_KEY = "cvSpread_soundColour_v1";
   const DEFAULT_SPREAD = 4;
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
-  const OUTLINE_ENABLED_KEY = "outlinesEnabled_colorVision_v1";
-  const OUTLINE_THICKNESS_KEY = "outlineThickness_colorVision_v1";
-  const OUTLINE_BLEND_KEY = "outlineBlend_colorVision_v1";
-  const OUTLINE_OPACITY_KEY = "outlineOpacity_colorVision_v1";
+  const OUTLINE_ENABLED_KEY = "outlinesEnabled_soundColour_v1";
+  const OUTLINE_THICKNESS_KEY = "outlineThickness_soundColour_v1";
+  const OUTLINE_BLEND_KEY = "outlineBlend_soundColour_v1";
+  const OUTLINE_OPACITY_KEY = "outlineOpacity_soundColour_v1";
   const OUTLINE_DEFAULT_THICKNESS = 2;
   const OUTLINE_DEFAULT_BLEND = 1;
   const OUTLINE_DEFAULT_OPACITY = 1;
-  const OUTLINE_COLOR_KEY = "outlineColor_colorVision_v1";
+  const OUTLINE_COLOR_KEY = "outlineColor_soundColour_v1";
   const OUTLINE_DEFAULT_COLOR = "#ffffff";
   const FREEZE_DEFAULT_BLEND = 1;
   const FREEZE_DEFAULT_SPREAD = 15;
@@ -31,16 +35,16 @@
   // page trimmed it away early on, see the note above cartoonEnabled below)
   // with the exact same keys/defaults/preset shapes, so a preference set on
   // either page is shared rather than tracked twice.
-  const CARTOON_ENABLED_KEY = "cartoonEnabled_colorVision_v1";
-  const CARTOON_LEVELS_KEY = "cartoonLevels_colorVision_v1";
+  const CARTOON_ENABLED_KEY = "cartoonEnabled_soundColour_v1";
+  const CARTOON_LEVELS_KEY = "cartoonLevels_soundColour_v1";
   const CARTOON_DEFAULT_LEVELS = 6;
-  const CARTOON_EDGE_THICKNESS_KEY = "cartoonEdgeThickness_colorVision_v1";
-  const CARTOON_EDGE_STRENGTH_KEY = "cartoonEdgeStrength_colorVision_v1";
-  const CARTOON_SATURATION_KEY = "cartoonSaturation_colorVision_v1";
+  const CARTOON_EDGE_THICKNESS_KEY = "cartoonEdgeThickness_soundColour_v1";
+  const CARTOON_EDGE_STRENGTH_KEY = "cartoonEdgeStrength_soundColour_v1";
+  const CARTOON_SATURATION_KEY = "cartoonSaturation_soundColour_v1";
   const CARTOON_DEFAULT_EDGE_THICKNESS = 2;
   const CARTOON_DEFAULT_EDGE_STRENGTH = 0.6;
   const CARTOON_DEFAULT_SATURATION = 1.35;
-  const CARTOON_THEME_KEY = "cartoonTheme_colorVision_v1";
+  const CARTOON_THEME_KEY = "cartoonTheme_soundColour_v1";
   const CARTOON_THEME_NAMES = ["none", "greyscale", "sepia", "desert", "oasis"];
   const CARTOON_DEFAULT_THEME = "none";
   // Presets just populate the two duotone colour pickers below — the shader
@@ -51,26 +55,26 @@
     desert: { lo: "#4c240f", hi: "#e8b866" },
     oasis: { lo: "#053d3b", hi: "#8fe3bf" }
   };
-  const CARTOON_THEME_ENABLED_KEY = "cartoonThemeEnabled_colorVision_v1";
-  const CARTOON_THEME_LO_KEY = "cartoonThemeLo_colorVision_v1";
-  const CARTOON_THEME_HI_KEY = "cartoonThemeHi_colorVision_v1";
+  const CARTOON_THEME_ENABLED_KEY = "cartoonThemeEnabled_soundColour_v1";
+  const CARTOON_THEME_LO_KEY = "cartoonThemeLo_soundColour_v1";
+  const CARTOON_THEME_HI_KEY = "cartoonThemeHi_soundColour_v1";
   const CARTOON_THEME_DEFAULT_LO = "#0d0d0d";
   const CARTOON_THEME_DEFAULT_HI = "#f2f2f2";
-  const PARTICLES_ENABLED_KEY = "particlesEnabled_colorVision_v1";
-  const PARTICLE_OPACITY_KEY = "particleOpacity_colorVision_v1";
+  const PARTICLES_ENABLED_KEY = "particlesEnabled_soundColour_v1";
+  const PARTICLE_OPACITY_KEY = "particleOpacity_soundColour_v1";
   const PARTICLE_DEFAULT_OPACITY = 70;
   // Legacy single-choice key (kept only so an old save can be migrated
   // into the 4 independent toggles below, never written again).
-  const PARTICLE_BEHAVIOR_KEY = "particleBehavior_colorVision_v1";
-  const PARTICLE_ORBIT_PATH_KEY = "particleOrbitPath_colorVision_v1";
-  const PARTICLE_SEEK_BRIGHTNESS_KEY = "particleSeekBrightness_colorVision_v1";
-  const PARTICLE_COLOUR_ATTRACT_KEY = "particleColourAttract_colorVision_v1";
-  const PARTICLE_MOVE_ATTRACT_KEY = "particleMoveAttract_colorVision_v1";
-  const PARTICLE_TRAIL_KEY = "particleTrail_colorVision_v1";
+  const PARTICLE_BEHAVIOR_KEY = "particleBehavior_soundColour_v1";
+  const PARTICLE_ORBIT_PATH_KEY = "particleOrbitPath_soundColour_v1";
+  const PARTICLE_SEEK_BRIGHTNESS_KEY = "particleSeekBrightness_soundColour_v1";
+  const PARTICLE_COLOUR_ATTRACT_KEY = "particleColourAttract_soundColour_v1";
+  const PARTICLE_MOVE_ATTRACT_KEY = "particleMoveAttract_soundColour_v1";
+  const PARTICLE_TRAIL_KEY = "particleTrail_soundColour_v1";
   const PARTICLE_DEFAULT_TRAIL = 0;
-  const PARTICLE_COUNT_KEY = "particleCount_colorVision_v1";
+  const PARTICLE_COUNT_KEY = "particleCount_soundColour_v1";
   const PARTICLE_DEFAULT_COUNT = 30;
-  const PARTICLE_SIZE_KEY = "particleSize_colorVision_v1";
+  const PARTICLE_SIZE_KEY = "particleSize_soundColour_v1";
   const PARTICLE_DEFAULT_SIZE = 100;
   const SCENE_GRID_W = 24;
   const SCENE_GRID_H = 14;
@@ -234,16 +238,16 @@
   // filtered by that same density -- a groove distinct from both the
   // chime's pitched pluck and the dominant tone's pad arpeggio.
   const EDGE_TONE_STYLE_KEY = "edgeToneStyle_colorVision_v1";
-  const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_colorVision_v1";
-  const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_colorVision_v1";
+  const AUDIO_TINT_ENABLED_KEY = "audioTintEnabled_soundColour_v1";
+  const AUDIO_TINT_STRENGTH_KEY = "audioTintStrength_soundColour_v1";
   const AUDIO_TINT_DEFAULT_STRENGTH = 0.4;
-  const AUDIO_TINT_SAT_STRENGTH_KEY = "audioTintSatStrength_colorVision_v1";
-  const AUDIO_TINT_LIGHT_STRENGTH_KEY = "audioTintLightStrength_colorVision_v1";
+  const AUDIO_TINT_SAT_STRENGTH_KEY = "audioTintSatStrength_soundColour_v1";
+  const AUDIO_TINT_LIGHT_STRENGTH_KEY = "audioTintLightStrength_soundColour_v1";
   const AUDIO_TINT_DEFAULT_SAT_STRENGTH = 0;
   const AUDIO_TINT_DEFAULT_LIGHT_STRENGTH = 0;
-  const AUDIO_TINT_SMOOTHING_KEY = "audioTintSmoothing_colorVision_v1";
+  const AUDIO_TINT_SMOOTHING_KEY = "audioTintSmoothing_soundColour_v1";
   const AUDIO_TINT_DEFAULT_SMOOTHING = 0.7;
-  const AUDIO_TINT_FFT_SIZE_KEY = "audioTintFftSize_colorVision_v1";
+  const AUDIO_TINT_FFT_SIZE_KEY = "audioTintFftSize_soundColour_v1";
   const AUDIO_TINT_DEFAULT_FFT_SIZE = 1024;
   const AUDIO_TINT_FFT_SIZE_OPTIONS = [256, 512, 1024, 2048, 4096, 8192];
   // audioTintFftSizeSlider is index-based (0..options.length-1) like every
@@ -253,9 +257,9 @@
     const idx = AUDIO_TINT_FFT_SIZE_OPTIONS.indexOf(value);
     return idx === -1 ? AUDIO_TINT_FFT_SIZE_OPTIONS.indexOf(AUDIO_TINT_DEFAULT_FFT_SIZE) : idx;
   }
-  const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_colorVision_v1";
+  const AUDIO_TINT_UPDATE_MS_KEY = "audioTintUpdateMs_soundColour_v1";
   const AUDIO_TINT_DEFAULT_UPDATE_MS = 80;
-  const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_colorVision_v1";
+  const AUDIO_TINT_EXTRA_BANDS_VISIBLE_KEY = "audioTintExtraBandsVisible_soundColour_v1";
   // Scientific colour: replaces each band's hand-picked hue (violet/cyan/
   // pink, chosen purely for looks) with a hue derived from the band's own
   // actual measured frequency content, via the one physically real bridge
@@ -320,14 +324,14 @@
   // above (see audioAnalysisTick/audioAnalysisNeeded) rather than opening a
   // second mic stream, and reuses the Bass band's own frequency range
   // (AUDIO_TINT_BANDS[0]) as the beat detector's listening range.
-  const BEAT_FLASH_ENABLED_KEY = "beatFlashEnabled_colorVision_v1";
-  const BEAT_SENSITIVITY_KEY = "beatSensitivity_colorVision_v1";
-  const BEAT_FLASH_SPEED_KEY = "beatFlashSpeed_colorVision_v1";
-  const BEAT_DIM_FLICKER_KEY = "beatDimFlicker_colorVision_v1";
-  const BEAT_TORCH_INVERTED_KEY = "beatTorchInverted_colorVision_v1";
-  const BEAT_SCREEN_FLASH_KEY = "beatScreenFlash_colorVision_v1";
-  const BEAT_VIBRATE_KEY = "beatVibrate_colorVision_v1";
-  const BEAT_SYNC_DELAY_KEY = "beatSyncDelay_colorVision_v1";
+  const BEAT_FLASH_ENABLED_KEY = "beatFlashEnabled_soundColour_v1";
+  const BEAT_SENSITIVITY_KEY = "beatSensitivity_soundColour_v1";
+  const BEAT_FLASH_SPEED_KEY = "beatFlashSpeed_soundColour_v1";
+  const BEAT_DIM_FLICKER_KEY = "beatDimFlicker_soundColour_v1";
+  const BEAT_TORCH_INVERTED_KEY = "beatTorchInverted_soundColour_v1";
+  const BEAT_SCREEN_FLASH_KEY = "beatScreenFlash_soundColour_v1";
+  const BEAT_VIBRATE_KEY = "beatVibrate_soundColour_v1";
+  const BEAT_SYNC_DELAY_KEY = "beatSyncDelay_soundColour_v1";
   const BEAT_HISTORY_LEN = 40;
   // Beat strength (0..1, how far above the detection threshold a hit
   // landed) at or above which the screen flash blacks out instead of

@@ -350,6 +350,7 @@
   window.__dmxTestables = {
     computeSceneStats, computeBrightRegions, bandEnergyHz, updateBeatTracker, makeBeatTracker,
     computeFixtureChannelValues, buildEnttecFrame, hexToRgb01, byte, PROFILES,
+    isBlackoutActive: () => blackoutActive, getDmxBuffer: () => dmxBuffer,
   };
 
   // ---------------------------------------------------------------------
@@ -533,6 +534,7 @@
   let micStream = null, micEnabled = false, audioCtx = null, analyser = null, freqData = null;
   let serialPort = null, serialWriter = null, serialConnected = false, writing = false;
   let tickTimer = null;
+  let blackoutActive = false;
   const fixtureMeters = new Map(); // fixture id -> chip container element
 
   function setDmxStatus(msg) { dmxStatus.textContent = msg || ""; }
@@ -836,6 +838,15 @@
     sampleCameraIfEnabled();
     sampleAudioIfEnabled(now);
     dmxBuffer[0] = 0; // DMX start code
+    if (blackoutActive) {
+      // Blackout must hold every channel at 0 for as long as it's active --
+      // skipping the fixture loop is what stops the next tick from
+      // recomputing live values and silently overwriting the zeroed buffer.
+      dmxBuffer.fill(0, 1);
+      for (const fixture of fixtures) updateFixtureMeter(fixture, new Array(PROFILES[fixture.profile].channels.length).fill(0));
+      sendFrame();
+      return;
+    }
     for (const fixture of fixtures) {
       const values = computeFixtureChannelValues(fixture, state);
       for (let i = 0; i < values.length; i++) {
@@ -859,9 +870,16 @@
   refreshSlider.addEventListener("change", () => { try { localStorage.setItem(REFRESH_KEY, String(refreshHz)); } catch (e) {} });
 
   blackoutBtn.addEventListener("click", () => {
-    dmxBuffer.fill(0);
-    sendFrame();
-    setDmxStatus("Blacked out.");
+    blackoutActive = !blackoutActive;
+    blackoutBtn.textContent = blackoutActive ? "Resume from blackout" : "Blackout (zero all channels)";
+    blackoutBtn.classList.toggle("active", blackoutActive);
+    if (blackoutActive) {
+      dmxBuffer.fill(0, 1);
+      sendFrame();
+      setDmxStatus("Blacked out — all channels held at 0.");
+    } else {
+      setDmxStatus("Resumed from blackout.");
+    }
   });
 
   startBtn.addEventListener("click", () => {

@@ -2,14 +2,14 @@
   "use strict";
 
   const MAX_POINTS = 32;
-  const STORAGE_KEY = "cvCalibrationPoints_v1";
+  const STORAGE_KEY = "cvCalibrationPoints_colorVision_v1";
   const PROFILES_KEY = "cvProfiles_colorVision_v1";
   const BUILTIN_TEMPLATES_SEEDED_KEY = "builtinTemplatesSeeded_colorVision_v1";
-  const ROTATE_KEY = "cvRotate180_v1";
-  const SPREAD_KEY = "cvSpread_v1";
+  const ROTATE_KEY = "cvRotate180_colorVision_v1";
+  const SPREAD_KEY = "cvSpread_colorVision_v1";
   const DEFAULT_SPREAD = 4;
-  const CVD_TYPE_KEY = "cvCvdType_v1";
-  const CVD_STRENGTH_KEY = "cvCvdStrength_v1";
+  const CVD_TYPE_KEY = "cvCvdType_colorVision_v1";
+  const CVD_STRENGTH_KEY = "cvCvdStrength_colorVision_v1";
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
   const OUTLINE_ENABLED_KEY = "outlinesEnabled_colorVision_v1";
   const OUTLINE_THICKNESS_KEY = "outlineThickness_colorVision_v1";
