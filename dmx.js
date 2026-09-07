@@ -360,6 +360,7 @@
   const BAUD_KEY = "dmxBaud_v1";
   const REFRESH_KEY = "dmxRefreshHz_v1";
   const SENSITIVITY_KEY = "dmxBeatSensitivity_v1";
+  const RIG_PRESETS_KEY = "dmxRigPresets_v1";
 
   const overlay = document.getElementById("overlay");
   const startBtn = document.getElementById("startBtn");
@@ -386,6 +387,12 @@
   const fixtureList = document.getElementById("fixtureList");
   const fixtureEmptyHint = document.getElementById("fixtureEmptyHint");
   const addFixtureBtn = document.getElementById("dmxAddFixtureBtn");
+  const rigNameInput = document.getElementById("dmxRigNameInput");
+  const saveRigBtn = document.getElementById("dmxSaveRigBtn");
+  const rigSelect = document.getElementById("dmxRigSelect");
+  const loadRigBtn = document.getElementById("dmxLoadRigBtn");
+  const deleteRigBtn = document.getElementById("dmxDeleteRigBtn");
+  const rigStatus = document.getElementById("dmxRigStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
@@ -409,6 +416,97 @@
   }
   let fixtures = loadFixtures();
   let nextFixtureId = fixtures.reduce((m, f) => Math.max(m, f.id || 0), 0) + 1;
+
+  // ---- Rig presets ---------------------------------------------------
+  // Named snapshots of the whole fixture list -- switch between different
+  // physical setups (a home rig vs. a venue's) without re-adding every
+  // fixture by hand. Same save/load/delete-by-id shape Sound Colour's own
+  // settings templates already use, just for `fixtures` instead of
+  // correction points/settings.
+  function loadRigPresets() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RIG_PRESETS_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) { return []; }
+  }
+  function saveRigPresets() {
+    try { localStorage.setItem(RIG_PRESETS_KEY, JSON.stringify(rigPresets)); } catch (e) {}
+  }
+  let rigPresets = loadRigPresets();
+
+  function renderRigSelect() {
+    const prevValue = rigSelect.value;
+    rigSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Select a rig —";
+    rigSelect.appendChild(placeholder);
+    rigPresets.forEach((rig) => {
+      const opt = document.createElement("option");
+      opt.value = rig.id;
+      opt.textContent = `${rig.name} (${rig.fixtures.length} fixture${rig.fixtures.length === 1 ? "" : "s"})`;
+      rigSelect.appendChild(opt);
+    });
+    if (rigPresets.some((r) => r.id === prevValue)) rigSelect.value = prevValue;
+  }
+
+  function saveCurrentAsRig() {
+    const name = rigNameInput.value.trim();
+    if (!name) {
+      rigStatus.textContent = "Enter a name for the rig first.";
+      return;
+    }
+    const fixturesSnapshot = JSON.parse(JSON.stringify(fixtures));
+    const existing = rigPresets.find((r) => r.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.fixtures = fixturesSnapshot;
+    } else {
+      rigPresets.push({ id: "rig_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7), name, fixtures: fixturesSnapshot });
+    }
+    saveRigPresets();
+    renderRigSelect();
+    rigSelect.value = existing ? existing.id : rigPresets[rigPresets.length - 1].id;
+    rigNameInput.value = "";
+    rigStatus.textContent = `${existing ? "Updated" : "Saved"} rig "${name}" — ${fixtures.length} fixture${fixtures.length === 1 ? "" : "s"}.`;
+  }
+
+  function loadSelectedRig() {
+    const id = rigSelect.value;
+    if (!id) {
+      rigStatus.textContent = "Pick a rig to load first.";
+      return;
+    }
+    const rig = rigPresets.find((r) => r.id === id);
+    if (!rig) return;
+    const ok = window.confirm(`Load rig "${rig.name}"? This replaces your current ${fixtures.length} fixture${fixtures.length === 1 ? "" : "s"} with those from this rig.`);
+    if (!ok) return;
+    fixtures = JSON.parse(JSON.stringify(rig.fixtures));
+    nextFixtureId = fixtures.reduce((m, f) => Math.max(m, f.id || 0), 0) + 1;
+    saveFixtures();
+    renderFixtures();
+    rigStatus.textContent = `Loaded "${rig.name}" — ${fixtures.length} fixture${fixtures.length === 1 ? "" : "s"}.`;
+  }
+
+  function deleteSelectedRig() {
+    const id = rigSelect.value;
+    if (!id) {
+      rigStatus.textContent = "Pick a rig to delete first.";
+      return;
+    }
+    const rig = rigPresets.find((r) => r.id === id);
+    if (!rig) return;
+    const ok = window.confirm(`Delete rig "${rig.name}"? This can't be undone — your current fixtures are unaffected.`);
+    if (!ok) return;
+    rigPresets = rigPresets.filter((r) => r.id !== id);
+    saveRigPresets();
+    renderRigSelect();
+    rigStatus.textContent = `Deleted "${rig.name}".`;
+  }
+
+  saveRigBtn.addEventListener("click", saveCurrentAsRig);
+  loadRigBtn.addEventListener("click", loadSelectedRig);
+  deleteRigBtn.addEventListener("click", deleteSelectedRig);
+  renderRigSelect();
 
   let refreshHz = (() => {
     const n = parseInt(localStorage.getItem(REFRESH_KEY), 10);

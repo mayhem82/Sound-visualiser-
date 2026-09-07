@@ -82,6 +82,19 @@
     <div id="fixtureList"></div>
     <p id="fixtureEmptyHint" class="dmx-empty-hint">No fixtures yet -- add one below.</p>
     <button id="dmxAddFixtureBtn">+ Add fixture</button>
+    <p class="hint" title="Saves this whole fixture list -- names, channels, profiles, sources, tints, regions -- as a named rig, so you can switch between different physical setups (a home rig vs. a venue's) without re-adding every fixture by hand each time. Doesn't include the DMX interface connection itself or Refresh/Beat sensitivity -- those are per-session/per-device, not part of a rig's own patch.">Save this fixture list as a named rig, or switch between ones you've already saved:</p>
+    <div class="dmx-inline-controls">
+      <input id="dmxRigNameInput" type="text" placeholder="Rig name" aria-label="Rig name">
+      <button id="dmxSaveRigBtn" class="hud-btn">Save rig</button>
+    </div>
+    <div class="dmx-inline-controls">
+      <select id="dmxRigSelect" aria-label="Saved rigs">
+        <option value="">— Select a rig —</option>
+      </select>
+      <button id="dmxLoadRigBtn" class="hud-btn">Load</button>
+      <button id="dmxDeleteRigBtn" class="hud-btn">Delete</button>
+    </div>
+    <p id="dmxRigStatus" class="status"></p>
   </section>
 
   <button id="dmxBlackoutBtn" class="hud-btn">Blackout (zero all channels)</button>
