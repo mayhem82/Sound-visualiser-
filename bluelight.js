@@ -407,8 +407,7 @@
   // generalized here to any camera hardware at all.
   async function attachStream(stream) {
     currentStream = stream;
-    video.srcObject = stream;
-    await video.play();
+    await attachVideoElement(video, stream);
     torch.setup(stream.getVideoTracks()[0]);
     buildSensorControls(stream.getVideoTracks()[0]);
   }
@@ -421,11 +420,10 @@
 
   async function refreshVideoDevices() {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      const resolved = await listVideoInputsWithActive(currentStream);
+      videoDevices = resolved.videoDevices;
+      const activeId = resolved.activeId;
       cameraSelectWrap.classList.toggle("hide", videoDevices.length <= 1);
-      const track = currentStream && currentStream.getVideoTracks()[0];
-      const activeId = track && track.getSettings ? track.getSettings().deviceId : null;
       cameraSelect.innerHTML = "";
       videoDevices.forEach((d, i) => {
         const option = document.createElement("option");
