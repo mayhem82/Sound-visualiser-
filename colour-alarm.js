@@ -124,6 +124,9 @@
   const silenceBtn = document.getElementById("silenceBtn");
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
+  const zoomWrap = document.getElementById("zoomWrap");
+  const zoomSlider = document.getElementById("zoomSlider");
+  const zoomLabel = document.getElementById("zoomLabel");
   const pauseBtn = document.getElementById("pauseBtn");
   const alarmIndicator = document.getElementById("alarmIndicator");
   const alarmIndicatorText = document.getElementById("alarmIndicatorText");
@@ -155,6 +158,7 @@
   let paused = false;
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
   let torchTrack = null, torchSupported = false, torchOn = false;
+  let zoomTrack = null, zoomSupported = false, zoomMin = 1, zoomMax = 1, zoomStep = 0.1;
   let wakeLock = null;
 
   function setStatus(msg) { status.textContent = msg; }
@@ -193,6 +197,69 @@
     }
   }
 
+  // ---- Zoom ----
+  // A real camera-hardware zoom (the Image Capture API's `zoom`
+  // MediaTrackConstraint), same technique/precision this detects a
+  // calibrated colour with elsewhere in the app -- not a digital crop
+  // pretending to be one. Feature-detected off the track's own
+  // getCapabilities() and hidden entirely where it isn't genuinely
+  // supported (most desktop webcams; only some phone cameras/browsers
+  // expose it), same as Colour Vision Extreme's own zoom control.
+
+  // Pure -- no DOM/track access -- so the range/step/initial-value math
+  // can be sanity-checked with plain synthetic capability objects, the
+  // same reasoning as dmx.js's own pure logic (see __colourAlarmTestables
+  // below). Returns null wherever this camera/browser doesn't genuinely
+  // report zoom support at all.
+  function deriveZoomRange(caps, settings) {
+    const range = caps && caps.zoom;
+    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) return null;
+    const min = range.min, max = range.max;
+    const step = Number.isFinite(range.step) && range.step > 0 ? range.step : (max - min) / 10 || 0.1;
+    const initial = Number.isFinite(settings && settings.zoom) ? settings.zoom : min;
+    return { min, max, step, initial };
+  }
+
+  function setupZoom(track) {
+    zoomTrack = track;
+    zoomSupported = false;
+    zoomWrap.classList.add("hide");
+    const derived = deriveZoomRange(
+      track.getCapabilities ? track.getCapabilities() : {},
+      track.getSettings ? track.getSettings() : {}
+    );
+    if (!derived) return;
+    zoomSupported = true;
+    zoomMin = derived.min;
+    zoomMax = derived.max;
+    zoomStep = derived.step;
+    zoomSlider.min = String(zoomMin);
+    zoomSlider.max = String(zoomMax);
+    zoomSlider.step = String(zoomStep);
+    zoomSlider.value = String(derived.initial);
+    zoomLabel.textContent = `${derived.initial.toFixed(1)}x`;
+    zoomWrap.classList.remove("hide");
+    track.addEventListener("ended", () => {
+      zoomSupported = false;
+      zoomWrap.classList.add("hide");
+    });
+  }
+
+  async function applyZoom(value) {
+    if (!zoomTrack || !zoomSupported) return;
+    const clamped = Math.min(zoomMax, Math.max(zoomMin, value));
+    try {
+      await zoomTrack.applyConstraints({ advanced: [{ zoom: clamped }] });
+      zoomLabel.textContent = `${clamped.toFixed(1)}x`;
+    } catch (err) {
+      // Reported as supported but rejected in practice -- remove the
+      // control rather than leave a dead slider.
+      zoomSupported = false;
+      zoomWrap.classList.add("hide");
+    }
+  }
+  zoomSlider.addEventListener("input", () => applyZoom(parseFloat(zoomSlider.value)));
+
   // ---- Wake lock ----
 
   async function requestWakeLock() {
@@ -213,6 +280,7 @@
     video.srcObject = stream;
     await video.play();
     setupTorch(stream.getVideoTracks()[0]);
+    setupZoom(stream.getVideoTracks()[0]);
   }
 
   function stopCurrentStream() {
@@ -612,7 +680,10 @@
   // other pure/near-pure logic gets (see dmx.js's own __dmxTestables) --
   // there's no way to observe an AudioContext's autoplay-policy state from
   // outside otherwise.
-  window.__colourAlarmTestables = { getSirenContextState: () => (sirenCtx ? sirenCtx.state : null) };
+  window.__colourAlarmTestables = {
+    getSirenContextState: () => (sirenCtx ? sirenCtx.state : null),
+    deriveZoomRange
+  };
 
   let testAlarmTimeoutId = null;
   testAlarmBtn.addEventListener("click", () => {
