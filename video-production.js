@@ -46,18 +46,8 @@
     return `#${c(r)}${c(g)}${c(b)}`;
   }
 
-  function srgbToLinear(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-
-  function rgb2lab(r, g, b) {
-    const rl = srgbToLinear(r), gl_ = srgbToLinear(g), bl = srgbToLinear(b);
-    const X = rl * 0.4124564 + gl_ * 0.3575761 + bl * 0.1804375;
-    const Y = rl * 0.2126729 + gl_ * 0.7151522 + bl * 0.0721750;
-    const Z = rl * 0.0193339 + gl_ * 0.1191920 + bl * 0.9503041;
-    const Xn = 0.95047, Yn = 1.0, Zn = 1.08883;
-    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : t / (3 * 0.20705 * 0.20705) + 4 / 29);
-    const fx = f(X / Xn), fy = f(Y / Yn), fz = f(Z / Zn);
-    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
-  }
+  // srgbToLinear / rgb2lab now live in colour-math.js, shared across every
+  // page that needs them.
 
   const CVD_TYPE_CODES = { none: 0, protan: 1, deutan: 2, tritan: 3 };
 

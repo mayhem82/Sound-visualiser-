@@ -35,25 +35,9 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  // Same rgb2hsl this repo's other colour tools (Sound Colour) already
-  // use -- needed here only for hue/saturation, to measure colour variety
-  // below (see colourVariety in computeSceneStats).
-  function rgb2hsl(r, g, b) {
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0;
-    const l = (max + min) / 2, d = max - min;
-    if (d !== 0) {
-      s = d / (1 - Math.abs(2 * l - 1));
-      switch (max) {
-        case r: h = ((g - b) / d) % 6; break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h *= 60;
-      if (h < 0) h += 360;
-    }
-    return [h, s, l];
-  }
+  // rgb2hsl now lives in colour-math.js (shared across every page that
+  // needs it) -- needed here only for hue/saturation, to measure colour
+  // variety below (see colourVariety in computeSceneStats).
 
   // Reads one small RGBA frame once and gets the "Dominant colour" signal
   // (the frame's average colour), the "Structural complexity" signal (how

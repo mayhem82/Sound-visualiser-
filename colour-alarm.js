@@ -38,41 +38,8 @@
     try { localStorage.setItem(key, String(value)); } catch (e) {}
   }
 
-  // ---- Colour math (mirrors Sound Colour's own) ----
-
-  function srgbToLinear(c) {
-    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  }
-
-  function rgb2hsl(r, g, b) {
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0, s = 0;
-    const l = (max + min) / 2;
-    const d = max - min;
-    if (d !== 0) {
-      s = d / (1 - Math.abs(2 * l - 1));
-      switch (max) {
-        case r: h = ((g - b) / d) % 6; break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h *= 60;
-      if (h < 0) h += 360;
-    }
-    return [h, s, l];
-  }
-
-  function rgb2lab(r, g, b) {
-    const rl = srgbToLinear(r), gl_ = srgbToLinear(g), bl = srgbToLinear(b);
-    const X = rl * 0.4124564 + gl_ * 0.3575761 + bl * 0.1804375;
-    const Y = rl * 0.2126729 + gl_ * 0.7151522 + bl * 0.0721750;
-    const Z = rl * 0.0193339 + gl_ * 0.1191920 + bl * 0.9503041;
-    const Xn = 0.95047, Yn = 1.0, Zn = 1.08883;
-    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : t / (3 * 0.20705 * 0.20705) + 4 / 29);
-    const fx = f(X / Xn), fy = f(Y / Yn), fz = f(Z / Zn);
-    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
-  }
+  // rgb2hsl / srgbToLinear / rgb2lab now live in colour-math.js, shared
+  // across every page that needs them.
 
   function rgbToCss([r, g, b]) {
     return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
