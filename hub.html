@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera Hub</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+<link rel="stylesheet" href="style.css">
+<style>
+  #cameraFeed {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #000;
+  }
+  #cameraFeed.rotate180 { transform: rotate(180deg); }
+
+  #modeSwitcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 4px;
+  }
+  .mode-btn {
+    flex: 1 1 auto;
+    min-width: 100px;
+  }
+  .mode-btn[disabled] {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .mode-btn.active {
+    outline: 2px solid rgba(125, 211, 252, 0.9);
+  }
+  #featurePanel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #featurePanel:empty { display: none; }
+  #comingSoonNote {
+    padding: 10px 12px;
+    font-size: 0.9em;
+    opacity: 0.8;
+  }
+</style>
+</head>
+<body>
+<video id="cameraFeed" playsinline muted></video>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Camera Hub</h1>
+    <p>One camera session, every feature in this suite one tap away -- no separate page load or repeated camera permission to switch between them. Pick a feature below once the camera's on; switching modes tears down the previous one and starts the next against the same live feed.</p>
+    <p class="hint">This is additive, not a replacement -- every existing page (Sound Colour, Colour Vision Extreme, DMX, and the rest) still works exactly as it always has, on its own.</p>
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+  </div>
+</div>
+
+<div id="hud" class="hide">
+  <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see appears here.">
+    Camera: <select id="cameraSelect"></select>
+  </label>
+  <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
+  <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
+  <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>
+  <a href="index.html" class="hud-btn">&larr; All features</a>
+
+  <nav id="modeSwitcher" role="tablist" aria-label="Feature"></nav>
+  <div id="featurePanel"></div>
+</div>
+
+<button id="fullscreenBtn" class="hud-btn" aria-pressed="false" title="Fullscreen, HUD hidden. Tap again (this button stays put) to bring the HUD back.">&#9974; Fullscreen</button>
+
+<script src="colour-math.js"></script>
+<script src="hud-common.js"></script>
+<script src="camera-hardware.js"></script>
+<script src="camera-lifecycle.js"></script>
+<script src="bluelight-core.js"></script>
+<script src="hub.js"></script>
+</body>
+</html>

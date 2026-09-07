@@ -1,15 +1,13 @@
 (() => {
   "use strict";
 
-  const ROTATE_KEY = "blueLightRotate180_v1";
+  const ROTATE_KEY = "hubRotate180_v1";
 
   function loadBoolPref(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
       return raw === null ? fallback : raw === "1";
-    } catch (e) {
-      return fallback;
-    }
+    } catch (e) { return fallback; }
   }
   function saveBoolPref(key, value) {
     try { localStorage.setItem(key, value ? "1" : "0"); } catch (e) { /* ignore */ }
@@ -26,58 +24,123 @@
   const rotateBtn = document.getElementById("rotateBtn");
   const torchBtn = document.getElementById("torchBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
-  const blueLight = createBlueLightFeature(video, document.getElementById("blueLightPanel"));
+  const modeSwitcher = document.getElementById("modeSwitcher");
+  const featurePanel = document.getElementById("featurePanel");
 
   let currentStream = null;
+  let currentTrack = null;
   let videoDevices = [];
   let switchingCamera = false;
   let paused = false;
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
   const torch = createTorchController(torchBtn);
+  const isHudTapTarget = makeIsHudTapTarget();
 
-  function setStatus(msg) {
-    status.textContent = msg;
+  function setStatus(msg) { status.textContent = msg; }
+
+  // ---------------------------------------------------------------------
+  // Feature registry -- each entry is { id, label, ready, create }.
+  // `create` is only called for ready:true entries; it must return
+  // { onTrackChanged(track), start(), stop() } (see bluelight-core.js's
+  // createBlueLightFeature for the reference shape every adapter follows).
+  // Everything not yet adapted stays ready:false and shows a "coming soon"
+  // note in the panel instead -- the standalone page is the only way to
+  // use that feature until it gets its own core module split out, the
+  // same way bluelight.js's was.
+  // ---------------------------------------------------------------------
+  const FEATURES = [
+    { id: "bluelight", label: "Blue Light Filter", ready: true, create: (v, panel) => createBlueLightFeature(v, panel) },
+    { id: "colorvision", label: "Colour Vision Extreme", ready: false },
+    { id: "colorassist", label: "Colour Assist", ready: false },
+    { id: "soundcolour", label: "Sound Colour", ready: false },
+    { id: "restore", label: "Restore", ready: false },
+    { id: "colouralarm", label: "Colour Alarm", ready: false },
+    { id: "nebula", label: "Sound Nebula", ready: false },
+    { id: "dmx", label: "DMX", ready: false },
+    { id: "videoproduction", label: "Video Production", ready: false },
+    { id: "batcount", label: "Flying Fox Count", ready: false },
+    { id: "call", label: "Call / Viewer pairing", ready: false },
+    { id: "camerdiag", label: "Camera Diagnostic", ready: false },
+  ];
+
+  let activeFeatureId = null;
+  let activeInstance = null;
+  const modeButtonsById = new Map();
+
+  // Built ONCE -- selectFeature only ever updates these same button
+  // elements' classes/attributes afterward, never replaces them. Rebuilding
+  // modeSwitcher's innerHTML from inside a button's own click handler would
+  // detach that exact button mid-click: the document-level "tap outside
+  // the HUD to hide it" listener (see below) still receives the bubbled
+  // click, but Element.closest() from a now-parentless target can no
+  // longer reach #hud, so it would misjudge the click as "outside" and
+  // hide the whole HUD as a side effect of picking a feature.
+  function buildModeSwitcher() {
+    modeSwitcher.innerHTML = "";
+    modeButtonsById.clear();
+    FEATURES.forEach((f) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "hud-btn mode-btn";
+      btn.textContent = f.ready ? f.label : f.label + " (soon)";
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-selected", "false");
+      if (!f.ready) btn.disabled = true;
+      btn.addEventListener("click", () => selectFeature(f.id));
+      modeSwitcher.appendChild(btn);
+      modeButtonsById.set(f.id, btn);
+    });
   }
 
-  // Sensor controls + tap-to-focus now live in bluelight-core.js
-  // (createBlueLightFeature), shared with the Hub.
-
-  // ---- Screen Wake Lock ----
-  // The whole point of this page is extended low-light viewing -- exactly
-  // the situation where a phone's own screen timeout is most likely to
-  // kick in and undo it. Real API (Wake Lock), feature-detected the same
-  // way as everything else here; the browser releases the lock whenever
-  // the tab is backgrounded regardless, so it's re-requested on
-  // visibilitychange rather than assumed to persist.
-  let wakeLock = null;
-  async function requestWakeLock() {
-    if (!("wakeLock" in navigator)) return;
-    try {
-      wakeLock = await navigator.wakeLock.request("screen");
-      wakeLock.addEventListener("release", () => { wakeLock = null; });
-    } catch (e) { /* not fatal -- the screen just times out normally */ }
+  function updateModeSwitcherActiveState() {
+    modeButtonsById.forEach((btn, id) => {
+      const isActive = id === activeFeatureId;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", String(isActive));
+    });
   }
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && currentStream && !wakeLock) requestWakeLock();
+
+  function selectFeature(id) {
+    if (id === activeFeatureId) return;
+    const spec = FEATURES.find((f) => f.id === id);
+    if (!spec) return;
+
+    if (activeInstance) {
+      activeInstance.stop();
+      activeInstance = null;
+    }
+    featurePanel.innerHTML = "";
+    activeFeatureId = id;
+
+    if (spec.ready) {
+      activeInstance = spec.create(video, featurePanel);
+      if (currentTrack) activeInstance.onTrackChanged(currentTrack);
+      activeInstance.start();
+    } else {
+      const note = document.createElement("p");
+      note.id = "comingSoonNote";
+      note.className = "hint";
+      note.textContent = `${spec.label} isn't wired into the Hub yet -- use its own standalone page for now.`;
+      featurePanel.appendChild(note);
+    }
+    updateModeSwitcherActiveState();
+  }
+
+  // ---- Torch/HUD tap-to-hide (shared modules) ----
+
+  document.body.addEventListener("click", (e) => {
+    if (isHudTapTarget(e.target)) return;
+    hud.classList.toggle("hide");
   });
 
-  // Ambient-brightness/blue-light-share sampling now lives in
-  // bluelight-core.js too.
+  // ---- Camera lifecycle ----
 
-  // ---- Camera device selection ----
-  // getUserMedia's facingMode ("environment"/"user") is a phone concept --
-  // it means nothing to a USB webcam or an HDMI/SDI-to-USB capture card
-  // feeding a real camera into a desktop, which the OS (and so the
-  // browser) just sees as one more plain video input device, no different
-  // from a phone's own lens. This lists every one of them by name and
-  // lets a specific one be picked directly, the same enumerate/switch
-  // pattern already used for phone lens-switching in colorvision.js,
-  // generalized here to any camera hardware at all.
   async function attachStream(stream) {
     currentStream = stream;
     await attachVideoElement(video, stream);
-    torch.setup(stream.getVideoTracks()[0]);
-    blueLight.onTrackChanged(stream.getVideoTracks()[0]);
+    currentTrack = stream.getVideoTracks()[0];
+    torch.setup(currentTrack);
+    if (activeInstance) activeInstance.onTrackChanged(currentTrack);
   }
 
   function stopCurrentStream() {
@@ -108,10 +171,6 @@
   async function switchToDevice(deviceId) {
     if (switchingCamera) return;
     switchingCamera = true;
-    // Release the current camera before requesting the next one -- some
-    // camera drivers/capture cards refuse or silently fail a second
-    // concurrent open, same reasoning as the existing lens-switch code in
-    // colorvision.js.
     stopCurrentStream();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -127,7 +186,6 @@
       switchingCamera = false;
     }
   }
-
   cameraSelect.addEventListener("change", () => switchToDevice(cameraSelect.value));
 
   async function startCamera() {
@@ -140,14 +198,17 @@
       await attachStream(stream);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
-      requestWakeLock();
-      blueLight.start();
       await refreshVideoDevices();
+      buildModeSwitcher();
+      // Land on the one ready feature by default rather than an empty
+      // panel -- there's exactly one right now; as more get adapted this
+      // just becomes "the first ready one".
+      const firstReady = FEATURES.find((f) => f.ready);
+      if (firstReady) selectFeature(firstReady.id);
     } catch (err) {
       setStatus("Camera access failed: " + (err.message || err.name || "unknown error"));
     }
   }
-
   startBtn.addEventListener("click", startCamera);
 
   pauseBtn.addEventListener("click", () => {
@@ -172,10 +233,7 @@
   torchBtn.addEventListener("click", torch.toggle);
 
   // ---- Fullscreen ----
-  // A single button, pinned outside both #hud and the normal flow, so it
-  // never disappears regardless of HUD state -- one large, unmissable,
-  // fixed target to get in and back out, with no tiny gap to hunt for and
-  // no dead end that needs a page reload to escape.
+
   let fullscreenActive = false;
 
   async function enterFullscreen() {
@@ -209,4 +267,10 @@
       if (fullscreenActive && !document.fullscreenElement && !document.webkitFullscreenElement) exitFullscreenMode();
     });
   });
+
+  window.__hubTestables = {
+    getActiveFeatureId: () => activeFeatureId,
+    getFeatureCount: () => FEATURES.length,
+    getReadyFeatureIds: () => FEATURES.filter((f) => f.ready).map((f) => f.id),
+  };
 })();
