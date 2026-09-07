@@ -315,6 +315,8 @@
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
+  <button id="calibrateSoundBtn" class="hud-btn" title="Link a real colour to a specific instrument and note range -- aim at it (or pick/choose one) the same way Calibrate a colour does, then choose which instrument plays when the colour proximity chime's Calibrated sounds source recognises it nearby. However many colours you calibrate this way is how many distinct instruments the chime can play.">Calibrate sound</button>
+  <button id="soundPointsBtn" class="hud-btn">Saved sounds (<span id="soundPointsCount">0</span>)</button>
   <label id="midiOutputWrap" class="hud-slider hide" title="Which connected MIDI output any feature below set to MIDI sends its notes to -- a hardware synth, or a virtual MIDI port feeding software on this device. Appears once a MIDI output is actually detected.">
     MIDI output:
     <select id="midiOutputSelect"></select>
@@ -497,14 +499,15 @@
       </optgroup>
     </select>
   </label>
-  <label id="chimeSourceWrap" class="hud-slider hide" title="Saved colours: chimes as the camera nears any saved calibration colour -- needs at least one saved first (see Calibrate a colour). Live scene: no setup needed at all -- chimes based on how vivid the current on-screen colour is, using the same pentatonic scale. Vividness is whichever says so louder: the averaged colour's own saturation, or how much the scene's individual colours actually disagree with each other -- a scene split between two fully-saturated opposing colours (red and cyan, say) averages to flat grey, but is obviously vivid, just not on average.">
+  <label id="chimeSourceWrap" class="hud-slider hide" title="Saved colours: chimes as the camera nears any saved calibration colour -- needs at least one saved first (see Calibrate a colour). Live scene: no setup needed at all -- chimes based on how vivid the current on-screen colour is, using the same pentatonic scale. Vividness is whichever says so louder: the averaged colour's own saturation, or how much the scene's individual colours actually disagree with each other -- a scene split between two fully-saturated opposing colours (red and cyan, say) averages to flat grey, but is obviously vivid, just not on average. Calibrated sounds: chimes as the camera nears any colour saved via Calibrate sound, each one playing through its own chosen instrument and note range instead of one shared instrument for every colour -- needs at least one calibrated first.">
     Colour source:
     <select id="chimeSourceSelect">
       <option value="saved">Saved colours</option>
       <option value="live">Live scene</option>
+      <option value="calibrated">Calibrated sounds</option>
     </select>
   </label>
-  <label id="chimeRangeWrap" class="hud-slider hide" title="How close a colour must be to a saved calibration point before the chime starts responding at all, and how far the closeness curve stretches from there -- lower is stricter (must nearly match exactly), higher lets the chime react from further away. Only applies to the Saved colours source.">
+  <label id="chimeRangeWrap" class="hud-slider hide" title="How close a colour must be to a saved calibration point before the chime starts responding at all, and how far the closeness curve stretches from there -- lower is stricter (must nearly match exactly), higher lets the chime react from further away. Applies to the Saved colours and Calibrated sounds sources.">
     Chime range: <span id="chimeRangeLabel">32</span>
     <input id="chimeRangeSlider" type="range" min="10" max="80" step="1" value="32">
   </label>
@@ -1102,6 +1105,48 @@
       <button id="deletePointBtn" class="hud-btn reticle-btn-secondary hide">Delete</button>
       <button id="closeTuneBtn" class="hud-btn reticle-btn-secondary">Close</button>
     </div>
+  </div>
+</div>
+
+<div id="tuneSoundPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="tuneSoundPanelTitle">
+  <div id="tuneSoundPanelInner">
+    <h2 id="tuneSoundPanelTitle">Link this colour to a sound</h2>
+
+    <div class="swatch-row">
+      <div class="swatch-block">
+        <div id="soundSwatch" class="swatch"></div>
+        <span>Colour</span>
+        <p id="soundSwatchName" class="color-name"></p>
+      </div>
+    </div>
+
+    <label class="hud-slider" title="Which instrument plays when this colour is the chime's nearest calibrated match -- the full General MIDI set, same as chime/dominant tone/edge texture elsewhere.">
+      Instrument:
+      <select id="soundPointInstrumentSelect"></select>
+    </label>
+    <label class="hud-slider" title="How many octaves this colour's own pentatonic scale spans -- proximity still picks the note within it, exactly like the chime's default scale, just rooted around whichever range you set here.">
+      Note range: <span id="soundPointRangeLabel">2</span> octave(s)
+      <input id="soundPointRangeSlider" type="range" min="1" max="3" step="1" value="2">
+    </label>
+    <label class="hud-slider">
+      Label (optional)
+      <input id="soundPointLabelInput" type="text" placeholder="e.g. traffic light red" maxlength="40">
+    </label>
+
+    <div class="tune-actions">
+      <button id="saveSoundPointBtn" class="hud-btn">Save this sound</button>
+      <button id="deleteSoundPointBtn" class="hud-btn reticle-btn-secondary hide">Delete</button>
+      <button id="closeTuneSoundBtn" class="hud-btn reticle-btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="soundPointsPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="soundPointsPanelTitle">
+  <div id="soundPointsPanelInner">
+    <h2 id="soundPointsPanelTitle">Saved sounds</h2>
+    <p class="hint">Tap a sound to review, re-tune, or delete it. These feed the colour proximity chime's "Calibrated sounds" source -- each one its own instrument and note range.</p>
+    <div id="soundPointsGrid"></div>
+    <button id="closeSoundPointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>
 

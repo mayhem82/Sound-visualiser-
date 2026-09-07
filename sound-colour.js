@@ -3,6 +3,12 @@
 
   const MAX_POINTS = 32;
   const STORAGE_KEY = "cvCalibrationPoints_v1";
+  // Sound points are this page's own thing, deliberately separate from the
+  // "cv"-prefixed keys above -- those are shared visual-calibration data
+  // Colour Vision Extreme and friends also read/write, and an instrument +
+  // note range means nothing to a page that isn't sonifying anything.
+  const MAX_SOUND_POINTS = 32;
+  const SOUND_POINTS_KEY = "scSoundPoints_v1";
   const PROFILES_KEY = "cvProfiles_colorVision_v1";
   const BUILTIN_TEMPLATES_SEEDED_KEY = "builtinTemplatesSeeded_colorVision_v1";
   const ROTATE_KEY = "cvRotate180_v1";
@@ -483,6 +489,9 @@
   const cartoonThemeHiInput = document.getElementById("cartoonThemeHiInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
   const pointsBtn = document.getElementById("pointsBtn");
+  const calibrateSoundBtn = document.getElementById("calibrateSoundBtn");
+  const soundPointsBtn = document.getElementById("soundPointsBtn");
+  const soundPointsCount = document.getElementById("soundPointsCount");
   const midiOutputWrap = document.getElementById("midiOutputWrap");
   const midiOutputSelect = document.getElementById("midiOutputSelect");
   const chimeBtn = document.getElementById("chimeBtn");
@@ -620,6 +629,21 @@
   const deletePointBtn = document.getElementById("deletePointBtn");
   const closeTuneBtn = document.getElementById("closeTuneBtn");
 
+  const tuneSoundPanel = document.getElementById("tuneSoundPanel");
+  const soundSwatch = document.getElementById("soundSwatch");
+  const soundSwatchName = document.getElementById("soundSwatchName");
+  const soundPointInstrumentSelect = document.getElementById("soundPointInstrumentSelect");
+  const soundPointRangeSlider = document.getElementById("soundPointRangeSlider");
+  const soundPointRangeLabel = document.getElementById("soundPointRangeLabel");
+  const soundPointLabelInput = document.getElementById("soundPointLabelInput");
+  const saveSoundPointBtn = document.getElementById("saveSoundPointBtn");
+  const deleteSoundPointBtn = document.getElementById("deleteSoundPointBtn");
+  const closeTuneSoundBtn = document.getElementById("closeTuneSoundBtn");
+
+  const soundPointsPanel = document.getElementById("soundPointsPanel");
+  const soundPointsGrid = document.getElementById("soundPointsGrid");
+  const closeSoundPointsBtn = document.getElementById("closeSoundPointsBtn");
+
   const takesBtn = document.getElementById("takesBtn");
   const takesCount = document.getElementById("takesCount");
   const takesPanel = document.getElementById("takesPanel");
@@ -654,6 +678,7 @@
   const profileStatus = document.getElementById("profileStatus");
 
   const choosePanel = document.getElementById("choosePanel");
+  const choosePanelTitleEl = document.getElementById("choosePanelTitle");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
   const colourPickerInput = document.getElementById("colourPickerInput");
   const presetGrid = document.getElementById("presetGrid");
@@ -687,6 +712,23 @@
   let frozenColor = null;
   let tuneReturnFocusEl = null;
   let choosePanelReturnFocusEl = null;
+  // Which panel the choose-colour flow (Aim with camera / colour picker /
+  // CVD presets) is actually FOR right now -- "visual" opens the existing
+  // Tune panel (hue/sat/light/contrast/exposure correction) afterward,
+  // "sound" opens Tune sound (instrument + note range) instead. Set by
+  // whichever button opened the choose panel; both share it rather than
+  // duplicating the aim/pick/preset UI a second time.
+  let choosePanelMode = "visual";
+  // Sound points: { id, label, sourceColor: [r,g,b 0-1], instrument (GM
+  // folder), rangeOctaves }. Same real-colour-the-user-aimed-at idea as
+  // the visual points above, but linking it to an instrument + pitch range
+  // instead of a correction -- what the colour proximity chime's
+  // "Calibrated sounds" source plays through when this colour is its
+  // nearest match (see nearestSavedSoundPoint/updateProximityChime).
+  let soundPoints = loadSoundPoints();
+  let editingSoundPointId = null;
+  let frozenSoundColor = null;
+  let tuneSoundReturnFocusEl = null;
   let aiming = false;
   // Where in the video frame calibration samples from — a fraction (0,0
   // top-left .. 1,1 bottom-right), defaulting to dead-center but movable
@@ -1209,6 +1251,24 @@
   function savePoints() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(points));
+    } catch (e) {
+      setStatus("Could not save (storage full or unavailable).");
+    }
+  }
+
+  function loadSoundPoints() {
+    try {
+      const raw = localStorage.getItem(SOUND_POINTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveSoundPoints() {
+    try {
+      localStorage.setItem(SOUND_POINTS_KEY, JSON.stringify(soundPoints));
     } catch (e) {
       setStatus("Could not save (storage full or unavailable).");
     }
@@ -3776,7 +3836,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // or Live (no setup -- reacts to how vivid the current on-screen colour
   // already is, see updateProximityChime).
   let chimeSource = (() => {
-    try { return localStorage.getItem(CHIME_SOURCE_KEY) === "live" ? "live" : "saved"; } catch (e) { return "saved"; }
+    try {
+      const raw = localStorage.getItem(CHIME_SOURCE_KEY);
+      return raw === "live" || raw === "calibrated" ? raw : "saved";
+    } catch (e) { return "saved"; }
   })();
   // Range: how far away (in Lab colour distance) the chime starts
   // responding at all -- wider reaches from farther off, narrower means
@@ -3842,15 +3905,19 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // percussive/melodic hit), instead of one continuous tone bending pitch.
   // A quick attack (it's a pluck, not a fade-in) into a slow exponential
   // decay is what makes it read as a struck note rather than a beep.
-  function playChimeNote(freq, velocity) {
+  function playChimeNote(freq, velocity, instrumentOverride) {
     const totalCents = chimeDetuneCents + randomCentsJitter(chimeRandomness, CHIME_RANDOMNESS_MAX_CENTS);
+    // instrumentOverride is only ever set by the "Calibrated sounds" source
+    // below -- the point that's actually the nearest match gets to pick
+    // the instrument, not the channel's own global Instrument setting.
+    const activeInstrument = instrumentOverride || chimeInstrument;
     if (chimeOutput === "midi") {
-      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === chimeInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "music_box");
+      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === activeInstrument) || GM_ALL_INSTRUMENTS.find((i) => i.folder === "music_box");
       playMidiNote(CHIME_MIDI_CHANNEL, inst.program, hzToMidiNote(freq), velocity, 1100, totalCents);
       return;
     }
     if (chimeOutput === "instrument") {
-      playInstrumentNote(chimeInstrument, hzToMidiNote(freq), velocity * (chimeVolume / 100), 1.3, totalCents);
+      playInstrumentNote(activeInstrument, hzToMidiNote(freq), velocity * (chimeVolume / 100), 1.3, totalCents);
       return;
     }
     const now = chimeAudioCtx.currentTime;
@@ -3874,7 +3941,24 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     chimeTicksSinceLastNote++;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     let closeness;
-    if (chimeSource === "live") {
+    // Calibrated sounds swaps in whichever saved sound point is actually
+    // nearest: its own instrument (matchedInstrument, passed through to
+    // playChimeNote) and its own pentatonic scale (rebuilt around the
+    // shared CHIME_ROOT_HZ at that point's own Range, exactly the
+    // buildPentatonicScaleHz dominant tone already uses) instead of the
+    // one shared CHIME_SCALE_HZ every other source plays through.
+    let activeScale = CHIME_SCALE_HZ;
+    let matchedInstrument = null;
+    if (chimeSource === "calibrated") {
+      const match = nearestSavedSoundPoint(sampleCenterColor());
+      if (match == null) {
+        chimeLastNoteIndex = -1;
+        return;
+      }
+      closeness = Math.max(0, Math.min(1, 1 - (match.distance - CHIME_CLOSE_LAB_DISTANCE) / (chimeRange - CHIME_CLOSE_LAB_DISTANCE)));
+      activeScale = buildPentatonicScaleHz(CHIME_ROOT_HZ, match.point.rangeOctaves || 2);
+      matchedInstrument = match.point.instrument;
+    } else if (chimeSource === "live") {
       // No saved colours needed: treat how vivid (saturated and lit) the
       // scene's own current dominant colour already is as the "closeness"
       // signal, reusing the same sampling this file already does for the
@@ -3910,13 +3994,13 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       chimeLastNoteIndex = -1;
       return;
     }
-    const noteIndex = Math.min(CHIME_SCALE_HZ.length - 1, Math.floor(closeness * CHIME_SCALE_HZ.length));
+    const noteIndex = Math.min(activeScale.length - 1, Math.floor(closeness * activeScale.length));
     const steppedToNewNote = noteIndex !== chimeLastNoteIndex;
     // Right at the top of the scale (as close as the mapping distinguishes)
     // is the one place a held-steady match would otherwise go silent after
     // its first note -- keep it gently re-chiming instead.
     const repeatTicks = Math.max(1, Math.round(chimeTempoMs / 150));
-    const heldAtTopNote = noteIndex === CHIME_SCALE_HZ.length - 1 && chimeTicksSinceLastNote >= repeatTicks;
+    const heldAtTopNote = noteIndex === activeScale.length - 1 && chimeTicksSinceLastNote >= repeatTicks;
     if (!steppedToNewNote && !heldAtTopNote) return;
     // Tracking (steppedToNewNote/repeat timing) always uses the true,
     // deterministic noteIndex -- Randomness only ever nudges which note
@@ -3941,20 +4025,20 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       } else {
         step = Math.random() < 0.5 ? -1 : 1;
       }
-      chimeWalkIndex = Math.max(0, Math.min(CHIME_SCALE_HZ.length - 1, chimeWalkIndex + step));
+      chimeWalkIndex = Math.max(0, Math.min(activeScale.length - 1, chimeWalkIndex + step));
       playedIndex = chimeWalkIndex;
     } else if (chimeRandomness > 0 && Math.random() * 100 < chimeRandomness * 0.6) {
-      playedIndex = Math.max(0, Math.min(CHIME_SCALE_HZ.length - 1, noteIndex + (Math.random() < 0.5 ? -1 : 1)));
+      playedIndex = Math.max(0, Math.min(activeScale.length - 1, noteIndex + (Math.random() < 0.5 ? -1 : 1)));
     }
-    playChimeNote(CHIME_SCALE_HZ[playedIndex], closeness);
+    playChimeNote(activeScale[playedIndex], closeness, matchedInstrument);
     if (chimePattern === "chord_cluster") {
       // Plays the proximity note's third alongside it -- a real second
       // simultaneous note (not a substitute), so this pattern is genuinely
       // fuller/chordal rather than single-note, at every output (synth
       // layers a second oscillator, MIDI sends a second Note On on the same
       // channel, Instrument plays a second overlapping sample).
-      const clusterIndex = Math.min(CHIME_SCALE_HZ.length - 1, playedIndex + 2);
-      if (clusterIndex !== playedIndex) playChimeNote(CHIME_SCALE_HZ[clusterIndex], closeness * 0.8);
+      const clusterIndex = Math.min(activeScale.length - 1, playedIndex + 2);
+      if (clusterIndex !== playedIndex) playChimeNote(activeScale[clusterIndex], closeness * 0.8, matchedInstrument);
     }
   }
 
@@ -4002,10 +4086,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     try { localStorage.setItem(CHIME_PATTERN_KEY, chimePattern); } catch (e) {}
   }
 
-  // Range only applies to Saved (a Lab-distance threshold) -- Live has
-  // nothing to measure distance from, so it's hidden in that mode.
+  // Range only applies to Saved/Calibrated (both a Lab-distance threshold
+  // against a saved point) -- Live has nothing to measure distance from,
+  // so it's hidden in that mode.
   function updateChimeSourceControlsVisibility() {
-    chimeRangeWrap.classList.toggle("hide", !chimeEnabled || chimeSource !== "saved");
+    chimeRangeWrap.classList.toggle("hide", !chimeEnabled || (chimeSource !== "saved" && chimeSource !== "calibrated"));
   }
 
   function setChimeEnabled(next) {
@@ -4041,7 +4126,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   }
 
   function setChimeSource(next) {
-    if (next !== "saved" && next !== "live") return;
+    if (next !== "saved" && next !== "live" && next !== "calibrated") return;
     chimeSource = next;
     chimeLastNoteIndex = -1;
     updateChimeSourceControlsVisibility();
@@ -5686,6 +5771,8 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     pointsPanel.classList.add("hide");
     choosePanel.classList.add("hide");
     takesPanel.classList.add("hide");
+    tuneSoundPanel.classList.add("hide");
+    soundPointsPanel.classList.add("hide");
   }
 
   function openTuneForNewPoint(sourceColor, returnFocusEl = calibrateBtn) {
@@ -5794,6 +5881,159 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   function updatePointsCount() {
     pointsCount.textContent = String(points.length);
+  }
+
+  // ---- Calibrate sound (colour -> instrument + note range) ----
+  // Same aim/pick/preset entry point as visual calibration (see
+  // choosePanelMode above), but every real-world colour gets linked to an
+  // instrument and pitch range instead of a hue/sat/light correction --
+  // exactly how many distinct instruments the colour proximity chime's
+  // "Calibrated sounds" source can reach is exactly how many of these get
+  // saved (see nearestSavedSoundPoint/updateProximityChime).
+
+  function openSoundTuneForNewPoint(sourceColor) {
+    hideOverlayPanels();
+    editingSoundPointId = null;
+    frozenSoundColor = sourceColor;
+    soundPointInstrumentSelect.value = "acoustic_grand_piano";
+    soundPointRangeSlider.value = "2";
+    soundPointRangeLabel.textContent = "2";
+    soundPointLabelInput.value = "";
+    deleteSoundPointBtn.classList.add("hide");
+    refreshSoundTunePreview();
+    tuneSoundReturnFocusEl = calibrateSoundBtn;
+    tuneSoundPanel.classList.remove("hide");
+    soundPointInstrumentSelect.focus();
+  }
+
+  function openSoundTuneForExistingPoint(point) {
+    hideOverlayPanels();
+    editingSoundPointId = point.id;
+    frozenSoundColor = point.sourceColor;
+    soundPointInstrumentSelect.value = point.instrument;
+    soundPointRangeSlider.value = String(point.rangeOctaves || 2);
+    soundPointRangeLabel.textContent = String(point.rangeOctaves || 2);
+    soundPointLabelInput.value = point.label || "";
+    deleteSoundPointBtn.classList.remove("hide");
+    refreshSoundTunePreview();
+    tuneSoundReturnFocusEl = soundPointsBtn;
+    tuneSoundPanel.classList.remove("hide");
+    soundPointInstrumentSelect.focus();
+  }
+
+  function refreshSoundTunePreview() {
+    if (!frozenSoundColor) return;
+    soundSwatch.style.background = rgbToCss(frozenSoundColor);
+    soundSwatchName.textContent = nearestColorName(frozenSoundColor);
+  }
+
+  function closeTuneSoundPanel() {
+    tuneSoundPanel.classList.add("hide");
+    frozenSoundColor = null;
+    editingSoundPointId = null;
+    if (tuneSoundReturnFocusEl) tuneSoundReturnFocusEl.focus();
+    tuneSoundReturnFocusEl = null;
+  }
+
+  function saveSoundPoint() {
+    const instrument = soundPointInstrumentSelect.value;
+    const rangeOctaves = parseInt(soundPointRangeSlider.value, 10) || 2;
+    const label = soundPointLabelInput.value.trim();
+    if (editingSoundPointId) {
+      const p = soundPoints.find((pt) => pt.id === editingSoundPointId);
+      if (p) {
+        p.sourceColor = frozenSoundColor;
+        p.instrument = instrument;
+        p.rangeOctaves = rangeOctaves;
+        p.label = label;
+      }
+    } else {
+      if (soundPoints.length >= MAX_SOUND_POINTS) {
+        setStatus(`Limit of ${MAX_SOUND_POINTS} saved sounds reached — delete one to add another.`);
+        return;
+      }
+      soundPoints.push({
+        id: "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        label,
+        sourceColor: frozenSoundColor,
+        instrument,
+        rangeOctaves
+      });
+    }
+    saveSoundPoints();
+    updateSoundPointsCount();
+    closeTuneSoundPanel();
+  }
+
+  function deleteCurrentSoundPoint() {
+    if (!editingSoundPointId) return;
+    soundPoints = soundPoints.filter((p) => p.id !== editingSoundPointId);
+    saveSoundPoints();
+    updateSoundPointsCount();
+    closeTuneSoundPanel();
+  }
+
+  function updateSoundPointsCount() {
+    soundPointsCount.textContent = String(soundPoints.length);
+  }
+
+  function renderSoundPointsGrid() {
+    soundPointsGrid.innerHTML = "";
+    if (soundPoints.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No sounds linked yet. Use \"Calibrate sound\" to link your first colour to an instrument.";
+      soundPointsGrid.appendChild(empty);
+      return;
+    }
+    soundPoints.forEach((p) => {
+      const inst = GM_ALL_INSTRUMENTS.find((i) => i.folder === p.instrument);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "point-card";
+      card.setAttribute("aria-label", `${p.label || nearestColorName(p.sourceColor)}, ${inst ? inst.name : p.instrument}. Tap to review or re-tune.`);
+      const swatch = document.createElement("div");
+      swatch.className = "point-swatch";
+      swatch.style.background = rgbToCss(p.sourceColor);
+      const label = document.createElement("div");
+      label.className = "point-label";
+      label.textContent = p.label || nearestColorName(p.sourceColor);
+      const name = document.createElement("div");
+      name.className = "point-name";
+      name.textContent = `${inst ? inst.name : p.instrument} · ${p.rangeOctaves || 2} octave(s)`;
+      card.append(swatch, label, name);
+      card.addEventListener("click", () => openSoundTuneForExistingPoint(p));
+      soundPointsGrid.appendChild(card);
+    });
+  }
+
+  function openSoundPointsPanel() {
+    hideOverlayPanels();
+    renderSoundPointsGrid();
+    soundPointsPanel.classList.remove("hide");
+    closeSoundPointsBtn.focus();
+  }
+
+  function closeSoundPointsPanel() {
+    soundPointsPanel.classList.add("hide");
+    soundPointsBtn.focus();
+  }
+
+  // Nearest calibrated sound point (Lab distance), mirroring
+  // nearestSavedPointLabDistance above but returning the point itself
+  // too -- the chime's "Calibrated sounds" source needs to know WHICH
+  // point matched, not just how close, since each one carries its own
+  // instrument and range.
+  function nearestSavedSoundPoint(rgb) {
+    if (!soundPoints.length) return null;
+    const [L, A, B] = rgb2lab(rgb[0], rgb[1], rgb[2]);
+    let best = null, bestDist = Infinity;
+    for (const p of soundPoints) {
+      const [pL, pA, pB] = rgb2lab(p.sourceColor[0], p.sourceColor[1], p.sourceColor[2]);
+      const d = Math.hypot(L - pL, A - pA, B - pB);
+      if (d < bestDist) { bestDist = d; best = p; }
+    }
+    return best ? { point: best, distance: bestDist } : null;
   }
 
   // ---- Saved-colours grid ----
@@ -6208,7 +6448,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       setChimeInstrument(s.chimeInstrument);
       chimeInstrumentSelect.value = chimeInstrument;
     }
-    if (s.chimeSource === "saved" || s.chimeSource === "live") {
+    if (s.chimeSource === "saved" || s.chimeSource === "live" || s.chimeSource === "calibrated") {
       setChimeSource(s.chimeSource);
       chimeSourceSelect.value = chimeSource;
     }
@@ -6619,14 +6859,20 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       card.appendChild(label);
       card.addEventListener("click", () => {
         choosePanel.classList.add("hide");
-        openTuneForNewPoint(hexToRgb01(preset.hex));
+        if (choosePanelMode === "sound") {
+          openSoundTuneForNewPoint(hexToRgb01(preset.hex));
+        } else {
+          openTuneForNewPoint(hexToRgb01(preset.hex));
+        }
       });
       presetGrid.appendChild(card);
     });
   }
 
-  function openChoosePanel(returnFocusEl = calibrateBtn) {
+  function openChoosePanel(returnFocusEl = calibrateBtn, mode = "visual") {
     hideOverlayPanels();
+    choosePanelMode = mode;
+    choosePanelTitleEl.textContent = mode === "sound" ? "Choose a colour to link a sound" : "Choose a colour to calibrate";
     renderPresetGrid();
     choosePanelReturnFocusEl = returnFocusEl;
     choosePanel.classList.remove("hide");
@@ -7825,7 +8071,8 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   torchBtn.addEventListener("click", toggleTorch);
 
-  calibrateBtn.addEventListener("click", () => openChoosePanel());
+  calibrateBtn.addEventListener("click", () => openChoosePanel(calibrateBtn, "visual"));
+  calibrateSoundBtn.addEventListener("click", () => openChoosePanel(calibrateSoundBtn, "sound"));
   chooseAimBtn.addEventListener("click", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
@@ -7834,7 +8081,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   colourPickerInput.addEventListener("input", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;
-    openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
+    if (choosePanelMode === "sound") {
+      openSoundTuneForNewPoint(hexToRgb01(colourPickerInput.value));
+    } else {
+      openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
+    }
   });
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
@@ -7852,7 +8103,11 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   freezeBtn.addEventListener("click", () => {
     const c = sampleCenterColor();
     stopAiming();
-    openTuneForNewPoint(c);
+    if (choosePanelMode === "sound") {
+      openSoundTuneForNewPoint(c);
+    } else {
+      openTuneForNewPoint(c);
+    }
   });
 
   [hueSlider, satSlider, lightSlider, contrastSlider, exposureSlider].forEach((el) => {
@@ -7862,6 +8117,16 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   savePointBtn.addEventListener("click", savePoint);
   deletePointBtn.addEventListener("click", deleteCurrentPoint);
   closeTuneBtn.addEventListener("click", closeTunePanel);
+
+  populateGmInstrumentSelect(soundPointInstrumentSelect, GM_ALL_INSTRUMENTS);
+  soundPointRangeSlider.addEventListener("input", () => {
+    soundPointRangeLabel.textContent = soundPointRangeSlider.value;
+  });
+  saveSoundPointBtn.addEventListener("click", saveSoundPoint);
+  deleteSoundPointBtn.addEventListener("click", deleteCurrentSoundPoint);
+  closeTuneSoundBtn.addEventListener("click", closeTuneSoundPanel);
+  soundPointsBtn.addEventListener("click", openSoundPointsPanel);
+  closeSoundPointsBtn.addEventListener("click", closeSoundPointsPanel);
 
   function closePointsPanel() {
     pointsPanel.classList.add("hide");
@@ -7921,7 +8186,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // corrected feed itself toggle the HUD away.
   function isHudTapTarget(el) {
     return !!(el && el.closest && el.closest(
-      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #takesPanel, #fullscreenBtn, #floatingCaptureBar"
+      "#hud, #overlay, #cameraStatus, #reticleLayer, #tunePanel, #pointsPanel, #choosePanel, #takesPanel, #tuneSoundPanel, #soundPointsPanel, #fullscreenBtn, #floatingCaptureBar"
     ));
   }
 

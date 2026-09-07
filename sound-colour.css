@@ -186,7 +186,9 @@ video#cameraFeed, canvas#sampleCanvas {
 #tunePanel,
 #pointsPanel,
 #viewerPanel,
-#takesPanel {
+#takesPanel,
+#tuneSoundPanel,
+#soundPointsPanel {
   position: fixed;
   left: 0;
   right: 0;
@@ -199,14 +201,18 @@ video#cameraFeed, canvas#sampleCanvas {
 #tunePanel.hide,
 #pointsPanel.hide,
 #viewerPanel.hide,
-#takesPanel.hide {
+#takesPanel.hide,
+#tuneSoundPanel.hide,
+#soundPointsPanel.hide {
   display: none;
 }
 
 #tunePanelInner,
 #pointsPanelInner,
 #viewerPanelInner,
-#takesPanelInner {
+#takesPanelInner,
+#tuneSoundPanelInner,
+#soundPointsPanelInner {
   width: 100%;
   max-width: 480px;
   background: rgba(15, 15, 25, 0.92);
@@ -220,7 +226,9 @@ video#cameraFeed, canvas#sampleCanvas {
 #tunePanelInner h2,
 #pointsPanelInner h2,
 #viewerPanelInner h2,
-#takesPanelInner h2 {
+#takesPanelInner h2,
+#tuneSoundPanelInner h2,
+#soundPointsPanelInner h2 {
   margin: 0 0 8px;
   font-size: 18px;
   letter-spacing: 0.02em;
@@ -228,7 +236,9 @@ video#cameraFeed, canvas#sampleCanvas {
 
 #tunePanelInner .hud-slider,
 #pointsPanelInner .hud-slider,
-#viewerPanelInner .hud-slider {
+#viewerPanelInner .hud-slider,
+#tuneSoundPanelInner .hud-slider,
+#soundPointsPanelInner .hud-slider {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -239,11 +249,14 @@ video#cameraFeed, canvas#sampleCanvas {
 }
 
 #tunePanelInner .hud-slider input[type="range"],
-#tunePanelInner .hud-slider input[type="text"] {
+#tunePanelInner .hud-slider input[type="text"],
+#tuneSoundPanelInner .hud-slider input[type="range"],
+#tuneSoundPanelInner .hud-slider input[type="text"] {
   width: 100%;
 }
 
-#tunePanelInner .hud-slider input[type="text"] {
+#tunePanelInner .hud-slider input[type="text"],
+#tuneSoundPanelInner .hud-slider input[type="text"] {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);
   background: rgba(5, 5, 10, 0.4);
