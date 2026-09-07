@@ -118,7 +118,8 @@
 
 /* Name/list panels -- docked at the bottom, over the camera feed */
 #nameColorPanel,
-#alarmColorsPanel {
+#alarmColorsPanel,
+#alarmPhotosPanel {
   position: fixed;
   left: 0;
   right: 0;
@@ -128,10 +129,12 @@
   justify-content: center;
 }
 #nameColorPanel.hide,
-#alarmColorsPanel.hide { display: none; }
+#alarmColorsPanel.hide,
+#alarmPhotosPanel.hide { display: none; }
 
 #nameColorPanelInner,
-#alarmColorsPanelInner {
+#alarmColorsPanelInner,
+#alarmPhotosPanelInner {
   width: 100%;
   max-width: 480px;
   background: rgba(15, 15, 25, 0.92);
@@ -142,7 +145,8 @@
   overflow-y: auto;
 }
 #nameColorPanelInner h2,
-#alarmColorsPanelInner h2 {
+#alarmColorsPanelInner h2,
+#alarmPhotosPanelInner h2 {
   margin: 0 0 8px;
   font-size: 18px;
   letter-spacing: 0.02em;
@@ -209,3 +213,26 @@
   white-space: nowrap;
 }
 .point-card .point-name { font-size: 10px; color: rgba(242, 242, 247, 0.5); padding: 0 4px; }
+
+#alarmPhotosGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+.photo-card {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(242, 242, 247, 0.2);
+  background: rgba(5, 5, 10, 0.4);
+  text-align: center;
+  padding-bottom: 6px;
+}
+.photo-card img { width: 100%; height: 90px; object-fit: cover; display: block; }
+.photo-card .photo-time {
+  font-size: 10px;
+  color: rgba(242, 242, 247, 0.6);
+  padding: 4px 4px 0;
+}
+.photo-card .photo-actions { display: flex; gap: 4px; padding: 6px 6px 0; }
+.photo-card .photo-actions .hud-btn { flex: 1 1 auto; padding: 4px 6px; font-size: 11px; }

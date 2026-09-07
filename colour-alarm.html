@@ -49,6 +49,11 @@
   </label>
   <button id="testAlarmBtn" class="hud-btn">Test alarm</button>
   <button id="silenceBtn" class="hud-btn hide" aria-pressed="false" title="Stops the siren for 10 seconds even if the colour is still in view -- it comes back on its own after that if the colour is still there.">Silence (10s)</button>
+  <label id="photoOnAlarmWrap" class="hud-slider" title="Captures a full-resolution photo the moment the alarm actually triggers (not during Test alarm) -- downloaded immediately and also kept in Alarm photos below for this session. Off by default.">
+    <input id="photoOnAlarmCheckbox" type="checkbox">
+    Photo on alarm
+  </label>
+  <button id="alarmPhotosBtn" class="hud-btn">Alarm photos (<span id="alarmPhotosCount">0</span>)</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
@@ -97,6 +102,15 @@
     <p class="hint">Tap a colour to delete it.</p>
     <div id="alarmColorsGrid"></div>
     <button id="closeAlarmColorsBtn" class="hud-btn reticle-btn-secondary">Close</button>
+  </div>
+</div>
+
+<div id="alarmPhotosPanel" class="hide" role="dialog" aria-modal="true" aria-labelledby="alarmPhotosTitle">
+  <div id="alarmPhotosPanelInner">
+    <h2 id="alarmPhotosTitle">Alarm photos</h2>
+    <p class="hint">Captured automatically when the alarm triggers, if Photo on alarm is switched on -- this session only, each also downloaded the moment it was taken.</p>
+    <div id="alarmPhotosGrid"></div>
+    <button id="closeAlarmPhotosBtn" class="hud-btn reticle-btn-secondary">Close</button>
   </div>
 </div>
 

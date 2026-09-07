@@ -16,6 +16,8 @@
   const VOLUME_KEY = "colourAlarmVolume_v1";
   const ALARM_COLORS_KEY = "colourAlarmColors_v1";
   const MAX_ALARM_COLORS = 16;
+  const PHOTO_ON_ALARM_KEY = "colourAlarmPhotoOnAlarm_v1";
+  const MAX_ALARM_PHOTOS = 24;
 
   function loadBoolPref(key, fallback) {
     try {
@@ -144,6 +146,12 @@
   const alarmColorsPanel = document.getElementById("alarmColorsPanel");
   const alarmColorsGrid = document.getElementById("alarmColorsGrid");
   const closeAlarmColorsBtn = document.getElementById("closeAlarmColorsBtn");
+  const photoOnAlarmCheckbox = document.getElementById("photoOnAlarmCheckbox");
+  const alarmPhotosBtn = document.getElementById("alarmPhotosBtn");
+  const alarmPhotosCount = document.getElementById("alarmPhotosCount");
+  const alarmPhotosPanel = document.getElementById("alarmPhotosPanel");
+  const alarmPhotosGrid = document.getElementById("alarmPhotosGrid");
+  const closeAlarmPhotosBtn = document.getElementById("closeAlarmPhotosBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
 
   const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
@@ -558,6 +566,126 @@
   alarmColorsBtn.addEventListener("click", openAlarmColorsPanel);
   closeAlarmColorsBtn.addEventListener("click", closeAlarmColorsPanel);
 
+  // ---- Alarm photos ----
+  // Optional, off by default: a real evidence photo the moment the alarm
+  // actually triggers (not during Test alarm, which never touches
+  // setAlarmActive at all -- see below). Session-only, the same "blob:
+  // URLs don't survive a reload" honesty Sound Colour's own Recordings
+  // list already has, which is why each one is also downloaded
+  // immediately rather than relying on this in-memory list alone.
+
+  let photoOnAlarm = loadBoolPref(PHOTO_ON_ALARM_KEY, false);
+  photoOnAlarmCheckbox.checked = photoOnAlarm;
+  photoOnAlarmCheckbox.addEventListener("change", () => {
+    photoOnAlarm = photoOnAlarmCheckbox.checked;
+    saveBoolPref(PHOTO_ON_ALARM_KEY, photoOnAlarm);
+  });
+
+  let alarmPhotos = []; // { id, url, takenAt }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function timestampForFilename(date) {
+    return date.toISOString().replace(/[:.]/g, "-");
+  }
+
+  function capturePhoto() {
+    if (video.readyState < video.HAVE_CURRENT_DATA || !video.videoWidth) return;
+    const c = document.createElement("canvas");
+    c.width = video.videoWidth;
+    c.height = video.videoHeight;
+    const ctx = c.getContext("2d");
+    if (rotate180) {
+      ctx.translate(c.width, c.height);
+      ctx.rotate(Math.PI);
+    }
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    const takenAt = new Date();
+    c.toBlob((blob) => {
+      if (!blob) return;
+      downloadBlob(blob, `colour-alarm-${timestampForFilename(takenAt)}.jpg`);
+      if (alarmPhotos.length >= MAX_ALARM_PHOTOS) {
+        const oldest = alarmPhotos.shift();
+        URL.revokeObjectURL(oldest.url);
+      }
+      alarmPhotos.push({ id: "ap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7), url: URL.createObjectURL(blob), takenAt });
+      updateAlarmPhotosCount();
+      if (!alarmPhotosPanel.classList.contains("hide")) renderAlarmPhotosGrid();
+    }, "image/jpeg", 0.92);
+  }
+
+  function updateAlarmPhotosCount() {
+    alarmPhotosCount.textContent = String(alarmPhotos.length);
+  }
+
+  function renderAlarmPhotosGrid() {
+    alarmPhotosGrid.innerHTML = "";
+    if (alarmPhotos.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No alarm photos yet this session. Switch on \"Photo on alarm\" above to start capturing one each time it triggers.";
+      alarmPhotosGrid.appendChild(empty);
+      return;
+    }
+    alarmPhotos.slice().reverse().forEach((p) => {
+      const card = document.createElement("div");
+      card.className = "photo-card";
+      const img = document.createElement("img");
+      img.src = p.url;
+      img.alt = `Alarm photo taken ${p.takenAt.toLocaleString()}`;
+      const time = document.createElement("div");
+      time.className = "photo-time";
+      time.textContent = p.takenAt.toLocaleString();
+      const actions = document.createElement("div");
+      actions.className = "photo-actions";
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.className = "hud-btn";
+      downloadBtn.textContent = "Download";
+      downloadBtn.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = p.url;
+        a.download = `colour-alarm-${timestampForFilename(p.takenAt)}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "hud-btn";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", () => {
+        alarmPhotos = alarmPhotos.filter((x) => x.id !== p.id);
+        URL.revokeObjectURL(p.url);
+        updateAlarmPhotosCount();
+        renderAlarmPhotosGrid();
+      });
+      actions.append(downloadBtn, deleteBtn);
+      card.append(img, time, actions);
+      alarmPhotosGrid.appendChild(card);
+    });
+  }
+
+  function openAlarmPhotosPanel() {
+    renderAlarmPhotosGrid();
+    alarmPhotosPanel.classList.remove("hide");
+    closeAlarmPhotosBtn.focus();
+  }
+  function closeAlarmPhotosPanel() {
+    alarmPhotosPanel.classList.add("hide");
+    alarmPhotosBtn.focus();
+  }
+  alarmPhotosBtn.addEventListener("click", openAlarmPhotosPanel);
+  closeAlarmPhotosBtn.addEventListener("click", closeAlarmPhotosPanel);
+
   // ---- Detection ----
   // Samples a downscaled grid of the WHOLE frame (not just the center
   // reticle point) every ~150ms, converts each cell to Lab, and checks
@@ -605,7 +733,16 @@
     alarmIndicator.classList.toggle("hide", !active);
     flashOverlay.classList.toggle("active", active);
     silenceBtn.classList.toggle("hide", !active);
-    if (active) startSiren(); else stopSiren();
+    if (active) {
+      startSiren();
+      // Only on the real, detection-driven transition into alarm -- once
+      // per trigger, not once per tick it stays active, and never for
+      // Test alarm (which sets the same visual/audio state directly and
+      // never calls this function at all).
+      if (photoOnAlarm) capturePhoto();
+    } else {
+      stopSiren();
+    }
   }
 
   function updateDetectionTick() {
