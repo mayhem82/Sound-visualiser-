@@ -266,6 +266,16 @@
       overlay.classList.add("hide");
       hud.classList.remove("hide");
       requestWakeLock();
+      // The siren has to be ready to fire the moment detection first
+      // trips it, with no manual "Test alarm" click in between to supply
+      // one -- so the AudioContext gets created/resumed HERE, inside this
+      // click handler's own call stack, instead of lazily on first alarm.
+      // Browser autoplay policy requires it start from a real user
+      // gesture; a timer callback later on isn't one, and by then it's
+      // too late to matter -- the whole point is the alarm needs to be
+      // audible unattended.
+      ensureSirenAudio();
+      if (sirenCtx && sirenCtx.state === "suspended") sirenCtx.resume().catch(() => {});
       await refreshVideoDevices();
       updateDetectionTimer();
     } catch (err) {
@@ -597,6 +607,12 @@
     if (!sirenGain) return;
     sirenGain.gain.setTargetAtTime(0, sirenCtx.currentTime, 0.15);
   }
+
+  // Exposed for the same kind of outside-the-app sanity check this repo's
+  // other pure/near-pure logic gets (see dmx.js's own __dmxTestables) --
+  // there's no way to observe an AudioContext's autoplay-policy state from
+  // outside otherwise.
+  window.__colourAlarmTestables = { getSirenContextState: () => (sirenCtx ? sirenCtx.state : null) };
 
   let testAlarmTimeoutId = null;
   testAlarmBtn.addEventListener("click", () => {
