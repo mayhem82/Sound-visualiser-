@@ -170,6 +170,17 @@
   const RECORD_FPS_KEY = "recordFps_colorVision_v1";
   const DEFAULT_RECORD_FPS = 30;
   const RECORD_FPS_OPTIONS = [15, 24, 30, 60];
+  const TIMELAPSE_INTERVAL_KEY = "timelapseIntervalMs_colorVision_v1";
+  const DEFAULT_TIMELAPSE_INTERVAL_MS = 5000;
+  const TIMELAPSE_INTERVAL_OPTIONS = [1000, 2000, 5000, 10000, 30000, 60000, 300000, 600000];
+  const TIMELAPSE_FPS_KEY = "timelapseFps_colorVision_v1";
+  const DEFAULT_TIMELAPSE_FPS = 24;
+  const TIMELAPSE_FPS_OPTIONS = [12, 24, 30];
+  // In-memory JPEG stills only (no filesystem writes) -- a safety cap so an
+  // unattended multi-hour capture at a short interval can't grow without
+  // bound and crash the tab. ~3000 shots is already well past what most
+  // real time-lapses need (e.g. 1 shot/5s for ~4 hours).
+  const TIMELAPSE_MAX_SHOTS = 3000;
   // Public, no-signup STUN server — needed for NAT traversal even between
   // devices on the same wifi network in many router configurations. No
   // TURN relay is configured (would need a paid or self-hosted server),
@@ -371,6 +382,10 @@
   const photoBtn = document.getElementById("photoBtn");
   const recordFpsSelect = document.getElementById("recordFpsSelect");
   const recordBtn = document.getElementById("recordBtn");
+  const timelapseIntervalSelect = document.getElementById("timelapseIntervalSelect");
+  const timelapseFpsSelect = document.getElementById("timelapseFpsSelect");
+  const timelapseBtn = document.getElementById("timelapseBtn");
+  const timelapseStatus = document.getElementById("timelapseStatus");
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
@@ -655,6 +670,22 @@
   let isRecording = false;
   let recordingStartedAt = 0;
   let recordingTimerId = null;
+  let timelapseIntervalMs = (() => {
+    try {
+      const raw = parseInt(localStorage.getItem(TIMELAPSE_INTERVAL_KEY), 10);
+      return TIMELAPSE_INTERVAL_OPTIONS.includes(raw) ? raw : DEFAULT_TIMELAPSE_INTERVAL_MS;
+    } catch (e) { return DEFAULT_TIMELAPSE_INTERVAL_MS; }
+  })();
+  let timelapseFps = (() => {
+    try {
+      const raw = parseInt(localStorage.getItem(TIMELAPSE_FPS_KEY), 10);
+      return TIMELAPSE_FPS_OPTIONS.includes(raw) ? raw : DEFAULT_TIMELAPSE_FPS;
+    } catch (e) { return DEFAULT_TIMELAPSE_FPS; }
+  })();
+  let timelapseCaptureTimer = null;
+  let timelapseShots = [];
+  let timelapseCapturing = false;
+  let timelapseRendering = false;
   let gl, program, uniforms, quadBuffer, videoTexture;
   // Lazily created only once a viewer actually connects — a second,
   // colour-correction-free feed of the same camera view (orientation
@@ -3196,7 +3227,7 @@
   }
 
   function takePhoto() {
-    if (!gl) return;
+    if (!gl || timelapseCapturing || timelapseRendering) return;
     stage.toBlob((blob) => {
       if (!blob) {
         showCameraStatus("Couldn't capture a photo — try again.");
@@ -3222,7 +3253,7 @@
   }
 
   function startRecording() {
-    if (isRecording || !gl || typeof stage.captureStream !== "function") return;
+    if (isRecording || !gl || typeof stage.captureStream !== "function" || timelapseCapturing || timelapseRendering) return;
     recordingMimeType = pickRecordingMimeType();
     if (!recordingMimeType) {
       showCameraStatus("Video recording isn't supported in this browser.");
@@ -3284,6 +3315,141 @@
   function toggleRecording() {
     if (isRecording) stopRecording();
     else startRecording();
+  }
+
+  // ---- Time-lapse ----
+  // Two real, separate phases, not one continuous recording sped up
+  // after the fact: capture a still of the corrected view every
+  // timelapseIntervalMs (real JPEG stills, kept in memory as Blobs, same
+  // captureStream/MediaRecorder machinery as the live Record button just
+  // pointed at a still image instead of the live feed), then -- once
+  // stopped -- genuinely re-encode every captured still into a normal
+  // video at timelapseFps by drawing each one in turn onto its own canvas
+  // and holding it for exactly 1000/timelapseFps of real wall-clock time
+  // before advancing. That real elapsed time between draws is what makes
+  // the encoded video's frame rate genuinely match timelapseFps -- not a
+  // label on the file, an actual compressed-in-time result of stills that
+  // were genuinely captured far apart in time now being played back close
+  // together.
+
+  function timelapseStatusText() {
+    const coveredMs = timelapseShots.length * timelapseIntervalMs;
+    const coveredMin = coveredMs / 60000;
+    const covered = coveredMin >= 1 ? `${coveredMin.toFixed(1)} min` : `${Math.round(coveredMs / 1000)}s`;
+    return `Time-lapse: ${timelapseShots.length} shot${timelapseShots.length === 1 ? "" : "s"} captured (~${covered} of real time so far)`;
+  }
+
+  function updateTimelapseStatus() {
+    timelapseStatus.classList.remove("hide");
+    timelapseStatus.textContent = timelapseStatusText();
+  }
+
+  function captureTimelapseShot() {
+    if (!gl) return;
+    stage.toBlob((blob) => {
+      if (!blob || !timelapseCapturing) return;
+      timelapseShots.push(blob);
+      updateTimelapseStatus();
+      if (timelapseShots.length >= TIMELAPSE_MAX_SHOTS) {
+        showCameraStatus(`Time-lapse stopped automatically at ${TIMELAPSE_MAX_SHOTS} shots (a memory safety limit) -- rendering what was captured.`);
+        stopTimelapseCapture();
+      }
+    }, "image/jpeg", 0.85);
+  }
+
+  function startTimelapseCapture() {
+    if (timelapseCapturing || timelapseRendering || isRecording || !gl) return;
+    timelapseShots = [];
+    timelapseCapturing = true;
+    timelapseBtn.textContent = "⏹ Stop Time-lapse";
+    timelapseBtn.classList.add("recording");
+    timelapseBtn.setAttribute("aria-pressed", "true");
+    timelapseIntervalSelect.disabled = true;
+    timelapseFpsSelect.disabled = true;
+    recordBtn.disabled = true;
+    photoBtn.disabled = true;
+    // Capture the first still immediately rather than waiting a full
+    // interval for it -- otherwise stopping right after starting (or a
+    // long interval like 10 min) could produce zero shots.
+    captureTimelapseShot();
+    timelapseCaptureTimer = setInterval(captureTimelapseShot, timelapseIntervalMs);
+    updateTimelapseStatus();
+  }
+
+  function stopTimelapseCapture() {
+    if (!timelapseCapturing) return;
+    clearInterval(timelapseCaptureTimer);
+    timelapseCaptureTimer = null;
+    timelapseCapturing = false;
+    timelapseIntervalSelect.disabled = false;
+    timelapseFpsSelect.disabled = false;
+    recordBtn.disabled = false;
+    photoBtn.disabled = false;
+    timelapseBtn.textContent = "⏱ Start Time-lapse";
+    timelapseBtn.classList.remove("recording");
+    timelapseBtn.setAttribute("aria-pressed", "false");
+    renderTimelapseVideo();
+  }
+
+  function toggleTimelapseCapture() {
+    if (timelapseCapturing) stopTimelapseCapture();
+    else startTimelapseCapture();
+  }
+
+  async function renderTimelapseVideo() {
+    const shots = timelapseShots;
+    timelapseShots = [];
+    if (!shots.length) {
+      timelapseStatus.classList.add("hide");
+      return;
+    }
+    const mimeType = pickRecordingMimeType();
+    if (!mimeType) {
+      showCameraStatus("Time-lapse video rendering isn't supported in this browser.");
+      return;
+    }
+
+    timelapseRendering = true;
+    timelapseBtn.disabled = true;
+    const outputFps = timelapseFps;
+    const total = shots.length;
+
+    const encodeCanvas = document.createElement("canvas");
+    encodeCanvas.width = stage.width;
+    encodeCanvas.height = stage.height;
+    const encodeCtx = encodeCanvas.getContext("2d");
+
+    const stream = encodeCanvas.captureStream(outputFps);
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    });
+    const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve));
+    recorder.start();
+
+    const frameDurationMs = 1000 / outputFps;
+    for (let i = 0; i < total; i++) {
+      const bitmap = await createImageBitmap(shots[i]);
+      encodeCtx.drawImage(bitmap, 0, 0, encodeCanvas.width, encodeCanvas.height);
+      bitmap.close();
+      timelapseStatus.textContent = `Rendering time-lapse video… frame ${i + 1}/${total}`;
+      await new Promise((r) => setTimeout(r, frameDurationMs));
+    }
+
+    recorder.stop();
+    await stopped;
+
+    const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+    const blob = new Blob(chunks, { type: mimeType });
+    timelapseRendering = false;
+    timelapseBtn.disabled = false;
+    if (blob.size > 0) {
+      downloadBlob(blob, `colour-vision-timelapse-${timestampForFilename()}.${ext}`);
+      timelapseStatus.textContent = `Time-lapse video ready: ${total} shots at ${outputFps}fps (~${(total / outputFps).toFixed(1)}s long).`;
+    } else {
+      timelapseStatus.textContent = "Time-lapse rendering produced no data -- try again.";
+    }
   }
 
   // ---- Floating capture bar ----
@@ -5357,6 +5523,17 @@
     try { localStorage.setItem(RECORD_FPS_KEY, String(recordFps)); } catch (e) {}
   });
   recordBtn.addEventListener("click", toggleRecording);
+  timelapseIntervalSelect.value = String(timelapseIntervalMs);
+  timelapseIntervalSelect.addEventListener("change", () => {
+    timelapseIntervalMs = parseInt(timelapseIntervalSelect.value, 10);
+    try { localStorage.setItem(TIMELAPSE_INTERVAL_KEY, String(timelapseIntervalMs)); } catch (e) {}
+  });
+  timelapseFpsSelect.value = String(timelapseFps);
+  timelapseFpsSelect.addEventListener("change", () => {
+    timelapseFps = parseInt(timelapseFpsSelect.value, 10);
+    try { localStorage.setItem(TIMELAPSE_FPS_KEY, String(timelapseFps)); } catch (e) {}
+  });
+  timelapseBtn.addEventListener("click", toggleTimelapseCapture);
   floatingPhotoBtn.addEventListener("click", takePhoto);
   floatingRecordBtn.addEventListener("click", toggleRecording);
   setupDraggableCaptureBar();

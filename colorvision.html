@@ -401,6 +401,28 @@
     </select>
   </label>
   <button id="recordBtn" class="hud-btn" aria-pressed="false" title="Record a video of the corrected view.">&#9210; Record</button>
+  <label id="timelapseIntervalWrap" class="hud-slider" title="How long to wait between each captured still. Browsers throttle timers in a backgrounded tab, so keep this tab visible/foregrounded while capturing for an accurate interval.">
+    Time-lapse interval:
+    <select id="timelapseIntervalSelect">
+      <option value="1000">1s</option>
+      <option value="2000">2s</option>
+      <option value="5000" selected>5s</option>
+      <option value="10000">10s</option>
+      <option value="30000">30s</option>
+      <option value="60000">1 min</option>
+      <option value="300000">5 min</option>
+      <option value="600000">10 min</option>
+    </select>
+  </label>
+  <label id="timelapseFpsWrap" class="hud-slider" title="Playback frame rate for the compiled time-lapse video -- higher plays every captured shot back faster for the same shot count.">
+    Time-lapse output:
+    <select id="timelapseFpsSelect">
+      <option value="12">12 fps</option>
+      <option value="24" selected>24 fps</option>
+      <option value="30">30 fps</option>
+    </select>
+  </label>
+  <button id="timelapseBtn" class="hud-btn" aria-pressed="false" title="Capture a still of the corrected view on a timer; stopping compiles every captured still into a real sped-up video at the chosen output frame rate.">&#9201; Start Time-lapse</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a tablet) as a read-only viewer.">Connect tablet</button>
   <button id="castBtn" class="hud-btn hide" aria-pressed="false" title="Cast the corrected view to a Chromecast or AirPlay TV using your browser's own built-in casting -- best-effort: support for casting a live view (rather than a video file) varies by browser and device, so this may not find or work with every TV. Hidden entirely if your browser doesn't expose either casting API at all.">&#128250; Cast to TV</button>
   <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
@@ -415,6 +437,7 @@
 
 <p id="cameraStatus" class="flash-status hide" role="status" aria-live="polite"></p>
 <p id="recordingIndicator" class="hide" aria-hidden="true">&#9679; REC <span id="recordingIndicatorTime">0:00</span></p>
+<p id="timelapseStatus" class="hint hide" role="status" aria-live="polite"></p>
 <p id="viewerConnectedBadge" class="hide" aria-hidden="true">&#128250; Tablet connected</p>
 <p id="receiverStatusBadge" class="hide" role="status" aria-live="polite"></p>
 
