@@ -383,6 +383,7 @@
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
   const photoBtn = document.getElementById("photoBtn");
+  const shareCaptureBtn = document.getElementById("shareCaptureBtn");
   const recordFpsSelect = document.getElementById("recordFpsSelect");
   const recordBtn = document.getElementById("recordBtn");
   const timelapseIntervalSelect = document.getElementById("timelapseIntervalSelect");
@@ -676,6 +677,8 @@
   let isRecording = false;
   let recordingStartedAt = 0;
   let recordingTimerId = null;
+  let lastCaptureBlob = null;
+  let lastCaptureFilename = "";
   let timelapseIntervalMs = (() => {
     try {
       const raw = parseInt(localStorage.getItem(TIMELAPSE_INTERVAL_KEY), 10);
@@ -3237,6 +3240,37 @@
     return new Date().toISOString().replace(/[:.]/g, "-");
   }
 
+  // ---- Web Share (native share sheet for the most recent capture) ----
+  let webShareFilesSupported = false;
+  try {
+    webShareFilesSupported =
+      typeof navigator.share === "function" &&
+      typeof navigator.canShare === "function" &&
+      navigator.canShare({ files: [new File([""], "x.png", { type: "image/png" })] });
+  } catch (e) {
+    webShareFilesSupported = false;
+  }
+
+  function setLastCapture(blob, filename) {
+    lastCaptureBlob = blob;
+    lastCaptureFilename = filename;
+    if (webShareFilesSupported) shareCaptureBtn.disabled = false;
+  }
+
+  async function shareLastCapture() {
+    if (!lastCaptureBlob) return;
+    const file = new File([lastCaptureBlob], lastCaptureFilename, { type: lastCaptureBlob.type });
+    if (!navigator.canShare({ files: [file] })) {
+      showCameraStatus("This capture can't be shared as a file on this browser/device.");
+      return;
+    }
+    try {
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      if (e.name !== "AbortError") showCameraStatus("Share failed: " + (e.message || e.name || "unknown error"));
+    }
+  }
+
   function takePhoto() {
     if (!gl || timelapseCapturing || timelapseRendering) return;
     stage.toBlob((blob) => {
@@ -3244,7 +3278,9 @@
         showCameraStatus("Couldn't capture a photo — try again.");
         return;
       }
-      downloadBlob(blob, `colour-vision-photo-${timestampForFilename()}.png`);
+      const filename = `colour-vision-photo-${timestampForFilename()}.png`;
+      downloadBlob(blob, filename);
+      setLastCapture(blob, filename);
     }, "image/png");
   }
 
@@ -3287,7 +3323,9 @@
       const blob = new Blob(recordedChunks, { type: recordingMimeType });
       recordedChunks = [];
       if (blob.size > 0) {
-        downloadBlob(blob, `colour-vision-video-${timestampForFilename()}.${ext}`);
+        const filename = `colour-vision-video-${timestampForFilename()}.${ext}`;
+        downloadBlob(blob, filename);
+        setLastCapture(blob, filename);
       } else {
         showCameraStatus("Recording produced no data — try again.");
       }
@@ -3456,7 +3494,9 @@
     timelapseRendering = false;
     timelapseBtn.disabled = false;
     if (blob.size > 0) {
-      downloadBlob(blob, `colour-vision-timelapse-${timestampForFilename()}.${ext}`);
+      const filename = `colour-vision-timelapse-${timestampForFilename()}.${ext}`;
+      downloadBlob(blob, filename);
+      setLastCapture(blob, filename);
       timelapseStatus.textContent = `Time-lapse video ready: ${total} shots at ${outputFps}fps (~${(total / outputFps).toFixed(1)}s long).`;
     } else {
       timelapseStatus.textContent = "Time-lapse rendering produced no data -- try again.";
@@ -5671,6 +5711,10 @@
   isoSlider.addEventListener("input", applyIso);
   evSlider.addEventListener("input", applyExposureCompensation);
   photoBtn.addEventListener("click", takePhoto);
+  if (webShareFilesSupported) {
+    shareCaptureBtn.classList.remove("hide");
+    shareCaptureBtn.addEventListener("click", shareLastCapture);
+  }
   recordFpsSelect.value = String(recordFps);
   recordFpsSelect.addEventListener("change", () => {
     recordFps = parseInt(recordFpsSelect.value, 10);
