@@ -460,6 +460,7 @@
   const choosePanel = document.getElementById("choosePanel");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
   const colourPickerInput = document.getElementById("colourPickerInput");
+  const chooseEyedropperBtn = document.getElementById("chooseEyedropperBtn");
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
 
@@ -5684,6 +5685,26 @@
     choosePanelReturnFocusEl = null;
     openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
   });
+
+  // Real system-wide eyedropper (window.EyeDropper), not a workaround --
+  // samples a colour from literally anywhere on screen (another tab, a
+  // reference photo, any app), not just what the camera currently sees.
+  // Feature-detected and hidden entirely where unsupported.
+  if (typeof window.EyeDropper === "function") {
+    chooseEyedropperBtn.classList.remove("hide");
+    chooseEyedropperBtn.addEventListener("click", async () => {
+      try {
+        const result = await new EyeDropper().open();
+        choosePanel.classList.add("hide");
+        choosePanelReturnFocusEl = null;
+        openTuneForNewPoint(hexToRgb01(result.sRGBHex));
+      } catch (e) {
+        // Pressing Escape (or any other cancel) rejects the open() promise
+        // -- that's the user backing out, not a real error to surface.
+      }
+    });
+  }
+
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
   cancelAimBtn.addEventListener("click", stopAiming);
