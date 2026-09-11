@@ -335,6 +335,7 @@
     computeSceneStats, computeBrightRegions, bandEnergyHz, updateBeatTracker, makeBeatTracker,
     computeFixtureChannelValues, buildEnttecFrame, hexToRgb01, byte, PROFILES,
     isBlackoutActive: () => blackoutActive, getDmxBuffer: () => dmxBuffer,
+    isValidRigPayload: (p) => isValidRigPayload(p), normalizeFixture: (f) => normalizeFixture(f),
   };
 
   // ---------------------------------------------------------------------
@@ -378,6 +379,11 @@
   const loadRigBtn = document.getElementById("dmxLoadRigBtn");
   const deleteRigBtn = document.getElementById("dmxDeleteRigBtn");
   const rigStatus = document.getElementById("dmxRigStatus");
+  const scanHint = document.getElementById("dmxScanHint");
+  const rigQrControls = document.getElementById("dmxRigQrControls");
+  const copyRigJsonBtn = document.getElementById("dmxCopyRigJsonBtn");
+  const scanRigBtn = document.getElementById("dmxScanRigBtn");
+  const scanStatus = document.getElementById("dmxScanStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
   const cameraFeed = document.getElementById("cameraFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
@@ -492,6 +498,129 @@
   loadRigBtn.addEventListener("click", loadSelectedRig);
   deleteRigBtn.addEventListener("click", deleteSelectedRig);
   renderRigSelect();
+
+  // ---- Scan rig from QR (Shape Detection API) ------------------------
+  // A real native barcode/QR reader (window.BarcodeDetector), not a
+  // library -- feature-detected and hidden entirely on a browser that
+  // doesn't support it (Firefox and Safari don't, as of writing), same as
+  // every other capability-gated control in this suite. There's no QR
+  // *generator* built in here: Copy a rig's JSON, turn it into a code
+  // with any free QR generator, then scan it back in with this -- a
+  // genuine round trip using only real, already-existing capabilities
+  // (the clipboard and a real barcode reader), not a custom QR encoder.
+  let barcodeDetector = null;
+  let scanningForRig = false;
+  let scanTimer = null;
+
+  async function initBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    scanHint.classList.remove("hide");
+    rigQrControls.classList.remove("hide");
+  }
+  initBarcodeDetection();
+
+  function isValidRigPayload(obj) {
+    return !!(obj && typeof obj === "object" && typeof obj.name === "string" && obj.name.trim()
+      && Array.isArray(obj.fixtures) && obj.fixtures.every((f) => f && typeof f === "object"));
+  }
+
+  // Never trusts the scanned payload's own field values directly -- each
+  // fixture is rebuilt against defaultFixture()'s own shape, keeping
+  // anything valid and falling back to a sane default for anything
+  // missing, mistyped, or naming an unknown profile/source. Also always
+  // assigns a fresh id, ignoring any id in the payload, so an imported
+  // fixture can never collide with one already in the current list.
+  function normalizeFixture(f) {
+    const base = defaultFixture();
+    return {
+      id: base.id,
+      name: typeof f.name === "string" && f.name ? f.name : base.name,
+      startChannel: Number.isFinite(f.startChannel) ? f.startChannel : base.startChannel,
+      profile: PROFILES[f.profile] ? f.profile : base.profile,
+      source: SOURCES[f.source] ? f.source : base.source,
+      tint: typeof f.tint === "string" ? f.tint : base.tint,
+      manualValue: Number.isFinite(f.manualValue) ? f.manualValue : base.manualValue,
+      region: Number.isFinite(f.region) ? f.region : base.region,
+    };
+  }
+
+  function importRigPayload(payload) {
+    const normalized = payload.fixtures.map(normalizeFixture);
+    rigPresets.push({ id: "rig_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7), name: payload.name, fixtures: normalized });
+    saveRigPresets();
+    renderRigSelect();
+    rigSelect.value = rigPresets[rigPresets.length - 1].id;
+    rigStatus.textContent = `Imported rig "${payload.name}" from QR -- ${normalized.length} fixture${normalized.length === 1 ? "" : "s"}. Not loaded yet -- press Load when ready.`;
+  }
+
+  async function scanTick() {
+    if (!scanningForRig) return;
+    try {
+      const codes = await barcodeDetector.detect(cameraFeed);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && isValidRigPayload(payload)) {
+          stopScanningForRig();
+          importRigPayload(payload);
+          return;
+        } else if (payload) {
+          scanStatus.textContent = "That QR code doesn't look like a rig exported from this page -- still scanning…";
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    scanTimer = setTimeout(scanTick, 300);
+  }
+
+  function startScanningForRig() {
+    if (!cameraEnabled) {
+      scanStatus.classList.remove("hide");
+      scanStatus.textContent = "Enable the camera above first, then Scan rig from QR.";
+      return;
+    }
+    scanningForRig = true;
+    scanRigBtn.textContent = "Stop scanning";
+    scanRigBtn.classList.add("active");
+    scanRigBtn.setAttribute("aria-pressed", "true");
+    scanStatus.classList.remove("hide");
+    scanStatus.textContent = "Point the camera at a rig's QR code…";
+    scanTick();
+  }
+
+  function stopScanningForRig() {
+    scanningForRig = false;
+    clearTimeout(scanTimer);
+    scanTimer = null;
+    scanRigBtn.textContent = "📷 Scan rig from QR";
+    scanRigBtn.classList.remove("active");
+    scanRigBtn.setAttribute("aria-pressed", "false");
+  }
+
+  scanRigBtn.addEventListener("click", () => {
+    if (scanningForRig) stopScanningForRig();
+    else startScanningForRig();
+  });
+
+  copyRigJsonBtn.addEventListener("click", async () => {
+    const id = rigSelect.value;
+    const rig = rigPresets.find((r) => r.id === id);
+    if (!rig) {
+      rigStatus.textContent = "Pick a saved rig to copy first.";
+      return;
+    }
+    const payload = JSON.stringify({ name: rig.name, fixtures: rig.fixtures });
+    try {
+      await navigator.clipboard.writeText(payload);
+      rigStatus.textContent = `Copied "${rig.name}" as JSON -- paste it into any QR generator.`;
+    } catch (e) {
+      rigStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
 
   let refreshHz = (() => {
     const n = parseInt(localStorage.getItem(REFRESH_KEY), 10);

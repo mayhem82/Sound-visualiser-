@@ -20,6 +20,15 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+/* This page has no generic .hide rule -- every hidden element here is
+   hidden via its own specific selector (like #dmxMain.hide above), so a
+   plain class="... hide" on a new element does nothing without one. */
+#dmxScanHint.hide,
+#dmxRigQrControls.hide,
+#dmxScanStatus.hide {
+  display: none;
+}
+
 .dmx-top-status {
   display: flex;
   flex-wrap: wrap;

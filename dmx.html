@@ -95,6 +95,15 @@
       <button id="dmxDeleteRigBtn" class="hud-btn">Delete</button>
     </div>
     <p id="dmxRigStatus" class="status"></p>
+    <p class="hint" id="dmxRigQrHint" title="Copies the selected rig as plain JSON text -- paste that into any free QR generator to turn it into a scannable code (there's no QR generator built into this page). Bring that code back to any device to import it -- the scan side needs a real QR reader (see below), but copying the JSON itself works in any browser.">Copy a rig as JSON, then turn it into a QR code with any generator:</p>
+    <div class="dmx-inline-controls">
+      <button id="dmxCopyRigJsonBtn" class="hud-btn" title="Copies the currently selected saved rig as JSON text to the clipboard.">Copy selected rig as JSON</button>
+    </div>
+    <p class="hint hide" id="dmxScanHint" title="A real QR/barcode reader (the browser's own Shape Detection API), not a library -- hidden entirely on a browser that doesn't support it (unlike copying the JSON above, which works everywhere), same as every other feature-detected control in this suite.">Scan a rig's QR code back in with the already-running camera:</p>
+    <div class="dmx-inline-controls hide" id="dmxRigQrControls">
+      <button id="dmxScanRigBtn" class="hud-btn" aria-pressed="false" title="Points the already-running camera feed at a QR code and imports the rig it decodes to.">&#128247; Scan rig from QR</button>
+    </div>
+    <p id="dmxScanStatus" class="status hide"></p>
   </section>
 
   <button id="dmxBlackoutBtn" class="hud-btn">Blackout (zero all channels)</button>
