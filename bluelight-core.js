@@ -4,8 +4,8 @@
 // Real camera-sensor controls (colour temperature, exposure, ISO,
 // saturation, and whatever else the device/browser actually expose --
 // applied by the hardware itself, never a software recolour), tap-to-
-// focus, and ambient-brightness/blue-light-share estimation sampled from
-// the live feed.
+// focus, ambient-brightness/blue-light-share estimation sampled from the
+// live feed, and Pass-through blue suppression (see below).
 //
 // Deliberately takes the <video> element and one empty panel container as
 // parameters instead of grabbing fixed element IDs off the page -- the
@@ -19,9 +19,50 @@
 //     panel against that track's own capabilities.
 //   - start() is called once, right after the first onTrackChanged, to
 //     begin ambient-light sampling and wire up tap-to-focus.
-//   - stop() tears down the sampling timer and the tap-to-focus listener,
-//     and clears the panel -- called when the feature is deactivated
-//     (never, on the standalone page; on every mode switch, in the Hub).
+//   - stop() tears down the sampling timer, the tap-to-focus listener, and
+//     the suppression filter, and clears the panel -- called when the
+//     feature is deactivated (never, on the standalone page; on every mode
+//     switch, in the Hub).
+//
+// ---- Pass-through blue suppression: a genuinely different kind of
+// control from the Sensor controls above, on purpose ----
+// The sensor controls are real MediaTrackConstraints applied by the
+// camera hardware itself -- capped at whatever this device's ISP
+// actually exposes (on this suite's own S25 FE test, a Kelvin-modeled
+// white-balance slider that tops out around 15000K, which doesn't
+// necessarily look or feel "warm enough" to actually matter). Crucially,
+// none of that removes any wavelength from anything: the sensor still
+// captures the full spectrum: a white-balance/gain adjustment is pure
+// arithmetic on the already-captured numbers, applied in the ISP after
+// the photons already landed. A spectrometer pointed at the real scene
+// reads identically regardless of what the slider is set to.
+//
+// The one place this suite can genuinely reduce how much blue light
+// reaches your eyes is the screen's own emission -- and only while
+// you're looking at the screen (using it as a viewfinder/pass-through
+// for your surroundings) rather than the world directly. For that use
+// case specifically, it does not matter whether the blue reduction
+// happens at the sensor or in software after capture: the display only
+// emits light proportional to whatever final pixel values it's told to
+// show, with no idea which pipeline stage produced them. So this applies
+// a genuine, GPU-composited colour-matrix filter (an SVG feColorMatrix,
+// via CSS `filter: url(...)`, not a per-pixel JS loop) directly to the
+// live <video> element, scaling the blue channel down by an adjustable,
+// UNBOUNDED amount -- not modelled on any real light source's colour
+// temperature the way the sensor's Kelvin slider is, so it isn't capped
+// by pretending to correct for a physically plausible scene. Red and
+// green are left untouched (not boosted to compensate), the same way a
+// real absorptive blue-blocking lens just makes a scene warmer and a
+// little dimmer rather than fully re-white-balancing it.
+//
+// This is NOT a fallback for a missing hardware capability, and it's not
+// pretending to show true colour -- it's an openly-declared, explicitly
+// different tool for a different, explicitly stated purpose (eye
+// protection while using this as a pass-through viewfinder), which is
+// why it coexists with, rather than replaces, the sensor controls' own
+// "never fake a tint" rule above.
+const SUPPRESS_STRENGTH_KEY = "blueSuppressStrength_bluelightCore_v1";
+
 function createBlueLightFeature(video, panelEl) {
   panelEl.innerHTML = `
     <div class="bluelight-sensor-controls"></div>
@@ -32,6 +73,10 @@ function createBlueLightFeature(video, panelEl) {
     <p class="bluelight-ambient-blue hint hide" title="Not a real spectrometer reading, and not a single specific wavelength -- a camera's blue channel is one broad response spanning roughly 400-500nm. This is that whole channel's share of the visible scene (blue's share of red+green+blue), sampled from the live feed itself. A screen or overcast sky reads high; warm indoor bulb light reads low."></p>
     <p class="bluelight-ambient-bg-ratio hint hide" title="A rough proxy for shorter blue (nearer 450nm) vs longer blue-cyan (nearer 480nm) -- green channel sensitivity extends further into the longer range than blue's does, so a lower ratio leans shorter, a higher one leans longer. Not a substitute for an actual spectral measurement, just the closest an RGB sensor can offer toward that distinction."></p>
     <p class="bluelight-ambient-temp hint hide" title="An approximation (McCamy 1992, the same kind of formula white-balance algorithms use) from the sampled RGB values, not a spectrometer reading. Most reliable in the roughly 2856K-6504K daylight/tungsten range; less reliable for strongly tinted or narrowband light."></p>
+    <label class="bluelight-suppress-wrap hud-slider" title="A deliberate, unbounded software reduction of the blue channel in what's DISPLAYED on this screen -- not a sensor control, and not pretending to show true colour. Only helps while you're looking at this screen as a stand-in for your surroundings (a viewfinder), since it changes what the screen emits, not the real light around you.">
+      Pass-through blue suppression: <span class="bluelight-suppress-value">Off</span>
+      <input type="range" class="bluelight-suppress-slider" min="0" max="100" step="1" value="0">
+    </label>
   `;
   const sensorControls = panelEl.querySelector(".bluelight-sensor-controls");
   const sensorHint = panelEl.querySelector(".bluelight-sensor-hint");
@@ -41,6 +86,8 @@ function createBlueLightFeature(video, panelEl) {
   const ambientBlueLabel = panelEl.querySelector(".bluelight-ambient-blue");
   const ambientBlueGreenRatioLabel = panelEl.querySelector(".bluelight-ambient-bg-ratio");
   const ambientColorTempLabel = panelEl.querySelector(".bluelight-ambient-temp");
+  const suppressSlider = panelEl.querySelector(".bluelight-suppress-slider");
+  const suppressValueLabel = panelEl.querySelector(".bluelight-suppress-value");
 
   const SENSOR_CONTROLS = [
     { key: "colorTemperature", label: "Sensor colour temp", unit: "K", mode: { key: "whiteBalanceMode", value: "manual" }, title: "The camera sensor's own white-balance colour temperature, in Kelvin. Lower is warmer (less blue at the source)." },
@@ -222,6 +269,54 @@ function createBlueLightFeature(video, panelEl) {
   focusCrosshair.setAttribute("aria-hidden", "true");
   document.body.appendChild(focusCrosshair);
 
+  // ---- Pass-through blue suppression ----
+  // A GPU-composited SVG colour-matrix filter, not a per-pixel JS loop --
+  // identity except the blue row, which gets scaled by `strength` (0 =
+  // untouched, 1 = blue fully removed). Red/green rows stay untouched on
+  // purpose (see the file-level comment): this mimics an absorptive
+  // blue-blocking lens, not a white-balance recorrection.
+  const SUPPRESS_FILTER_ID = "bluelight-suppress-filter";
+  let suppressMatrix = null;
+  let suppressStrength = (() => {
+    try {
+      const raw = parseInt(localStorage.getItem(SUPPRESS_STRENGTH_KEY), 10);
+      return Number.isFinite(raw) && raw >= 0 && raw <= 100 ? raw : 0;
+    } catch (e) { return 0; }
+  })();
+
+  function buildSuppressFilterSvg() {
+    const svgNs = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNs, "svg");
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    svg.style.position = "absolute";
+    const filter = document.createElementNS(svgNs, "filter");
+    filter.setAttribute("id", SUPPRESS_FILTER_ID);
+    const matrix = document.createElementNS(svgNs, "feColorMatrix");
+    matrix.setAttribute("type", "matrix");
+    filter.appendChild(matrix);
+    svg.appendChild(filter);
+    document.body.appendChild(svg);
+    return { svg, matrix };
+  }
+
+  function applySuppressStrength(pct) {
+    suppressStrength = Math.min(100, Math.max(0, pct));
+    const k = 1 - suppressStrength / 100; // blue channel's own scale factor
+    if (suppressMatrix) {
+      suppressMatrix.matrix.setAttribute("values",
+        `1 0 0 0 0  0 1 0 0 0  0 0 ${k} 0 0  0 0 0 1 0`);
+    }
+    video.style.filter = suppressStrength > 0 ? `url(#${SUPPRESS_FILTER_ID})` : "";
+    suppressValueLabel.textContent = suppressStrength > 0 ? `${suppressStrength}%` : "Off";
+    suppressSlider.value = String(suppressStrength);
+  }
+
+  suppressSlider.addEventListener("input", () => {
+    applySuppressStrength(parseInt(suppressSlider.value, 10));
+    try { localStorage.setItem(SUPPRESS_STRENGTH_KEY, String(suppressStrength)); } catch (e) {}
+  });
+
   let abortController = null;
   let brightnessTimer = null;
 
@@ -256,6 +351,8 @@ function createBlueLightFeature(video, panelEl) {
     ambientColorTempLabel.classList.remove("hide");
     clearInterval(brightnessTimer);
     brightnessTimer = setInterval(sampleAmbientLight, 500);
+    suppressMatrix = buildSuppressFilterSvg();
+    applySuppressStrength(suppressStrength);
   }
 
   function stop() {
@@ -263,6 +360,8 @@ function createBlueLightFeature(video, panelEl) {
     clearInterval(brightnessTimer);
     brightnessTimer = null;
     focusCrosshair.remove();
+    video.style.filter = "";
+    if (suppressMatrix) { suppressMatrix.svg.remove(); suppressMatrix = null; }
     panelEl.innerHTML = "";
   }
 
