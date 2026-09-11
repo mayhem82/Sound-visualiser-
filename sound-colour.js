@@ -647,6 +647,11 @@
   const soundPointsPanel = document.getElementById("soundPointsPanel");
   const soundPointsGrid = document.getElementById("soundPointsGrid");
   const closeSoundPointsBtn = document.getElementById("closeSoundPointsBtn");
+  const copySoundPointsJsonBtn = document.getElementById("copySoundPointsJsonBtn");
+  const soundPointsScanHint = document.getElementById("soundPointsScanHint");
+  const soundPointsScanControls = document.getElementById("soundPointsScanControls");
+  const scanSoundPointsBtn = document.getElementById("scanSoundPointsBtn");
+  const soundPointsQrStatus = document.getElementById("soundPointsQrStatus");
 
   const takesBtn = document.getElementById("takesBtn");
   const takesCount = document.getElementById("takesCount");
@@ -5985,6 +5990,120 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     soundPointsPanel.classList.add("hide");
     soundPointsBtn.focus();
   }
+
+  // ---- Copy/Scan saved sounds as a QR code (Shape Detection API) ----
+  // The same real round trip already used for saved colours and DMX rigs
+  // elsewhere in this suite: no QR *generator* built in here -- copy the
+  // saved sounds as plain JSON, turn that into a code with any free QR
+  // generator, then scan it back in (here or on another device) with the
+  // browser's own native barcode reader. Each imported sound is rebuilt
+  // field-by-field rather than trusted wholesale: an unrecognised
+  // instrument folder falls back to the default rather than silently
+  // breaking playback, and every id is freshly regenerated.
+  function isValidImportedSoundPoint(p) {
+    return !!(p && typeof p === "object" &&
+      Array.isArray(p.sourceColor) && p.sourceColor.length === 3 &&
+      p.sourceColor.every((c) => typeof c === "number" && c >= 0 && c <= 1));
+  }
+
+  function applyImportedSoundPointsJson(text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      soundPointsQrStatus.textContent = "Import failed: not a valid JSON file.";
+      return;
+    }
+    const incoming = Array.isArray(parsed) ? parsed : [];
+    const valid = incoming.filter(isValidImportedSoundPoint);
+    if (valid.length === 0) {
+      soundPointsQrStatus.textContent = "Import failed: no valid saved sounds found there.";
+      return;
+    }
+    const room = MAX_SOUND_POINTS - soundPoints.length;
+    const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
+      id: "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
+      sourceColor: p.sourceColor,
+      instrument: GM_ALL_INSTRUMENTS.some((i) => i.folder === p.instrument) ? p.instrument : "acoustic_grand_piano",
+      rangeOctaves: Number.isFinite(p.rangeOctaves) ? p.rangeOctaves : 2
+    }));
+    soundPoints = soundPoints.concat(toAdd);
+    saveSoundPoints();
+    updateSoundPointsCount();
+    renderSoundPointsGrid();
+    const skipped = valid.length - toAdd.length;
+    soundPointsQrStatus.textContent = `Imported ${toAdd.length} sound${toAdd.length === 1 ? "" : "s"}.` +
+      (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_SOUND_POINTS} reached).` : "");
+  }
+
+  copySoundPointsJsonBtn.addEventListener("click", async () => {
+    if (soundPoints.length === 0) {
+      soundPointsQrStatus.textContent = "No saved sounds to copy yet.";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(soundPoints));
+      soundPointsQrStatus.textContent = `Copied ${soundPoints.length} sound${soundPoints.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+    } catch (e) {
+      soundPointsQrStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
+
+  let soundPointsBarcodeDetector = null;
+  let scanningForSoundPoints = false;
+  let soundPointsScanTimer = null;
+
+  async function initSoundPointsBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    soundPointsBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    soundPointsScanHint.classList.remove("hide");
+    soundPointsScanControls.classList.remove("hide");
+  }
+  initSoundPointsBarcodeDetection();
+
+  async function soundPointsScanTick() {
+    if (!scanningForSoundPoints) return;
+    try {
+      const codes = await soundPointsBarcodeDetector.detect(video);
+      if (codes.length) {
+        stopScanningForSoundPoints();
+        applyImportedSoundPointsJson(codes[0].rawValue);
+        return;
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    soundPointsScanTimer = setTimeout(soundPointsScanTick, 300);
+  }
+
+  function startScanningForSoundPoints() {
+    if (!currentStream) {
+      soundPointsQrStatus.textContent = "Start the camera first, then Scan from QR.";
+      return;
+    }
+    scanningForSoundPoints = true;
+    scanSoundPointsBtn.textContent = "Stop scanning";
+    scanSoundPointsBtn.classList.add("active");
+    scanSoundPointsBtn.setAttribute("aria-pressed", "true");
+    soundPointsQrStatus.textContent = "Point the camera at a saved-sounds QR code…";
+    soundPointsScanTick();
+  }
+
+  function stopScanningForSoundPoints() {
+    scanningForSoundPoints = false;
+    clearTimeout(soundPointsScanTimer);
+    soundPointsScanTimer = null;
+    scanSoundPointsBtn.textContent = "\u{1F4F7} Scan from QR";
+    scanSoundPointsBtn.classList.remove("active");
+    scanSoundPointsBtn.setAttribute("aria-pressed", "false");
+  }
+
+  scanSoundPointsBtn.addEventListener("click", () => {
+    if (scanningForSoundPoints) stopScanningForSoundPoints(); else startScanningForSoundPoints();
+  });
 
   // Nearest calibrated sound point (Lab distance), mirroring
   // nearestSavedPointLabDistance above but returning the point itself
