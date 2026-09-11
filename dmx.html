@@ -39,6 +39,7 @@
     <span id="cameraPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="cameraPillText">Camera: off</span></span>
     <span id="screenPill" class="dmx-pill hide"><span class="dmx-pill-dot"></span><span id="screenPillText">Screen: off</span></span>
     <span id="micPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="micPillText">Microphone: off</span></span>
+    <span id="motionPill" class="dmx-pill hide"><span class="dmx-pill-dot"></span><span id="motionPillText">Motion: off</span></span>
     <p id="dmxStatus" class="status"></p>
   </div>
 
@@ -72,6 +73,7 @@
       <button id="cameraToggleBtn" class="hud-btn" aria-pressed="false">Enable camera</button>
       <button id="screenToggleBtn" class="hud-btn hide" aria-pressed="false" title="Shares a screen/window/tab instead of the camera -- sync lighting to whatever's actually on a monitor (a movie, a game, a visualiser) rather than what the camera sees. Uses the browser's own screen-picker; hidden entirely where Screen Capture isn't supported.">Share screen</button>
       <button id="micToggleBtn" class="hud-btn" aria-pressed="false">Enable microphone</button>
+      <button id="motionToggleBtn" class="hud-btn hide" aria-pressed="false" title="Real device orientation/motion sensors (tilt left/right, tilt front/back, and shake), for fixtures that should react to how the device carrying this page is actually being held or moved -- swing a phone to strobe a fixture, tilt it to fade one up. Hidden entirely where this browser/device doesn't expose these sensors; on iOS, tapping this asks for the one-time sensor permission Safari requires.">Enable motion sensors</button>
       <label class="hud-slider" title="How easily a bass hit counts as a beat for the Audio: Beat trigger source -- higher is more sensitive (triggers on smaller hits), same convention as Sound Nebula's Beat sensitivity.">
         Beat sensitivity:
         <input id="beatSensitivitySlider" type="range" min="0" max="100" value="50">

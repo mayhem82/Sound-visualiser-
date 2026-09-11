@@ -235,9 +235,21 @@
     audio_mid: "Audio: Mid",
     audio_treble: "Audio: Treble",
     audio_beat: "Audio: Beat trigger",
+    device_tilt_x: "Device tilt: left/right",
+    device_tilt_y: "Device tilt: front/back",
+    device_shake: "Device shake",
     manual: "Manual test slider",
   };
-  const SCALAR_SOURCES = new Set(["camera_complexity", "camera_colour_variety", "screen_complexity", "screen_colour_variety", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "manual"]);
+  const SCALAR_SOURCES = new Set(["camera_complexity", "camera_colour_variety", "screen_complexity", "screen_colour_variety", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "device_tilt_x", "device_tilt_y", "device_shake", "manual"]);
+
+  // Maps a real sensor angle (degrees) onto 0..1, clamped to +/-halfRangeDeg
+  // either side of 0 -- shared by both tilt axes below and exposed for
+  // direct testing since it's the one piece of actual math involved.
+  function normalizeTiltAngle(angleDeg, halfRangeDeg) {
+    if (typeof angleDeg !== "number" || Number.isNaN(angleDeg)) return 0.5;
+    const clamped = Math.max(-halfRangeDeg, Math.min(halfRangeDeg, angleDeg));
+    return (clamped + halfRangeDeg) / (2 * halfRangeDeg);
+  }
 
   function byte(v) { return Math.max(0, Math.min(255, Math.round(v * 255))); }
 
@@ -307,7 +319,9 @@
       camera_complexity: state.complexity, camera_colour_variety: state.colourVariety,
       screen_complexity: state.screenComplexity, screen_colour_variety: state.screenColourVariety,
       audio_bass: state.bass, audio_mid: state.mid,
-      audio_treble: state.treble, audio_beat: state.beat, manual: (fixture.manualValue || 0) / 100,
+      audio_treble: state.treble, audio_beat: state.beat,
+      device_tilt_x: state.tiltX, device_tilt_y: state.tiltY, device_shake: state.shake,
+      manual: (fixture.manualValue || 0) / 100,
     };
     const scalar = Math.max(0, Math.min(1, scalarMap[fixture.source] || 0));
     const [tr, tg, tb] = hexToRgb01(fixture.tint);
@@ -341,8 +355,9 @@
   window.__dmxTestables = {
     computeSceneStats, computeBrightRegions, bandEnergyHz, updateBeatTracker, makeBeatTracker,
     computeFixtureChannelValues, buildEnttecFrame, hexToRgb01, byte, PROFILES,
-    isBlackoutActive: () => blackoutActive, getDmxBuffer: () => dmxBuffer,
+    isBlackoutActive: () => blackoutActive, getDmxBuffer: () => dmxBuffer, getState: () => state,
     isValidRigPayload: (p) => isValidRigPayload(p), normalizeFixture: (f) => normalizeFixture(f),
+    normalizeTiltAngle,
   };
 
   // ---------------------------------------------------------------------
@@ -379,6 +394,9 @@
   const screenPill = document.getElementById("screenPill");
   const screenPillText = document.getElementById("screenPillText");
   const micToggleBtn = document.getElementById("micToggleBtn");
+  const motionToggleBtn = document.getElementById("motionToggleBtn");
+  const motionPill = document.getElementById("motionPill");
+  const motionPillText = document.getElementById("motionPillText");
   const beatSensitivitySlider = document.getElementById("beatSensitivitySlider");
   const fixtureList = document.getElementById("fixtureList");
   const fixtureEmptyHint = document.getElementById("fixtureEmptyHint");
@@ -657,7 +675,7 @@
   if (savedBaud && [...baudSelect.options].some((o) => o.value === savedBaud)) baudSelect.value = savedBaud;
 
   // Live signal state, refreshed once per tick.
-  const state = { r: 0, g: 0, b: 0, complexity: 0, colourVariety: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5, regions: [] };
+  const state = { r: 0, g: 0, b: 0, complexity: 0, colourVariety: 0, bass: 0, mid: 0, treble: 0, beat: 0, centroidX: 0.5, centroidY: 0.5, regions: [], tiltX: 0.5, tiltY: 0.5, shake: 0 };
   const beatTracker = makeBeatTracker();
   const dmxBuffer = new Uint8Array(513); // index 0 = DMX start code (0x00)
 
@@ -937,6 +955,78 @@
   }
   micToggleBtn.addEventListener("click", () => { micEnabled ? stopMic() : enableMic(); });
 
+  // ---- Device orientation/motion (real sensors, feature-detected) ----
+  // Two independent, unrelated real Web APIs: DeviceOrientationEvent
+  // (gamma/beta -- the device's actual tilt, from its own orientation
+  // sensor) and DeviceMotionEvent (accelerationIncludingGravity -- used
+  // here only as a shake/jerk detector, the same "sudden change" idea
+  // Audio: Beat trigger uses for bass, not a real gesture classifier).
+  // iOS gates both behind a one-time requestPermission() call that must
+  // run from a real user gesture; other browsers fire these events with
+  // no separate permission step at all. Hidden entirely where neither
+  // event type exists on this browser/device.
+  let motionEnabled = false;
+  let lastAccelMagnitude = null;
+
+  function updateMotionPill() {
+    motionPill.className = motionEnabled ? "dmx-pill connected" : "dmx-pill";
+    motionPillText.textContent = "Motion: " + (motionEnabled ? "on" : "off");
+  }
+
+  function handleOrientation(e) {
+    state.tiltX = normalizeTiltAngle(e.gamma, 90);
+    state.tiltY = normalizeTiltAngle(e.beta, 90);
+  }
+
+  function handleMotion(e) {
+    const a = e.accelerationIncludingGravity || e.acceleration;
+    if (!a || a.x === null || a.x === undefined) return;
+    const magnitude = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    if (lastAccelMagnitude !== null) {
+      const jerk = Math.abs(magnitude - lastAccelMagnitude);
+      state.shake = Math.max(state.shake, Math.min(1, jerk / 20));
+    }
+    lastAccelMagnitude = magnitude;
+  }
+
+  async function enableMotion() {
+    try {
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        const orientationPerm = await DeviceOrientationEvent.requestPermission();
+        if (orientationPerm !== "granted") { setDmxStatus("Motion sensors: permission denied."); return; }
+      }
+      if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
+        const motionPerm = await DeviceMotionEvent.requestPermission();
+        if (motionPerm !== "granted") { setDmxStatus("Motion sensors: permission denied."); return; }
+      }
+      window.addEventListener("deviceorientation", handleOrientation);
+      window.addEventListener("devicemotion", handleMotion);
+      motionEnabled = true;
+      motionToggleBtn.textContent = "Disable motion sensors";
+      motionToggleBtn.classList.add("active");
+      motionToggleBtn.setAttribute("aria-pressed", "true");
+      updateMotionPill();
+    } catch (e) {
+      setDmxStatus("Motion sensors error: " + e.message);
+    }
+  }
+  function disableMotion() {
+    window.removeEventListener("deviceorientation", handleOrientation);
+    window.removeEventListener("devicemotion", handleMotion);
+    motionEnabled = false;
+    lastAccelMagnitude = null;
+    state.tiltX = 0.5; state.tiltY = 0.5; state.shake = 0;
+    motionToggleBtn.textContent = "Enable motion sensors";
+    motionToggleBtn.classList.remove("active");
+    motionToggleBtn.setAttribute("aria-pressed", "false");
+    updateMotionPill();
+  }
+  if (typeof window.DeviceOrientationEvent !== "undefined" || typeof window.DeviceMotionEvent !== "undefined") {
+    motionToggleBtn.classList.remove("hide");
+    motionPill.classList.remove("hide");
+  }
+  motionToggleBtn.addEventListener("click", () => { motionEnabled ? disableMotion() : enableMotion(); });
+
   beatSensitivitySlider.addEventListener("input", () => { beatSensitivity = Number(beatSensitivitySlider.value); });
   beatSensitivitySlider.addEventListener("change", () => { try { localStorage.setItem(SENSITIVITY_KEY, String(beatSensitivity)); } catch (e) {} });
 
@@ -1026,6 +1116,7 @@
     sampleCameraIfEnabled();
     sampleScreenIfEnabled();
     sampleAudioIfEnabled(now);
+    if (motionEnabled) state.shake *= 0.85; // decays every tick, same as Audio: Beat's tracker
     dmxBuffer[0] = 0; // DMX start code
     if (blackoutActive) {
       // Blackout must hold every channel at 0 for as long as it's active --
