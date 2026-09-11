@@ -60,6 +60,14 @@
     </div>
   </div>
 
+  <h2>3. Does this browser support real-time barcode/QR detection?</h2>
+  <p>The Shape Detection API's BarcodeDetector, used elsewhere in this suite (DMX's rig import, Colour Vision Extreme's saved-colours QR, and more) -- checked directly, not assumed. Its actual decoding backend needs a proprietary component only some Chromium builds ship (a Google-branded desktop Chrome, or real Android Chrome via Play Services); an open-source Chromium build can have the constructor present but nothing behind it.</p>
+  <button id="checkBarcodeBtn">Check barcode detection</button>
+  <p id="barcodeStatus" class="status" role="status" aria-live="polite"></p>
+  <button id="liveScanTestBtn" disabled title="Open Camera A above first (section 2) -- this reads live frames from that same stream rather than opening a third one.">Start live scan test (uses Camera A above)</button>
+  <p id="liveScanStatus" class="status" role="status" aria-live="polite"></p>
+  <ul id="liveScanResults" class="device-list"></ul>
+
   <p class="hint"><a href="colorvision.html">&larr; Back to Colour Vision Extreme</a></p>
 </div>
 <script src="camera-diag.js"></script>

@@ -128,4 +128,97 @@
 
   checkBtn.addEventListener("click", checkCameras);
   tryBothBtn.addEventListener("click", tryBoth);
+
+  // ---- Shape Detection API (BarcodeDetector) diagnostic ----
+  // Same "just facts about the hardware/browser combination" ethos as
+  // the rest of this page: checks the real constructor and its real
+  // getSupportedFormats() list directly, rather than assuming support
+  // because the constructor exists (its actual decoding backend needs a
+  // proprietary component some Chromium builds don't ship at all).
+  const checkBarcodeBtn = document.getElementById("checkBarcodeBtn");
+  const barcodeStatus = document.getElementById("barcodeStatus");
+  const liveScanTestBtn = document.getElementById("liveScanTestBtn");
+  const liveScanStatus = document.getElementById("liveScanStatus");
+  const liveScanResults = document.getElementById("liveScanResults");
+
+  let barcodeDetector = null;
+  let liveScanning = false;
+  let liveScanTimer = null;
+
+  async function checkBarcodeSupport() {
+    if (typeof window.BarcodeDetector !== "function") {
+      setStatus(barcodeStatus, "window.BarcodeDetector is not a function -- this browser doesn't expose the Shape Detection API at all.");
+      return;
+    }
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      setStatus(barcodeStatus, `BarcodeDetector exists. getSupportedFormats(): [${formats.join(", ")}]` +
+        (formats.includes("qr_code") ? " -- qr_code is supported." : " -- qr_code is NOT in this list, so QR-based features elsewhere in this suite will hide themselves here."));
+      if (formats.includes("qr_code")) {
+        barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+        // Enabled regardless of whether Camera A happens to be open yet --
+        // startLiveScanTest()'s own click-time check reports plainly if
+        // it isn't, same as clicking "Try opening both at once" without
+        // picking cameras first already does elsewhere on this page.
+        liveScanTestBtn.disabled = false;
+      }
+    } catch (err) {
+      setStatus(barcodeStatus, "BarcodeDetector exists but getSupportedFormats() threw: " + (err.message || err.name || "unknown error"));
+    }
+  }
+
+  async function liveScanTick() {
+    if (!liveScanning) return;
+    try {
+      const codes = await barcodeDetector.detect(videoA);
+      liveScanResults.innerHTML = "";
+      if (codes.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "No codes detected in this frame.";
+        liveScanResults.appendChild(li);
+      } else {
+        codes.forEach((c) => {
+          const li = document.createElement("li");
+          const label = document.createElement("span");
+          label.className = "label";
+          label.textContent = `format: ${c.format} · rawValue: ${c.rawValue}`;
+          const meta = document.createElement("span");
+          meta.className = "meta";
+          const bb = c.boundingBox;
+          meta.textContent = bb ? `boundingBox: x=${bb.x.toFixed(0)} y=${bb.y.toFixed(0)} w=${bb.width.toFixed(0)} h=${bb.height.toFixed(0)}` : "(no boundingBox reported)";
+          li.appendChild(label);
+          li.appendChild(meta);
+          liveScanResults.appendChild(li);
+        });
+      }
+    } catch (err) {
+      setStatus(liveScanStatus, "detect() threw: " + (err.message || err.name || "unknown error"));
+      stopLiveScanTest();
+      return;
+    }
+    liveScanTimer = setTimeout(liveScanTick, 300);
+  }
+
+  function startLiveScanTest() {
+    if (!streamA) {
+      setStatus(liveScanStatus, "Open Camera A in section 2 first.");
+      return;
+    }
+    liveScanning = true;
+    liveScanTestBtn.textContent = "Stop live scan test";
+    setStatus(liveScanStatus, "Polling detect() against Camera A's live feed every 300ms…");
+    liveScanTick();
+  }
+
+  function stopLiveScanTest() {
+    liveScanning = false;
+    clearTimeout(liveScanTimer);
+    liveScanTimer = null;
+    liveScanTestBtn.textContent = "Start live scan test (uses Camera A above)";
+  }
+
+  checkBarcodeBtn.addEventListener("click", checkBarcodeSupport);
+  liveScanTestBtn.addEventListener("click", () => {
+    if (liveScanning) stopLiveScanTest(); else startLiveScanTest();
+  });
 })();
