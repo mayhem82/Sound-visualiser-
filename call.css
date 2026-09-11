@@ -2,6 +2,20 @@
    Shared look (vars, #overlay, #panel, .status, .hint, .hud-btn) comes from
    style.css so this page stays visually consistent with the rest of the app. */
 
+/* Override: this page's own panel grew taller than most (style picker,
+   room code entry, and now the QR scan controls), and #callHud (the
+   camera controls bar, fixed to the bottom of the viewport, deliberately
+   above #overlay in z-index -- see #callHud below) starts appearing as
+   soon as the self-view camera does, well before a call is actually
+   joined. Without its own scroll/clearance, tall panel content can end
+   up sitting underneath that fixed bar, genuinely unreachable rather
+   than just visually crowded. */
+#panel {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding-bottom: 90px;
+}
+
 #stage {
   position: fixed;
   inset: 0;
@@ -168,6 +182,20 @@ body.call-split-active #localPane {
 }
 
 #shareCodeBlock.hide { display: none; }
+
+#scanRoomCodeBtn.hide,
+#scanPreviewVideo.hide,
+#scanRoomCodeStatus.hide { display: none; }
+
+#scanPreviewVideo {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  background: #000;
+  object-fit: cover;
+  margin: 8px 0;
+}
 
 .share-room-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -51,6 +51,9 @@
       <input id="roomInput" type="text" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="ROOM CODE">
     </label>
     <button id="joinCallBtn">Join</button>
+    <button id="scanRoomCodeBtn" class="hide" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library) that reads a room code straight off the host's screen -- opens a brief, separate camera preview just for scanning, released the moment a code is found. Recognises either a bare room code or a full call.html?room=... link. Hidden entirely where barcode detection isn't supported.">&#128247; Scan a room code</button>
+    <video id="scanPreviewVideo" class="hide" playsinline muted></video>
+    <p id="scanRoomCodeStatus" class="status hide" role="status" aria-live="polite"></p>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <p class="hint"><a href="nebula.html">&larr; Back to Sound Nebula</a></p>
@@ -81,6 +84,7 @@
 <!-- video-production.js is loaded for its window.VP_CORE export (the WebGL
      correction/style pipeline — Cartoon mode included), not for anything
      else on that page. -->
+<script src="colour-math.js"></script>
 <script src="video-production.js"></script>
 <script src="call.js"></script>
 </body>

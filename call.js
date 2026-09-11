@@ -86,6 +86,9 @@
   const roomInput = document.getElementById("roomInput");
   const statusEl = document.getElementById("status");
   const shareCodeBlock = document.getElementById("shareCodeBlock");
+  const scanRoomCodeBtn = document.getElementById("scanRoomCodeBtn");
+  const scanPreviewVideo = document.getElementById("scanPreviewVideo");
+  const scanRoomCodeStatus = document.getElementById("scanRoomCodeStatus");
   const shareRoomCode = document.getElementById("shareRoomCode");
   const shareLinkText = document.getElementById("shareLinkText");
   const callHud = document.getElementById("callHud");
@@ -913,6 +916,92 @@
   startCallBtn.addEventListener("click", startCall);
   joinCallBtn.addEventListener("click", joinCall);
   roomInput.addEventListener("keypress", (e) => { if (e.key === "Enter") joinCall(); });
+
+  // ---- Scan a room code (Shape Detection API) ----
+  // Reads a room code straight off the host's screen instead of typing
+  // it -- opens its OWN brief, separate camera stream purely to scan
+  // (this page's real call video hasn't started yet at this point), and
+  // releases it the moment a code is found or scanning is cancelled, so
+  // it never competes with the call's own camera request that follows.
+  // Recognises either a bare room code or a full call.html?room=... link
+  // (the same ?room= this page already auto-joins from on page load),
+  // so scanning a code someone made from the shareable link works too.
+  let scanRoomBarcodeDetector = null;
+  let scanningForRoom = false;
+  let scanRoomStream = null;
+  let scanRoomTimer = null;
+
+  async function initScanRoomBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    scanRoomBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    scanRoomCodeBtn.classList.remove("hide");
+  }
+  initScanRoomBarcodeDetection();
+
+  function extractRoomCode(text) {
+    const trimmed = text.trim();
+    try {
+      const url = new URL(trimmed);
+      const fromUrl = url.searchParams.get("room");
+      if (fromUrl) return fromUrl.trim().toUpperCase();
+    } catch (e) { /* not a URL -- fall through to treating it as a bare code */ }
+    if (/^[A-Za-z0-9]{4,6}$/.test(trimmed)) return trimmed.toUpperCase();
+    return null;
+  }
+
+  async function scanRoomTick() {
+    if (!scanningForRoom) return;
+    try {
+      const codes = await scanRoomBarcodeDetector.detect(scanPreviewVideo);
+      if (codes.length) {
+        const code = extractRoomCode(codes[0].rawValue);
+        if (code) {
+          stopScanningForRoom();
+          roomInput.value = code;
+          joinCall();
+          return;
+        }
+        scanRoomCodeStatus.textContent = "That QR code doesn't look like a room code or call link -- still scanning…";
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    scanRoomTimer = setTimeout(scanRoomTick, 300);
+  }
+
+  async function startScanningForRoom() {
+    try {
+      scanRoomStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (e) {
+      scanRoomCodeStatus.classList.remove("hide");
+      scanRoomCodeStatus.textContent = "Couldn't open the camera to scan: " + (e.message || e.name || "unknown error");
+      return;
+    }
+    scanPreviewVideo.srcObject = scanRoomStream;
+    scanPreviewVideo.classList.remove("hide");
+    try { await scanPreviewVideo.play(); } catch (e) { /* autoplay quirks -- detect() still works once frames arrive */ }
+    scanningForRoom = true;
+    scanRoomCodeBtn.textContent = "Stop scanning";
+    scanRoomCodeStatus.classList.remove("hide");
+    scanRoomCodeStatus.textContent = "Point the camera at a room code's QR…";
+    scanRoomTick();
+  }
+
+  function stopScanningForRoom() {
+    scanningForRoom = false;
+    clearTimeout(scanRoomTimer);
+    scanRoomTimer = null;
+    if (scanRoomStream) { scanRoomStream.getTracks().forEach((t) => t.stop()); scanRoomStream = null; }
+    scanPreviewVideo.srcObject = null;
+    scanPreviewVideo.classList.add("hide");
+    scanRoomCodeBtn.textContent = "\u{1F4F7} Scan a room code";
+  }
+
+  scanRoomCodeBtn.addEventListener("click", () => {
+    if (scanningForRoom) stopScanningForRoom(); else startScanningForRoom();
+  });
 
   // A room link from the host (?room=CODE) prefills and auto-joins, same
   // convention as viewer.html's own ?room= handling.
