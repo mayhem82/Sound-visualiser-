@@ -176,6 +176,9 @@
   const TIMELAPSE_FPS_KEY = "timelapseFps_colorVision_v1";
   const DEFAULT_TIMELAPSE_FPS = 24;
   const TIMELAPSE_FPS_OPTIONS = [12, 24, 30];
+  const HISTOGRAM_ENABLED_KEY = "histogramEnabled_colorVision_v1";
+  const HISTOGRAM_BUCKETS = 64;
+  const HISTOGRAM_SAMPLE_SIZE = 128;
   // In-memory JPEG stills only (no filesystem writes) -- a safety cap so an
   // unattended multi-hour capture at a short interval can't grow without
   // bound and crash the tab. ~3000 shots is already well past what most
@@ -386,6 +389,8 @@
   const timelapseFpsSelect = document.getElementById("timelapseFpsSelect");
   const timelapseBtn = document.getElementById("timelapseBtn");
   const timelapseStatus = document.getElementById("timelapseStatus");
+  const histogramBtn = document.getElementById("histogramBtn");
+  const histogramCanvas = document.getElementById("histogramCanvas");
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
@@ -686,6 +691,10 @@
   let timelapseShots = [];
   let timelapseCapturing = false;
   let timelapseRendering = false;
+  let histogramEnabled = (() => {
+    try { return localStorage.getItem(HISTOGRAM_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let histogramTimer = null;
   let gl, program, uniforms, quadBuffer, videoTexture;
   // Lazily created only once a viewer actually connects — a second,
   // colour-correction-free feed of the same camera view (orientation
@@ -2830,6 +2839,7 @@
       uploadPointUniforms();
       renderLoop();
       refreshVideoDevices();
+      if (histogramEnabled) startHistogramSampling();
       if (cameraOnlyModeCheckbox.checked) {
         await enterCameraOnlyMode();
       } else {
@@ -3450,6 +3460,86 @@
     } else {
       timelapseStatus.textContent = "Time-lapse rendering produced no data -- try again.";
     }
+  }
+
+  // ---- Histogram ----
+  // A real per-channel (red/green/blue) value-distribution graph of the
+  // corrected view, sampled from the actual displayed pixels -- not a
+  // decorative graphic. #stage is a WebGL canvas, so its pixels can't be
+  // read directly via a 2D context on the same element; this draws it
+  // into a small offscreen 2D canvas first (the same technique
+  // bluelight-core.js's ambient-light sampling uses on a <video> source),
+  // then buckets each channel's values and draws bars for each.
+
+  const histogramSampleCanvas = document.createElement("canvas");
+  histogramSampleCanvas.width = HISTOGRAM_SAMPLE_SIZE;
+  histogramSampleCanvas.height = HISTOGRAM_SAMPLE_SIZE;
+  const histogramSampleCtx = histogramSampleCanvas.getContext("2d", { willReadFrequently: true });
+  histogramCanvas.width = 440;
+  histogramCanvas.height = 220;
+  const histogramCtx = histogramCanvas.getContext("2d");
+
+  function drawHistogramBars(rBuckets, gBuckets, bBuckets) {
+    const w = histogramCanvas.width, h = histogramCanvas.height;
+    histogramCtx.clearRect(0, 0, w, h);
+    const maxCount = Math.max(1, ...rBuckets, ...gBuckets, ...bBuckets);
+    const barW = w / HISTOGRAM_BUCKETS;
+    function drawChannel(buckets, color) {
+      histogramCtx.fillStyle = color;
+      for (let i = 0; i < HISTOGRAM_BUCKETS; i++) {
+        const barH = (buckets[i] / maxCount) * h;
+        if (barH > 0) histogramCtx.fillRect(i * barW, h - barH, Math.max(1, barW - 0.5), barH);
+      }
+    }
+    // Additive blending -- where two channels' bars overlap, the combined
+    // colour is visually meaningful (e.g. red+green bars overlapping reads
+    // yellow-ish), rather than one channel just occluding another.
+    histogramCtx.globalCompositeOperation = "lighter";
+    drawChannel(rBuckets, "rgba(255,70,70,0.7)");
+    drawChannel(gBuckets, "rgba(70,255,120,0.7)");
+    drawChannel(bBuckets, "rgba(70,140,255,0.7)");
+    histogramCtx.globalCompositeOperation = "source-over";
+  }
+
+  function sampleAndDrawHistogram() {
+    if (!gl) return;
+    histogramSampleCtx.drawImage(stage, 0, 0, HISTOGRAM_SAMPLE_SIZE, HISTOGRAM_SAMPLE_SIZE);
+    const data = histogramSampleCtx.getImageData(0, 0, HISTOGRAM_SAMPLE_SIZE, HISTOGRAM_SAMPLE_SIZE).data;
+    const rBuckets = new Uint32Array(HISTOGRAM_BUCKETS);
+    const gBuckets = new Uint32Array(HISTOGRAM_BUCKETS);
+    const bBuckets = new Uint32Array(HISTOGRAM_BUCKETS);
+    const bucketScale = HISTOGRAM_BUCKETS / 256;
+    for (let i = 0; i < data.length; i += 4) {
+      rBuckets[Math.min(HISTOGRAM_BUCKETS - 1, (data[i] * bucketScale) | 0)]++;
+      gBuckets[Math.min(HISTOGRAM_BUCKETS - 1, (data[i + 1] * bucketScale) | 0)]++;
+      bBuckets[Math.min(HISTOGRAM_BUCKETS - 1, (data[i + 2] * bucketScale) | 0)]++;
+    }
+    drawHistogramBars(rBuckets, gBuckets, bBuckets);
+  }
+
+  function startHistogramSampling() {
+    clearInterval(histogramTimer);
+    sampleAndDrawHistogram();
+    histogramTimer = setInterval(sampleAndDrawHistogram, 200);
+  }
+
+  function stopHistogramSampling() {
+    clearInterval(histogramTimer);
+    histogramTimer = null;
+  }
+
+  function updateHistogramUi() {
+    histogramBtn.classList.toggle("active", histogramEnabled);
+    histogramBtn.setAttribute("aria-pressed", String(histogramEnabled));
+    histogramCanvas.classList.toggle("hide", !histogramEnabled);
+  }
+
+  function toggleHistogram() {
+    histogramEnabled = !histogramEnabled;
+    try { localStorage.setItem(HISTOGRAM_ENABLED_KEY, histogramEnabled ? "1" : "0"); } catch (e) {}
+    updateHistogramUi();
+    if (histogramEnabled && gl) startHistogramSampling();
+    else stopHistogramSampling();
   }
 
   // ---- Floating capture bar ----
@@ -5534,6 +5624,8 @@
     try { localStorage.setItem(TIMELAPSE_FPS_KEY, String(timelapseFps)); } catch (e) {}
   });
   timelapseBtn.addEventListener("click", toggleTimelapseCapture);
+  updateHistogramUi();
+  histogramBtn.addEventListener("click", toggleHistogram);
   floatingPhotoBtn.addEventListener("click", takePhoto);
   floatingRecordBtn.addEventListener("click", toggleRecording);
   setupDraggableCaptureBar();

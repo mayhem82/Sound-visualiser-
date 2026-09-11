@@ -19,6 +19,26 @@ video#cameraFeed, canvas#sampleCanvas {
   z-index: 1;
 }
 
+/* A real per-channel value distribution of the corrected view (#stage),
+   not a decorative graphic -- sampled and redrawn on a timer while
+   enabled. Bottom-left, so it never overlaps #recordingIndicator or
+   #viewerConnectedBadge, which both sit top-left. */
+#histogramCanvas {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 2;
+  pointer-events: none;
+  width: 220px;
+  height: 110px;
+  background: rgba(15, 15, 25, 0.55);
+  border-radius: 10px;
+}
+
+#histogramCanvas.hide {
+  display: none;
+}
+
 #cvdTypeWrap select {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);

@@ -11,6 +11,7 @@
 <body>
 <canvas id="stage"></canvas>
 <canvas id="particleCanvas" aria-hidden="true"></canvas>
+<canvas id="histogramCanvas" class="hide" aria-hidden="true"></canvas>
 <video id="cameraFeed" playsinline muted hidden></video>
 <canvas id="sampleCanvas" hidden></canvas>
 <div id="screenFlash" aria-hidden="true"></div>
@@ -423,6 +424,7 @@
     </select>
   </label>
   <button id="timelapseBtn" class="hud-btn" aria-pressed="false" title="Capture a still of the corrected view on a timer; stopping compiles every captured still into a real sped-up video at the chosen output frame rate.">&#9201; Start Time-lapse</button>
+  <button id="histogramBtn" class="hud-btn" aria-pressed="false" title="A live per-channel (red/green/blue) value-distribution graph of the corrected view -- real data sampled from the actual pixels, not a decorative graphic. Useful for spotting clipping (a spike jammed against either edge) or checking a correction actually balanced the channels rather than just looking right.">&#128202; Histogram</button>
   <button id="connectTabletBtn" class="hud-btn" title="Stream this corrected view to another device (e.g. a tablet) as a read-only viewer.">Connect tablet</button>
   <button id="castBtn" class="hud-btn hide" aria-pressed="false" title="Cast the corrected view to a Chromecast or AirPlay TV using your browser's own built-in casting -- best-effort: support for casting a live view (rather than a video file) varies by browser and device, so this may not find or work with every TV. Hidden entirely if your browser doesn't expose either casting API at all.">&#128250; Cast to TV</button>
   <a href="nebula.html" class="hud-btn">&larr; Sound Nebula</a>
