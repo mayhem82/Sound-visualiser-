@@ -79,6 +79,8 @@
   const liveZoomSlider = document.getElementById("vpZoomSlider");
   const liveZoomValue = document.getElementById("vpZoomValue");
   const switchCameraBtn = document.getElementById("vpSwitchCameraBtn");
+  const vpScanCueBtn = document.getElementById("vpScanCueBtn");
+  const vpScanCueStatus = document.getElementById("vpScanCueStatus");
 
   // ---- Dual camera (picture-in-picture) ----
   // A second, fully independent camera feed, open concurrently with the
@@ -1057,6 +1059,87 @@
     liveLayout.style = liveLayoutSelect.value;
     saveLiveLayout();
     renderLiveButtons();
+  });
+
+  // ---- Scan QR to trigger a Template (Shape Detection API) ----
+  // Point the camera at a printed cue card instead of finding the right
+  // button in the Live layout above -- works for ANY saved Template
+  // (matched by name, latest version), not only ones currently added as
+  // Live buttons, so a card can trigger something without first curating
+  // the button layout to include it. No QR *generator* built in here,
+  // same as everywhere else in this suite: name a Template in a small
+  // JSON payload ({"vpTemplate":"<name>"}), turn that into a code with
+  // any free generator, and print/tape it up.
+  let cueBarcodeDetector = null;
+  let scanningForCue = false;
+  let cueScanTimer = null;
+
+  async function initCueBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    cueBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    vpScanCueBtn.classList.remove("hide");
+  }
+  initCueBarcodeDetection();
+
+  function findTemplateByName(name) {
+    const matches = templateStore.all.filter((t) => t.name.toLowerCase() === name.trim().toLowerCase());
+    if (!matches.length) return null;
+    return matches.reduce((best, t) => (t.version > best.version ? t : best), matches[0]);
+  }
+
+  async function cueScanTick() {
+    if (!scanningForCue) return;
+    try {
+      const codes = await cueBarcodeDetector.detect(video);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && typeof payload.vpTemplate === "string" && payload.vpTemplate.trim()) {
+          const t = findTemplateByName(payload.vpTemplate);
+          stopScanningForCue();
+          if (!t) {
+            vpScanCueStatus.textContent = `No Template named "${payload.vpTemplate}" found -- create or record one first.`;
+            return;
+          }
+          triggerTemplate(t);
+          vpScanCueStatus.textContent = `Triggered "${t.name}" from a scanned cue.`;
+          return;
+        } else if (payload) {
+          vpScanCueStatus.textContent = "That QR code doesn't look like a Template cue -- still scanning…";
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    cueScanTimer = setTimeout(cueScanTick, 300);
+  }
+
+  function startScanningForCue() {
+    if (!currentStream) {
+      vpScanCueStatus.classList.remove("hide");
+      vpScanCueStatus.textContent = "Start the camera first, then Scan QR to trigger a Template.";
+      return;
+    }
+    scanningForCue = true;
+    vpScanCueBtn.textContent = "Stop scanning";
+    vpScanCueBtn.classList.add("active");
+    vpScanCueStatus.classList.remove("hide");
+    vpScanCueStatus.textContent = "Point the camera at a Template cue's QR code…";
+    cueScanTick();
+  }
+
+  function stopScanningForCue() {
+    scanningForCue = false;
+    clearTimeout(cueScanTimer);
+    cueScanTimer = null;
+    vpScanCueBtn.textContent = "\u{1F4F7} Scan QR to trigger a Template";
+    vpScanCueBtn.classList.remove("active");
+  }
+
+  vpScanCueBtn.addEventListener("click", () => {
+    if (scanningForCue) stopScanningForCue(); else startScanningForCue();
   });
 
   // ============================================================

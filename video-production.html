@@ -115,6 +115,8 @@
       <div id="vpTemplatePickerList" class="vp-picker-list"></div>
     </details>
     <div id="vpLiveButtons" class="vp-live-buttons vp-layout-grid"></div>
+    <button id="vpScanCueBtn" class="vp-btn hide" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library) that triggers a saved Template by name -- point it at a printed cue card instead of finding the right button in the layout above. Works for any saved Template, not only ones currently shown as Live buttons. Hidden entirely on a browser that doesn't support barcode detection.">&#128247; Scan QR to trigger a Template</button>
+    <p id="vpScanCueStatus" class="vp-hint hide" role="status" aria-live="polite"></p>
     <div id="vpCueSheetPanel">
       <h3>Cue sheet — place templates on the timeline</h3>
       <div class="vp-cue-controls">
