@@ -53,6 +53,10 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#chooseScanCodeStatus.hide {
+  display: none;
+}
+
 #cvdTypeWrap select {
   appearance: none;
   border: 1px solid rgba(242, 242, 247, 0.25);
