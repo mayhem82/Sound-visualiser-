@@ -410,6 +410,7 @@
   const scanHint = document.getElementById("dmxScanHint");
   const rigQrControls = document.getElementById("dmxRigQrControls");
   const copyRigJsonBtn = document.getElementById("dmxCopyRigJsonBtn");
+  const copyRigTagBtn = document.getElementById("dmxCopyRigTagBtn");
   const scanRigBtn = document.getElementById("dmxScanRigBtn");
   const scanStatus = document.getElementById("dmxScanStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
@@ -594,6 +595,17 @@
     rigStatus.textContent = `Imported rig "${payload.name}" from QR -- ${normalized.length} fixture${normalized.length === 1 ? "" : "s"}. Not loaded yet -- press Load when ready.`;
   }
 
+  // A scanned code is one of two things: a full rig export ({name,
+  // fixtures}, imported as a brand-new saved rig -- see importRigPayload)
+  // or a small tag naming an ALREADY-saved rig ({dmxLoadRig: "<name>"}),
+  // which instead loads (applies) that rig immediately by name -- the
+  // same idea as Property Colour Reference's property tags, for a
+  // physical tag taped near a fixture group that should recall its scene
+  // the moment someone scans it, without hunting the dropdown.
+  function isValidLoadRigTag(obj) {
+    return !!(obj && typeof obj === "object" && typeof obj.dmxLoadRig === "string" && obj.dmxLoadRig.trim());
+  }
+
   async function scanTick() {
     if (!scanningForRig) return;
     try {
@@ -605,8 +617,19 @@
           stopScanningForRig();
           importRigPayload(payload);
           return;
+        } else if (payload && isValidLoadRigTag(payload)) {
+          const rig = rigPresets.find((r) => r.name.toLowerCase() === payload.dmxLoadRig.trim().toLowerCase());
+          stopScanningForRig();
+          if (!rig) {
+            scanStatus.textContent = `No saved rig named "${payload.dmxLoadRig}" found -- create it first.`;
+            return;
+          }
+          rigSelect.value = rig.id;
+          loadSelectedRig();
+          scanStatus.textContent = rigStatus.textContent;
+          return;
         } else if (payload) {
-          scanStatus.textContent = "That QR code doesn't look like a rig exported from this page -- still scanning…";
+          scanStatus.textContent = "That QR code doesn't look like a rig or rig tag from this page -- still scanning…";
         }
       }
     } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
@@ -653,6 +676,21 @@
     try {
       await navigator.clipboard.writeText(payload);
       rigStatus.textContent = `Copied "${rig.name}" as JSON -- paste it into any QR generator.`;
+    } catch (e) {
+      rigStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
+
+  copyRigTagBtn.addEventListener("click", async () => {
+    const id = rigSelect.value;
+    const rig = rigPresets.find((r) => r.id === id);
+    if (!rig) {
+      rigStatus.textContent = "Pick a saved rig to copy a tag for first.";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ dmxLoadRig: rig.name }));
+      rigStatus.textContent = `Copied a rig tag for "${rig.name}" -- paste it into any QR generator.`;
     } catch (e) {
       rigStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
