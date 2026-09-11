@@ -63,6 +63,71 @@
 // "never fake a tint" rule above.
 const SUPPRESS_STRENGTH_KEY = "blueSuppressStrength_bluelightCore_v1";
 
+// ---- Auto suppression by real sunset/sunrise at the device's actual
+// location ---- Uses the Geolocation API for a real lat/lon (once, cached
+// in memory -- never persisted to disk), and a genuine on-device solar
+// position calculation (the standard NOAA/"sunrise equation" algorithm,
+// accurate to roughly a minute) for today's sunrise/sunset -- no network
+// lookup, no third-party sunrise API. Pass-through suppression then ramps
+// 0 -> 100% over the hour after sunset, holds at 100% through the night,
+// and ramps back down over the hour before sunrise -- entirely computed,
+// never guessed or interpolated from a table.
+const AUTO_SUPPRESS_KEY = "blueSuppressAuto_bluelightCore_v1";
+const AUTO_SUPPRESS_RAMP_MINUTES = 60;
+
+function calcSunTimes(lat, lng, date) {
+  const rad = Math.PI / 180, deg = 180 / Math.PI;
+  const JD = date.getTime() / 86400000 + 2440587.5;
+  const lw = -lng;
+  const n = Math.round(JD - 2451545.0009 - lw / 360);
+  const Jbar = 2451545.0009 + lw / 360 + n;
+  const M = (357.5291 + 0.98560028 * (Jbar - 2451545.0)) % 360;
+  const Mrad = M * rad;
+  const C = 1.9148 * Math.sin(Mrad) + 0.0200 * Math.sin(2 * Mrad) + 0.0003 * Math.sin(3 * Mrad);
+  const lambda = (M + 102.9372 + C + 180) % 360;
+  const lambdaRad = lambda * rad;
+  const Jtransit = Jbar + 0.0053 * Math.sin(Mrad) - 0.0069 * Math.sin(2 * lambdaRad);
+  const delta = Math.asin(Math.sin(lambdaRad) * Math.sin(23.4397 * rad));
+  const latRad = lat * rad;
+  const cosOmega = (Math.sin(-0.833 * rad) - Math.sin(latRad) * Math.sin(delta)) / (Math.cos(latRad) * Math.cos(delta));
+  if (cosOmega > 1 || cosOmega < -1) return null; // polar day/night -- no real transition today
+  const omega = Math.acos(cosOmega) * deg;
+  const toDate = (J) => new Date((J - 2440587.5) * 86400000);
+  return { sunrise: toDate(Jtransit - omega / 360), sunset: toDate(Jtransit + omega / 360) };
+}
+
+// Ramps as a trapezoid: 0% in daylight, rising to 100% over the ramp
+// window after the most recent sunset, holding at 100% through the night,
+// falling back to 0% over the ramp window before the next sunrise.
+function computeAutoSuppressPct(lat, lng, now, rampMinutes) {
+  const events = [];
+  [-1, 0, 1].forEach((dayOffset) => {
+    const times = calcSunTimes(lat, lng, new Date(now.getTime() + dayOffset * 86400000));
+    if (times) {
+      events.push({ time: times.sunrise.getTime(), type: "sunrise" });
+      events.push({ time: times.sunset.getTime(), type: "sunset" });
+    }
+  });
+  if (!events.length) return 0;
+  const nowMs = now.getTime();
+  let mostRecentSunset = null, mostRecentSunrise = null;
+  events.forEach((e) => {
+    if (e.time > nowMs) return;
+    if (e.type === "sunset" && (mostRecentSunset === null || e.time > mostRecentSunset)) mostRecentSunset = e.time;
+    if (e.type === "sunrise" && (mostRecentSunrise === null || e.time > mostRecentSunrise)) mostRecentSunrise = e.time;
+  });
+  if (mostRecentSunset === null || (mostRecentSunrise !== null && mostRecentSunrise > mostRecentSunset)) return 0; // daytime
+  let nextSunrise = null;
+  events.forEach((e) => {
+    if (e.type === "sunrise" && e.time > mostRecentSunset && (nextSunrise === null || e.time < nextSunrise)) nextSunrise = e.time;
+  });
+  if (nextSunrise === null) return 100;
+  const rampMs = rampMinutes * 60000;
+  const eveningRamp = Math.min(1, Math.max(0, (nowMs - mostRecentSunset) / rampMs));
+  const morningRamp = Math.min(1, Math.max(0, (nextSunrise - nowMs) / rampMs));
+  return Math.round(Math.min(eveningRamp, morningRamp) * 100);
+}
+
 function createBlueLightFeature(video, panelEl) {
   panelEl.innerHTML = `
     <div class="bluelight-sensor-controls"></div>
@@ -77,6 +142,11 @@ function createBlueLightFeature(video, panelEl) {
       Pass-through blue suppression: <span class="bluelight-suppress-value">Off</span>
       <input type="range" class="bluelight-suppress-slider" min="0" max="100" step="1" value="0">
     </label>
+    <label class="bluelight-autosuppress-wrap hud-slider hide" title="Uses your device's real location (the Geolocation API, requested once, never stored) and a genuine on-device sunrise/sunset calculation (the standard solar-position equation, not a network lookup) to ramp the suppression above up over the hour after sunset and back down over the hour before sunrise, automatically, for wherever you actually are.">
+      <input type="checkbox" class="bluelight-autosuppress-toggle">
+      Auto (ramp by real sunset/sunrise at your location)
+    </label>
+    <p class="bluelight-autosuppress-status hint hide"></p>
   `;
   const sensorControls = panelEl.querySelector(".bluelight-sensor-controls");
   const sensorHint = panelEl.querySelector(".bluelight-sensor-hint");
@@ -88,6 +158,9 @@ function createBlueLightFeature(video, panelEl) {
   const ambientColorTempLabel = panelEl.querySelector(".bluelight-ambient-temp");
   const suppressSlider = panelEl.querySelector(".bluelight-suppress-slider");
   const suppressValueLabel = panelEl.querySelector(".bluelight-suppress-value");
+  const autoWrap = panelEl.querySelector(".bluelight-autosuppress-wrap");
+  const autoToggle = panelEl.querySelector(".bluelight-autosuppress-toggle");
+  const autoStatus = panelEl.querySelector(".bluelight-autosuppress-status");
 
   const SENSOR_CONTROLS = [
     { key: "colorTemperature", label: "Sensor colour temp", unit: "K", mode: { key: "whiteBalanceMode", value: "manual" }, title: "The camera sensor's own white-balance colour temperature, in Kelvin. Lower is warmer (less blue at the source)." },
@@ -314,8 +387,73 @@ function createBlueLightFeature(video, panelEl) {
 
   suppressSlider.addEventListener("input", () => {
     applySuppressStrength(parseInt(suppressSlider.value, 10));
+    manualSuppressStrength = suppressStrength;
     try { localStorage.setItem(SUPPRESS_STRENGTH_KEY, String(suppressStrength)); } catch (e) {}
   });
+
+  // ---- Auto suppression by sunset/sunrise ----
+  const geoSupported = typeof navigator.geolocation === "object" && typeof navigator.geolocation.getCurrentPosition === "function";
+  let manualSuppressStrength = suppressStrength;
+  let autoTimer = null;
+  let geoLat = null;
+  let geoLon = null;
+  const autoEnabledPersisted = (() => {
+    try { return localStorage.getItem(AUTO_SUPPRESS_KEY) === "1"; } catch (e) { return false; }
+  })();
+
+  function formatClockTime(d) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function applyAutoTick() {
+    if (geoLat === null) return;
+    const now = new Date();
+    const pct = computeAutoSuppressPct(geoLat, geoLon, now, AUTO_SUPPRESS_RAMP_MINUTES);
+    applySuppressStrength(pct);
+    const times = calcSunTimes(geoLat, geoLon, now);
+    autoStatus.classList.remove("hide");
+    autoStatus.textContent = times
+      ? `Sunrise ${formatClockTime(times.sunrise)} · Sunset ${formatClockTime(times.sunset)} · currently ${pct}% (auto)`
+      : `No real sunrise/sunset today at this location (polar day/night) -- auto suppression has nothing to ramp from, left at 0%.`;
+  }
+
+  function enableAuto() {
+    autoStatus.classList.remove("hide");
+    autoStatus.textContent = "Getting your location…";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        geoLat = pos.coords.latitude;
+        geoLon = pos.coords.longitude;
+        manualSuppressStrength = suppressStrength;
+        suppressSlider.disabled = true;
+        try { localStorage.setItem(AUTO_SUPPRESS_KEY, "1"); } catch (e) {}
+        applyAutoTick();
+        clearInterval(autoTimer);
+        autoTimer = setInterval(applyAutoTick, 60000);
+      },
+      (err) => {
+        autoToggle.checked = false;
+        autoStatus.textContent = "Couldn't get your location (" + (err.message || "permission denied") + ") -- auto suppression needs it.";
+      },
+      { maximumAge: 600000, timeout: 15000 }
+    );
+  }
+
+  function disableAuto() {
+    try { localStorage.setItem(AUTO_SUPPRESS_KEY, "0"); } catch (e) {}
+    clearInterval(autoTimer);
+    autoTimer = null;
+    suppressSlider.disabled = false;
+    autoStatus.classList.add("hide");
+    applySuppressStrength(manualSuppressStrength);
+  }
+
+  if (geoSupported) {
+    autoWrap.classList.remove("hide");
+    autoToggle.addEventListener("change", () => {
+      if (autoToggle.checked) enableAuto(); else disableAuto();
+    });
+  }
 
   let abortController = null;
   let brightnessTimer = null;
@@ -353,12 +491,18 @@ function createBlueLightFeature(video, panelEl) {
     brightnessTimer = setInterval(sampleAmbientLight, 500);
     suppressMatrix = buildSuppressFilterSvg();
     applySuppressStrength(suppressStrength);
+    if (geoSupported && autoEnabledPersisted) {
+      autoToggle.checked = true;
+      enableAuto();
+    }
   }
 
   function stop() {
     if (abortController) { abortController.abort(); abortController = null; }
     clearInterval(brightnessTimer);
     brightnessTimer = null;
+    clearInterval(autoTimer);
+    autoTimer = null;
     focusCrosshair.remove();
     video.style.filter = "";
     if (suppressMatrix) { suppressMatrix.svg.remove(); suppressMatrix = null; }
@@ -370,4 +514,8 @@ function createBlueLightFeature(video, panelEl) {
   }
 
   return { start, stop, onTrackChanged };
+}
+
+if (typeof window !== "undefined") {
+  window.__bluelightCoreTestables = { calcSunTimes, computeAutoSuppressPct };
 }
