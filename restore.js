@@ -206,6 +206,8 @@
   const colourPickerInput = document.getElementById("colourPickerInput");
   const presetGrid = document.getElementById("presetGrid");
   const closeChooseBtn = document.getElementById("closeChooseBtn");
+  const chooseScanCodeBtn = document.getElementById("chooseScanCodeBtn");
+  const chooseScanCodeStatus = document.getElementById("chooseScanCodeStatus");
 
   const quickPresetsBtn = document.getElementById("quickPresetsBtn");
   const quickPresetsPanel = document.getElementById("quickPresetsPanel");
@@ -3540,6 +3542,74 @@
     choosePanelReturnFocusEl = null;
     openTuneForNewPoint(hexToRgb01(colourPickerInput.value));
   });
+
+  // ---- Scan a colour code (Shape Detection API) ----
+  // A precise, ground-truth alternative to aiming the camera or picking a
+  // colour by eye: many paint/swatch cards print their own QR encoding
+  // their exact colour, and this decodes one (or one made with any free
+  // QR generator) straight into the same openTuneForNewPoint flow every
+  // other way of choosing a reference colour here already uses.
+  let chooseCodeBarcodeDetector = null;
+  let scanningForCode = false;
+  let chooseCodeScanTimer = null;
+
+  async function initChooseCodeBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    chooseCodeBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    chooseScanCodeBtn.classList.remove("hide");
+  }
+  initChooseCodeBarcodeDetection();
+
+  function isValidColorCode(obj) {
+    return !!(obj && typeof obj === "object" && typeof obj.hex === "string" && /^#?[0-9a-f]{6}$/i.test(obj.hex));
+  }
+
+  async function chooseCodeScanTick() {
+    if (!scanningForCode) return;
+    try {
+      const codes = await chooseCodeBarcodeDetector.detect(video);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && isValidColorCode(payload)) {
+          stopScanningForCode();
+          choosePanel.classList.add("hide");
+          choosePanelReturnFocusEl = null;
+          openTuneForNewPoint(hexToRgb01(payload.hex));
+          return;
+        } else if (payload) {
+          chooseScanCodeStatus.textContent = "That QR code doesn't look like a colour code -- still scanning…";
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    chooseCodeScanTimer = setTimeout(chooseCodeScanTick, 300);
+  }
+
+  function startScanningForCode() {
+    scanningForCode = true;
+    chooseScanCodeBtn.textContent = "Stop scanning";
+    chooseScanCodeBtn.classList.add("active");
+    chooseScanCodeStatus.classList.remove("hide");
+    chooseScanCodeStatus.textContent = "Point the camera at a colour code's QR…";
+    chooseCodeScanTick();
+  }
+
+  function stopScanningForCode() {
+    scanningForCode = false;
+    clearTimeout(chooseCodeScanTimer);
+    chooseCodeScanTimer = null;
+    chooseScanCodeBtn.textContent = "\u{1F4F7} Scan a colour code";
+    chooseScanCodeBtn.classList.remove("active");
+  }
+
+  chooseScanCodeBtn.addEventListener("click", () => {
+    if (scanningForCode) stopScanningForCode(); else startScanningForCode();
+  });
+
   closeChooseBtn.addEventListener("click", closeChoosePanel);
 
   quickPresetsBtn.addEventListener("click", openQuickPresetsPanel);

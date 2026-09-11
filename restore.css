@@ -545,6 +545,10 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#chooseScanCodeStatus.hide {
+  display: none;
+}
+
 #choosePanelInner,
 #quickPresetsPanelInner {
   width: 100%;

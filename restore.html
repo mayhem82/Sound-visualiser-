@@ -210,7 +210,9 @@
         Colour picker
         <input id="colourPickerInput" type="color" value="#ffffff" aria-label="Pick an exact colour to match">
       </label>
+      <button id="chooseScanCodeBtn" class="hud-btn hide" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library) decoding a QR that encodes an exact colour -- a paint/swatch card's own printed code, or one made with any free QR generator -- as a precise, ground-truth alternative to aiming the camera or picking one by eye. Hidden entirely where barcode detection isn't supported.">&#128247; Scan a colour code</button>
     </div>
+    <p id="chooseScanCodeStatus" class="hint hide" role="status" aria-live="polite"></p>
 
     <h3 id="presetGridTitle">Common neutral references</h3>
     <div id="presetGrid" aria-labelledby="presetGridTitle"></div>
