@@ -26,6 +26,8 @@
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const modeSwitcher = document.getElementById("modeSwitcher");
   const featurePanel = document.getElementById("featurePanel");
+  const scanJumpBtn = document.getElementById("scanJumpBtn");
+  const scanJumpStatus = document.getElementById("scanJumpStatus");
 
   let currentStream = null;
   let currentTrack = null;
@@ -266,6 +268,89 @@
     document.addEventListener(evt, () => {
       if (fullscreenActive && !document.fullscreenElement && !document.webkitFullscreenElement) exitFullscreenMode();
     });
+  });
+
+  // ---- Scan QR to jump to a feature (Shape Detection API) ----
+  // Point the camera at a printed sign instead of finding the right tab
+  // in the mode switcher -- a QR encoding {"hubJumpTo":"<id or label>"}
+  // switches straight to that feature the same way tapping its tab
+  // would. Matches against either the feature's stable id or its
+  // display label (case-insensitive), so a code doesn't have to name an
+  // internal id to work. Jumping to a feature that isn't wired into the
+  // Hub yet still switches tabs and shows the same honest "isn't wired
+  // in yet" note a manual tap on its (disabled) button would -- this
+  // never fakes a feature that isn't actually there.
+  let jumpBarcodeDetector = null;
+  let scanningForJump = false;
+  let jumpScanTimer = null;
+
+  async function initJumpBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    jumpBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    scanJumpBtn.classList.remove("hide");
+  }
+  initJumpBarcodeDetection();
+
+  function findFeatureByIdOrLabel(name) {
+    const needle = name.trim().toLowerCase();
+    return FEATURES.find((f) => f.id.toLowerCase() === needle || f.label.toLowerCase() === needle) || null;
+  }
+
+  async function jumpScanTick() {
+    if (!scanningForJump) return;
+    try {
+      const codes = await jumpBarcodeDetector.detect(video);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && typeof payload.hubJumpTo === "string" && payload.hubJumpTo.trim()) {
+          const feature = findFeatureByIdOrLabel(payload.hubJumpTo);
+          stopScanningForJump();
+          if (!feature) {
+            scanJumpStatus.textContent = `No feature named "${payload.hubJumpTo}" found.`;
+            return;
+          }
+          selectFeature(feature.id);
+          scanJumpStatus.textContent = `Jumped to "${feature.label}".`;
+          return;
+        } else if (payload) {
+          scanJumpStatus.textContent = "That QR code doesn't look like a Hub feature jump -- still scanning…";
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    jumpScanTimer = setTimeout(jumpScanTick, 300);
+  }
+
+  function startScanningForJump() {
+    if (!currentStream) {
+      scanJumpStatus.classList.remove("hide");
+      scanJumpStatus.textContent = "Start the camera first, then Scan QR to jump to a feature.";
+      return;
+    }
+    scanningForJump = true;
+    scanJumpBtn.textContent = "Stop scanning";
+    scanJumpBtn.classList.add("active");
+    scanJumpBtn.setAttribute("aria-pressed", "true");
+    scanJumpStatus.classList.remove("hide");
+    scanJumpStatus.textContent = "Point the camera at a feature-jump QR code…";
+    jumpScanTick();
+  }
+
+  function stopScanningForJump() {
+    scanningForJump = false;
+    clearTimeout(jumpScanTimer);
+    jumpScanTimer = null;
+    scanJumpBtn.textContent = "\u{1F4F7} Scan QR to jump to a feature";
+    scanJumpBtn.classList.remove("active");
+    scanJumpBtn.setAttribute("aria-pressed", "false");
+  }
+
+  scanJumpBtn.addEventListener("click", () => {
+    if (scanningForJump) stopScanningForJump(); else startScanningForJump();
   });
 
   window.__hubTestables = {

@@ -40,6 +40,9 @@
     flex-direction: column;
     gap: 4px;
   }
+  #scanJumpStatus.hide {
+    display: none;
+  }
   #featurePanel:empty { display: none; }
   #comingSoonNote {
     padding: 10px 12px;
@@ -70,6 +73,9 @@
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
   <button id="torchBtn" class="hud-btn hide" aria-pressed="false" title="Toggle the camera flashlight.">Flashlight</button>
   <a href="index.html" class="hud-btn">&larr; All features</a>
+
+  <button id="scanJumpBtn" class="hud-btn hide" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library) that jumps straight to a named feature -- point it at a printed sign instead of finding the right tab. Hidden entirely on a browser that doesn't support barcode detection.">&#128247; Scan QR to jump to a feature</button>
+  <p id="scanJumpStatus" class="status hide"></p>
 
   <nav id="modeSwitcher" role="tablist" aria-label="Feature"></nav>
   <div id="featurePanel"></div>
