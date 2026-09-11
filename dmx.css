@@ -226,6 +226,10 @@ video#cameraFeed, canvas#sampleCanvas {
   color: #fecaca;
 }
 
+.dmx-pill.hide {
+  display: none;
+}
+
 .dmx-pill-dot {
   width: 8px;
   height: 8px;

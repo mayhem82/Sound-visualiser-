@@ -228,13 +228,16 @@
     camera_colour: "Dominant colour (camera)",
     camera_complexity: "Structural complexity (camera)",
     camera_colour_variety: "Colour variety (camera)",
+    screen_colour: "Dominant colour (shared screen)",
+    screen_complexity: "Structural complexity (shared screen)",
+    screen_colour_variety: "Colour variety (shared screen)",
     audio_bass: "Audio: Bass",
     audio_mid: "Audio: Mid",
     audio_treble: "Audio: Treble",
     audio_beat: "Audio: Beat trigger",
     manual: "Manual test slider",
   };
-  const SCALAR_SOURCES = new Set(["camera_complexity", "camera_colour_variety", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "manual"]);
+  const SCALAR_SOURCES = new Set(["camera_complexity", "camera_colour_variety", "screen_complexity", "screen_colour_variety", "audio_bass", "audio_mid", "audio_treble", "audio_beat", "manual"]);
 
   function byte(v) { return Math.max(0, Math.min(255, Math.round(v * 255))); }
 
@@ -274,8 +277,11 @@
     const region = state.regions && state.regions[fixture.region || 0];
     const panByte = byte(region ? region.x : (state.centroidX != null ? state.centroidX : 0.5));
     const tiltByte = byte(region ? region.y : (state.centroidY != null ? state.centroidY : 0.5));
-    if (fixture.source === "camera_colour") {
-      const r = state.r || 0, g = state.g || 0, b = state.b || 0;
+    if (fixture.source === "camera_colour" || fixture.source === "screen_colour") {
+      const fromScreen = fixture.source === "screen_colour";
+      const r = (fromScreen ? state.screenR : state.r) || 0;
+      const g = (fromScreen ? state.screenG : state.g) || 0;
+      const b = (fromScreen ? state.screenB : state.b) || 0;
       const dim = luma709(r, g, b);
       return names.map((n) => {
         if (n === "pan") return panByte;
@@ -299,6 +305,7 @@
     }
     const scalarMap = {
       camera_complexity: state.complexity, camera_colour_variety: state.colourVariety,
+      screen_complexity: state.screenComplexity, screen_colour_variety: state.screenColourVariety,
       audio_bass: state.bass, audio_mid: state.mid,
       audio_treble: state.treble, audio_beat: state.beat, manual: (fixture.manualValue || 0) / 100,
     };
@@ -368,6 +375,9 @@
   const refreshSlider = document.getElementById("refreshSlider");
   const refreshLabel = document.getElementById("refreshLabel");
   const cameraToggleBtn = document.getElementById("cameraToggleBtn");
+  const screenToggleBtn = document.getElementById("screenToggleBtn");
+  const screenPill = document.getElementById("screenPill");
+  const screenPillText = document.getElementById("screenPillText");
   const micToggleBtn = document.getElementById("micToggleBtn");
   const beatSensitivitySlider = document.getElementById("beatSensitivitySlider");
   const fixtureList = document.getElementById("fixtureList");
@@ -386,10 +396,18 @@
   const scanStatus = document.getElementById("dmxScanStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
   const cameraFeed = document.getElementById("cameraFeed");
+  const screenFeed = document.getElementById("screenFeed");
   const sampleCanvas = document.getElementById("sampleCanvas");
   sampleCanvas.width = SCENE_GRID_W;
   sampleCanvas.height = SCENE_GRID_H;
   const sceneCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  // A separate offscreen canvas for the screen-capture input -- camera and
+  // screen can both be sampled in the very same tick, so they can't share
+  // sampleCanvas/sceneCtx without one clobbering the other mid-frame.
+  const screenSampleCanvas = document.createElement("canvas");
+  screenSampleCanvas.width = SCENE_GRID_W;
+  screenSampleCanvas.height = SCENE_GRID_H;
+  const screenSceneCtx = screenSampleCanvas.getContext("2d", { willReadFrequently: true });
 
   const hasSerial = "serial" in navigator;
   serialSupportHint.textContent = hasSerial
@@ -644,6 +662,7 @@
   const dmxBuffer = new Uint8Array(513); // index 0 = DMX start code (0x00)
 
   let cameraStream = null, cameraEnabled = false;
+  let screenStream = null, screenEnabled = false;
   let micStream = null, micEnabled = false, audioCtx = null, analyser = null, freqData = null;
   let serialPort = null, serialWriter = null, serialConnected = false, writing = false;
   let tickTimer = null;
@@ -667,6 +686,10 @@
   function updateCameraPill() {
     cameraPill.className = cameraEnabled ? "dmx-pill connected" : "dmx-pill";
     cameraPillText.textContent = "Camera: " + (cameraEnabled ? "on" : "off");
+  }
+  function updateScreenPill() {
+    screenPill.className = screenEnabled ? "dmx-pill connected" : "dmx-pill";
+    screenPillText.textContent = "Screen: " + (screenEnabled ? "on" : "off");
   }
   function updateMicPill() {
     micPill.className = micEnabled ? "dmx-pill connected" : "dmx-pill";
@@ -840,6 +863,45 @@
   }
   cameraToggleBtn.addEventListener("click", () => { cameraEnabled ? stopCamera() : enableCamera(); });
 
+  // ---- Screen capture (an independent input, alongside the camera) ----
+  // Real Screen Capture API (getDisplayMedia), not a workaround -- syncs
+  // lighting to whatever's actually on a shared screen/window/tab (a
+  // movie, a game, a visualiser) instead of only what the camera sees.
+  // Feature-detected and hidden entirely where it isn't supported.
+  if (typeof navigator.mediaDevices?.getDisplayMedia === "function") {
+    screenToggleBtn.classList.remove("hide");
+    screenPill.classList.remove("hide");
+  }
+
+  async function enableScreen() {
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      screenFeed.srcObject = screenStream;
+      await screenFeed.play();
+      screenEnabled = true;
+      screenToggleBtn.textContent = "Stop sharing";
+      screenToggleBtn.classList.add("active");
+      screenToggleBtn.setAttribute("aria-pressed", "true");
+      updateScreenPill();
+      // The browser's OWN "Stop sharing" bar (outside this page entirely)
+      // can end the share at any moment -- the track fires "ended" when it
+      // does, same as a camera being unplugged, so state/UI stay correct
+      // either way this gets stopped.
+      screenStream.getVideoTracks()[0].addEventListener("ended", stopScreen);
+    } catch (e) {
+      setDmxStatus("Screen share error: " + e.message);
+    }
+  }
+  function stopScreen() {
+    if (screenStream) { for (const t of screenStream.getTracks()) t.stop(); }
+    screenStream = null; screenEnabled = false;
+    screenToggleBtn.textContent = "Share screen";
+    screenToggleBtn.classList.remove("active");
+    screenToggleBtn.setAttribute("aria-pressed", "false");
+    updateScreenPill();
+  }
+  screenToggleBtn.addEventListener("click", () => { screenEnabled ? stopScreen() : enableScreen(); });
+
   async function enableMic() {
     try {
       // Same reasoning as Sound Nebula's Music mode (script.js): default
@@ -937,6 +999,19 @@
     state.centroidX = stats.centroidX; state.centroidY = stats.centroidY; state.regions = stats.regions;
     state.colourVariety = stats.colourVariety;
   }
+  // Namespaced separately (state.screen* vs state.r/g/b/...) so camera and
+  // screen can be sampled independently in the same tick without one
+  // overwriting the other -- a fixture picks which one it reacts to via
+  // its own Source. Pan/Tilt stays tied to the camera's own regions/
+  // centroid only; a shared screen doesn't drive fixture positioning.
+  function sampleScreenIfEnabled() {
+    if (!screenEnabled || screenFeed.readyState < screenFeed.HAVE_CURRENT_DATA) return;
+    screenSceneCtx.drawImage(screenFeed, 0, 0, SCENE_GRID_W, SCENE_GRID_H);
+    const data = screenSceneCtx.getImageData(0, 0, SCENE_GRID_W, SCENE_GRID_H).data;
+    const stats = computeSceneStats(data, SCENE_GRID_W, SCENE_GRID_H);
+    state.screenR = stats.r; state.screenG = stats.g; state.screenB = stats.b;
+    state.screenComplexity = stats.complexity; state.screenColourVariety = stats.colourVariety;
+  }
   function sampleAudioIfEnabled(nowMs) {
     if (!micEnabled || !analyser) return;
     analyser.getByteFrequencyData(freqData);
@@ -949,6 +1024,7 @@
   function tick() {
     const now = performance.now();
     sampleCameraIfEnabled();
+    sampleScreenIfEnabled();
     sampleAudioIfEnabled(now);
     dmxBuffer[0] = 0; // DMX start code
     if (blackoutActive) {
