@@ -539,6 +539,12 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#pcScanProfileHint.hide,
+#pcScanProfileControls.hide,
+#pcScanProfileStatus.hide {
+  display: none;
+}
+
 #choosePanelInner,
 #quickPresetsPanelInner {
   width: 100%;

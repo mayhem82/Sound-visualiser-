@@ -195,6 +195,11 @@
   const profileNameInput = document.getElementById("profileNameInput");
   const saveProfileBtn = document.getElementById("saveProfileBtn");
   const profileStatus = document.getElementById("profileStatus");
+  const copyProfileQrBtn = document.getElementById("copyProfileQrBtn");
+  const pcScanProfileHint = document.getElementById("pcScanProfileHint");
+  const pcScanProfileControls = document.getElementById("pcScanProfileControls");
+  const pcScanProfileBtn = document.getElementById("pcScanProfileBtn");
+  const pcScanProfileStatus = document.getElementById("pcScanProfileStatus");
 
   const choosePanel = document.getElementById("choosePanel");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
@@ -3018,6 +3023,106 @@
     renderProfileSelect();
     profileStatus.textContent = `Deleted template "${prof.name}".`;
   }
+
+  // ---- Property-tag QR (copy/scan a template name, Shape Detection) ----
+  // No QR *generator* built in here, same as everywhere else in this
+  // suite: copy a small tagged payload naming the selected template
+  // (never the template's actual reference/settings data -- a lost or
+  // copied tag can only ever point at a name, not leak calibration
+  // data), turn it into a code with any free generator, print it, and
+  // tape it up at the property/room it belongs to. Scanning looks the
+  // name up against this device's own saved templates and reuses
+  // loadSelectedProfile()'s exact existing confirm-before-replace flow --
+  // scanning a tag is not itself proof the operator meant to discard
+  // whatever's currently loaded.
+  function isValidProfileTag(obj) {
+    return !!(obj && typeof obj === "object" && typeof obj.propertyColourProfile === "string" && obj.propertyColourProfile.trim());
+  }
+
+  copyProfileQrBtn.addEventListener("click", async () => {
+    const id = profileSelect.value;
+    const prof = profiles.find((p) => p.id === id);
+    if (!prof) {
+      profileStatus.textContent = "Pick a template to copy a QR tag for first.";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ propertyColourProfile: prof.name }));
+      profileStatus.textContent = `Copied a QR tag for "${prof.name}" -- paste it into any QR generator.`;
+    } catch (e) {
+      profileStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
+
+  let profileBarcodeDetector = null;
+  let scanningForProfile = false;
+  let profileScanTimer = null;
+
+  async function initProfileBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    profileBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    pcScanProfileHint.classList.remove("hide");
+    pcScanProfileControls.classList.remove("hide");
+  }
+  initProfileBarcodeDetection();
+
+  async function profileScanTick() {
+    if (!scanningForProfile) return;
+    try {
+      const codes = await profileBarcodeDetector.detect(video);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && isValidProfileTag(payload)) {
+          const prof = profiles.find((p) => p.name.toLowerCase() === payload.propertyColourProfile.trim().toLowerCase());
+          stopScanningForProfile();
+          if (!prof) {
+            pcScanProfileStatus.textContent = `No template named "${payload.propertyColourProfile}" found on this device -- create it first.`;
+            return;
+          }
+          profileSelect.value = prof.id;
+          loadSelectedProfile();
+          pcScanProfileStatus.textContent = profileStatus.textContent;
+          return;
+        } else if (payload) {
+          pcScanProfileStatus.textContent = "That QR code doesn't look like a property tag from this page -- still scanning…";
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    profileScanTimer = setTimeout(profileScanTick, 300);
+  }
+
+  function startScanningForProfile() {
+    if (!currentStream) {
+      pcScanProfileStatus.classList.remove("hide");
+      pcScanProfileStatus.textContent = "Start the camera first, then Scan property QR.";
+      return;
+    }
+    scanningForProfile = true;
+    pcScanProfileBtn.textContent = "Stop scanning";
+    pcScanProfileBtn.classList.add("active");
+    pcScanProfileBtn.setAttribute("aria-pressed", "true");
+    pcScanProfileStatus.classList.remove("hide");
+    pcScanProfileStatus.textContent = "Point the camera at a property tag's QR code…";
+    profileScanTick();
+  }
+
+  function stopScanningForProfile() {
+    scanningForProfile = false;
+    clearTimeout(profileScanTimer);
+    profileScanTimer = null;
+    pcScanProfileBtn.textContent = "\u{1F4F7} Scan property QR";
+    pcScanProfileBtn.classList.remove("active");
+    pcScanProfileBtn.setAttribute("aria-pressed", "false");
+  }
+
+  pcScanProfileBtn.addEventListener("click", () => {
+    if (scanningForProfile) stopScanningForProfile(); else startScanningForProfile();
+  });
 
   // ---- Choose-colour panel ----
 

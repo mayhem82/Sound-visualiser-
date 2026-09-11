@@ -342,6 +342,15 @@
         <button id="saveProfileBtn" class="hud-btn reticle-btn-secondary">Save as template</button>
       </div>
       <p id="profileStatus" class="hint" role="status" aria-live="polite"></p>
+      <p class="hint" title="Copies a small QR payload naming the selected template (not the template's actual data) -- turn it into a code with any free QR generator and print/tape it up at the property or room it belongs to, so anyone on site can load the right template just by scanning the tag.">Tag a property or room: copy a QR payload for the selected template above, print it, and scan it back in below to load that template instantly on site.</p>
+      <div class="profiles-row">
+        <button id="copyProfileQrBtn" class="hud-btn reticle-btn-secondary">Copy QR tag for selected</button>
+      </div>
+      <p class="hint hide" id="pcScanProfileHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a property tag's QR code to load its matching template.</p>
+      <div class="profiles-row hide" id="pcScanProfileControls">
+        <button id="pcScanProfileBtn" class="hud-btn reticle-btn-secondary">&#128247; Scan property QR</button>
+      </div>
+      <p id="pcScanProfileStatus" class="hint hide" role="status" aria-live="polite"></p>
     </div>
 
     <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
