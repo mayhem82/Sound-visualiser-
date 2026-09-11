@@ -5119,56 +5119,119 @@
       (p.exposureAdjust === undefined || typeof p.exposureAdjust === "number");
   }
 
-  function exportPoints() {
+  async function exportPoints() {
     if (points.length === 0) {
       importExportStatus.textContent = "No saved colours to export yet.";
       return;
     }
-    const blob = new Blob([JSON.stringify(points, null, 2)], { type: "application/json" });
-    downloadBlob(blob, `colour-vision-calibration-${new Date().toISOString().slice(0, 10)}.json`);
+    const json = JSON.stringify(points, null, 2);
+    const filename = `colour-vision-calibration-${new Date().toISOString().slice(0, 10)}.json`;
+    if (hasFileSystemAccess) {
+      const outcome = await exportPointsViaFileSystemAccess(json, filename);
+      if (outcome === "saved") {
+        importExportStatus.textContent = `Exported ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+        return;
+      }
+      if (outcome === "cancelled") return; // no message -- nothing was exported, but the user chose that
+      // "failed" (a real error, not a cancel) -- fall through to the
+      // always-available download below instead of leaving the export
+      // just silently not happening.
+    }
+    const blob = new Blob([json], { type: "application/json" });
+    downloadBlob(blob, filename);
     importExportStatus.textContent = `Exported ${points.length} colour${points.length === 1 ? "" : "s"}.`;
+  }
+
+  // Shared by both import paths below (the classic <input type=file> +
+  // FileReader route, and the File System Access route) -- both end up
+  // with the same plain JSON text, just read off the file differently.
+  function applyImportedPointsJson(text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      importExportStatus.textContent = "Import failed: not a valid JSON file.";
+      return;
+    }
+    const incoming = Array.isArray(parsed) ? parsed : [];
+    const valid = incoming.filter(isValidImportedPoint);
+    if (valid.length === 0) {
+      importExportStatus.textContent = "Import failed: no valid saved colours found in that file.";
+      return;
+    }
+    const room = MAX_POINTS - points.length;
+    const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
+      id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
+      sourceColor: p.sourceColor,
+      hueShift: p.hueShift,
+      satAdjust: p.satAdjust,
+      lightAdjust: p.lightAdjust,
+      contrastAdjust: p.contrastAdjust || 0,
+      exposureAdjust: p.exposureAdjust || 0
+    }));
+    points = points.concat(toAdd);
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    const skipped = valid.length - toAdd.length;
+    importExportStatus.textContent = `Imported ${toAdd.length} colour${toAdd.length === 1 ? "" : "s"}.` +
+      (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
   }
 
   function importPointsFromFile(file) {
     const reader = new FileReader();
-    reader.onload = () => {
-      let parsed;
-      try {
-        parsed = JSON.parse(reader.result);
-      } catch (e) {
-        importExportStatus.textContent = "Import failed: not a valid JSON file.";
-        return;
-      }
-      const incoming = Array.isArray(parsed) ? parsed : [];
-      const valid = incoming.filter(isValidImportedPoint);
-      if (valid.length === 0) {
-        importExportStatus.textContent = "Import failed: no valid saved colours found in that file.";
-        return;
-      }
-      const room = MAX_POINTS - points.length;
-      const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
-        id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-        label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
-        sourceColor: p.sourceColor,
-        hueShift: p.hueShift,
-        satAdjust: p.satAdjust,
-        lightAdjust: p.lightAdjust,
-        contrastAdjust: p.contrastAdjust || 0,
-        exposureAdjust: p.exposureAdjust || 0
-      }));
-      points = points.concat(toAdd);
-      savePoints();
-      uploadPointUniforms();
-      updatePointsCount();
-      renderPointsGrid();
-      const skipped = valid.length - toAdd.length;
-      importExportStatus.textContent = `Imported ${toAdd.length} colour${toAdd.length === 1 ? "" : "s"}.` +
-        (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
-    };
+    reader.onload = () => applyImportedPointsJson(reader.result);
     reader.onerror = () => {
       importExportStatus.textContent = "Import failed: could not read that file.";
     };
     reader.readAsText(file);
+  }
+
+  // ---- File System Access: a real native Save/Open dialog instead of a
+  // silent download-to-Downloads-folder and a hidden <input type=file>.
+  // Chromium-only (Chrome/Edge/Opera; not Firefox, not Safari) -- when
+  // unsupported, or if the user cancels the dialog, this falls straight
+  // through to the classic approach below rather than leaving them with
+  // no way to export/import at all.
+  const hasFileSystemAccess = typeof window.showSaveFilePicker === "function" && typeof window.showOpenFilePicker === "function";
+
+  // Returns "saved", "cancelled" (the user backed out of the dialog -- not
+  // a failure, but not a success either, so the caller must not report
+  // "Exported" when nothing was actually written), or "failed" (a real
+  // error, e.g. permission denied -- the caller falls back to a download).
+  async function exportPointsViaFileSystemAccess(json, filename) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return "saved";
+    } catch (e) {
+      if (e.name === "AbortError") return "cancelled";
+      return "failed";
+    }
+  }
+
+  // Same three-outcome shape as exportPointsViaFileSystemAccess above --
+  // "cancelled" must NOT fall through to the classic file input, or
+  // backing out of this dialog would just pop a second one right after.
+  async function importPointsViaFileSystemAccess() {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+      });
+      const file = await handle.getFile();
+      applyImportedPointsJson(await file.text());
+      return "imported";
+    } catch (e) {
+      if (e.name === "AbortError") return "cancelled";
+      return "failed";
+    }
   }
 
   // ---- Wiring ----
@@ -5756,7 +5819,13 @@
   clearAllBtn.addEventListener("click", clearAllPoints);
 
   exportBtn.addEventListener("click", exportPoints);
-  importBtn.addEventListener("click", () => importFile.click());
+  importBtn.addEventListener("click", async () => {
+    if (hasFileSystemAccess) {
+      const outcome = await importPointsViaFileSystemAccess();
+      if (outcome !== "failed") return; // "imported" is done; "cancelled" must not also pop the classic picker
+    }
+    importFile.click();
+  });
   importFile.addEventListener("change", () => {
     if (importFile.files && importFile.files[0]) {
       importPointsFromFile(importFile.files[0]);
