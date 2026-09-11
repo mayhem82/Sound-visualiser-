@@ -328,6 +328,14 @@
       <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden>
     </div>
+    <div class="tune-actions">
+      <button id="pcCopyPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+    </div>
+    <p class="hint hide" id="pcScanPointsHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-references QR (from "Copy as JSON" on another device) to import it here.</p>
+    <div class="tune-actions hide" id="pcScanPointsControls">
+      <button id="pcScanPointsBtn" class="hud-btn reticle-btn-secondary">&#128247; Scan from QR</button>
+    </div>
+    <p id="pcScanPointsStatus" class="hint hide" role="status" aria-live="polite"></p>
 
     <div class="profiles-section">
       <h3 id="profilesTitle">Templates</h3>

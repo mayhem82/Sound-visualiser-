@@ -3316,47 +3316,139 @@
     importExportStatus.textContent = `Exported ${points.length} reference${points.length === 1 ? "" : "s"}.`;
   }
 
+  // Shared by both import paths below (file-based Import, and Scan from
+  // QR further down) -- both end up with the same plain JSON text, just
+  // read off differently.
+  function applyImportedPointsJson(text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      importExportStatus.textContent = "Import failed: not a valid JSON file.";
+      return;
+    }
+    const incoming = Array.isArray(parsed) ? parsed : [];
+    const valid = incoming.filter(isValidImportedPoint);
+    if (valid.length === 0) {
+      importExportStatus.textContent = "Import failed: no valid saved references found there.";
+      return;
+    }
+    const room = MAX_POINTS - points.length;
+    const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
+      id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
+      sourceColor: p.sourceColor,
+      // Real, correction-affecting data (see catArr in uploadPointUniforms),
+      // not just a display label -- dropping it on import used to silently
+      // reclassify every imported "wall" reference as "other".
+      category: p.category === "wall" ? "wall" : "other",
+      hueShift: p.hueShift,
+      satAdjust: p.satAdjust,
+      lightAdjust: p.lightAdjust,
+      contrastAdjust: p.contrastAdjust || 0,
+      exposureAdjust: p.exposureAdjust || 0
+    }));
+    points = points.concat(toAdd);
+    savePoints();
+    uploadPointUniforms();
+    updatePointsCount();
+    renderPointsGrid();
+    const skipped = valid.length - toAdd.length;
+    importExportStatus.textContent = `Imported ${toAdd.length} reference${toAdd.length === 1 ? "" : "s"}.` +
+      (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
+  }
+
   function importPointsFromFile(file) {
     const reader = new FileReader();
-    reader.onload = () => {
-      let parsed;
-      try {
-        parsed = JSON.parse(reader.result);
-      } catch (e) {
-        importExportStatus.textContent = "Import failed: not a valid JSON file.";
-        return;
-      }
-      const incoming = Array.isArray(parsed) ? parsed : [];
-      const valid = incoming.filter(isValidImportedPoint);
-      if (valid.length === 0) {
-        importExportStatus.textContent = "Import failed: no valid saved references found in that file.";
-        return;
-      }
-      const room = MAX_POINTS - points.length;
-      const toAdd = valid.slice(0, Math.max(0, room)).map((p) => ({
-        id: "pt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-        label: typeof p.label === "string" ? p.label.slice(0, 40) : "",
-        sourceColor: p.sourceColor,
-        hueShift: p.hueShift,
-        satAdjust: p.satAdjust,
-        lightAdjust: p.lightAdjust,
-        contrastAdjust: p.contrastAdjust || 0,
-        exposureAdjust: p.exposureAdjust || 0
-      }));
-      points = points.concat(toAdd);
-      savePoints();
-      uploadPointUniforms();
-      updatePointsCount();
-      renderPointsGrid();
-      const skipped = valid.length - toAdd.length;
-      importExportStatus.textContent = `Imported ${toAdd.length} reference${toAdd.length === 1 ? "" : "s"}.` +
-        (skipped > 0 ? ` ${skipped} skipped (limit of ${MAX_POINTS} reached).` : "");
-    };
+    reader.onload = () => applyImportedPointsJson(reader.result);
     reader.onerror = () => {
       importExportStatus.textContent = "Import failed: could not read that file.";
     };
     reader.readAsText(file);
   }
+
+  // ---- Copy/Scan saved references as a QR code (Shape Detection API) ----
+  // Same real round trip as this suite's other saved-item lists: copy as
+  // plain JSON, turn that into a code with any free QR generator, then
+  // scan it back in with the browser's own native barcode reader, fed
+  // straight through the exact same applyImportedPointsJson a file-based
+  // Import already uses.
+  const pcCopyPointsJsonBtn = document.getElementById("pcCopyPointsJsonBtn");
+  const pcScanPointsHint = document.getElementById("pcScanPointsHint");
+  const pcScanPointsControls = document.getElementById("pcScanPointsControls");
+  const pcScanPointsBtn = document.getElementById("pcScanPointsBtn");
+  const pcScanPointsStatus = document.getElementById("pcScanPointsStatus");
+
+  let pointsBarcodeDetector = null;
+  let scanningForPoints = false;
+  let pointsScanTimer = null;
+
+  async function initPointsBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    pointsBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    pcScanPointsHint.classList.remove("hide");
+    pcScanPointsControls.classList.remove("hide");
+  }
+  initPointsBarcodeDetection();
+
+  async function pointsScanTick() {
+    if (!scanningForPoints) return;
+    try {
+      const codes = await pointsBarcodeDetector.detect(video);
+      if (codes.length) {
+        stopScanningForPoints();
+        applyImportedPointsJson(codes[0].rawValue);
+        pcScanPointsStatus.textContent = importExportStatus.textContent;
+        return;
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    pointsScanTimer = setTimeout(pointsScanTick, 300);
+  }
+
+  function startScanningForPoints() {
+    if (!currentStream) {
+      pcScanPointsStatus.classList.remove("hide");
+      pcScanPointsStatus.textContent = "Start the camera first, then Scan from QR.";
+      return;
+    }
+    scanningForPoints = true;
+    pcScanPointsBtn.textContent = "Stop scanning";
+    pcScanPointsBtn.classList.add("active");
+    pcScanPointsBtn.setAttribute("aria-pressed", "true");
+    pcScanPointsStatus.classList.remove("hide");
+    pcScanPointsStatus.textContent = "Point the camera at a saved-references QR code…";
+    pointsScanTick();
+  }
+
+  function stopScanningForPoints() {
+    scanningForPoints = false;
+    clearTimeout(pointsScanTimer);
+    pointsScanTimer = null;
+    pcScanPointsBtn.textContent = "\u{1F4F7} Scan from QR";
+    pcScanPointsBtn.classList.remove("active");
+    pcScanPointsBtn.setAttribute("aria-pressed", "false");
+  }
+
+  pcScanPointsBtn.addEventListener("click", () => {
+    if (scanningForPoints) stopScanningForPoints(); else startScanningForPoints();
+  });
+
+  pcCopyPointsJsonBtn.addEventListener("click", async () => {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved references to copy yet.";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(points));
+      importExportStatus.textContent = `Copied ${points.length} reference${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+    } catch (e) {
+      importExportStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
 
   // ---- Wiring ----
 

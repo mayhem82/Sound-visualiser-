@@ -549,6 +549,12 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#pcScanPointsHint.hide,
+#pcScanPointsControls.hide,
+#pcScanPointsStatus.hide {
+  display: none;
+}
+
 #choosePanelInner,
 #quickPresetsPanelInner {
   width: 100%;
