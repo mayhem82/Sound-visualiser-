@@ -391,6 +391,9 @@
   const timelapseBtn = document.getElementById("timelapseBtn");
   const timelapseStatus = document.getElementById("timelapseStatus");
   const histogramBtn = document.getElementById("histogramBtn");
+  const correctAnimatedBtn = document.getElementById("correctAnimatedBtn");
+  const correctAnimatedFileInput = document.getElementById("correctAnimatedFileInput");
+  const correctAnimatedStatus = document.getElementById("correctAnimatedStatus");
   const histogramCanvas = document.getElementById("histogramCanvas");
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
@@ -2715,44 +2718,55 @@
     return { sx: 1, sy, ox: 0, oy: (1 - sy) / 2 };
   }
 
+  // Sets every correction uniform this shader takes from current module
+  // state (calibrated points are separate -- see uploadPointUniformsTo --
+  // since those only change when a point is added/edited/removed, not
+  // every frame). Shared by the live main/fixed-viewer draws below AND
+  // the WebCodecs-based "correct an animated image" export further down,
+  // so an exported file runs through exactly the same real correction
+  // math as the live preview, not a reimplementation of it.
+  function applyCorrectionUniforms(glCtx, uni, srcW, srcH, cover, blendValue) {
+    glCtx.uniform1i(uni.uTex, 0);
+    glCtx.uniform1f(uni.uBlend, blendValue);
+    glCtx.uniform1f(uni.uOutlineEnabled, outlinesEnabled ? 1 : 0);
+    glCtx.uniform1f(uni.uOutlineThickness, outlineThickness);
+    glCtx.uniform1f(uni.uOutlineBlend, outlineBlend);
+    glCtx.uniform1f(uni.uOutlineOpacity, outlineOpacity);
+    glCtx.uniform3f(uni.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
+    glCtx.uniform1f(uni.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
+    glCtx.uniform1f(uni.uAudioTintHue, audioTintHue);
+    glCtx.uniform1f(uni.uAudioTintStrength, audioTintStrength);
+    glCtx.uniform1f(uni.uAudioTintSatStrength, audioTintSatStrength);
+    glCtx.uniform1f(uni.uAudioTintLightStrength, audioTintLightStrength);
+    glCtx.uniform1f(uni.uAudioTintLevel, audioTintLevel);
+    glCtx.uniform1f(uni.uCartoonEnabled, cartoonEnabled ? 1 : 0);
+    glCtx.uniform1f(uni.uCartoonLevels, cartoonLevels);
+    glCtx.uniform1f(uni.uCartoonEdgeThickness, cartoonEdgeThickness);
+    glCtx.uniform1f(uni.uCartoonEdgeStrength, cartoonEdgeStrength);
+    glCtx.uniform1f(uni.uCartoonSaturation, cartoonSaturation);
+    glCtx.uniform1f(uni.uCartoonThemeEnabled, cartoonThemeEnabled ? 1 : 0);
+    glCtx.uniform3f(uni.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
+    glCtx.uniform3f(uni.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
+    glCtx.uniform2f(uni.uTexelSize, 1 / srcW, 1 / srcH);
+    glCtx.uniform1f(uni.uSpread, spread);
+    glCtx.uniform1f(uni.uRotate180, rotate180 ? 1 : 0);
+    glCtx.uniform2f(uni.uUvScale, cover.sx, cover.sy);
+    glCtx.uniform2f(uni.uUvOffset, cover.ox, cover.oy);
+    glCtx.uniform1i(uni.uCvdType, CVD_TYPE_CODES[cvdType]);
+    glCtx.uniform1f(uni.uCvdStrength, cvdStrength);
+    glCtx.uniform1f(uni.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
+    glCtx.uniform1f(uni.uFreezeBlend, freezeBlend);
+    glCtx.uniform1f(uni.uFreezeSpread, freezeSpread);
+    glCtx.uniform1f(uni.uFreezeTone, freezeTone / 100);
+  }
+
   function renderLoop() {
     if (!paused && video.readyState >= video.HAVE_CURRENT_DATA) {
       const cover = computeCoverUv(video.videoWidth, video.videoHeight, stage.width, stage.height);
 
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-      gl.uniform1i(uniforms.uTex, 0);
-      gl.uniform1f(uniforms.uBlend, parseFloat(blendSlider.value) / 100);
-      gl.uniform1f(uniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
-      gl.uniform1f(uniforms.uOutlineThickness, outlineThickness);
-      gl.uniform1f(uniforms.uOutlineBlend, outlineBlend);
-      gl.uniform1f(uniforms.uOutlineOpacity, outlineOpacity);
-      gl.uniform3f(uniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
-      gl.uniform1f(uniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
-      gl.uniform1f(uniforms.uAudioTintHue, audioTintHue);
-      gl.uniform1f(uniforms.uAudioTintStrength, audioTintStrength);
-      gl.uniform1f(uniforms.uAudioTintSatStrength, audioTintSatStrength);
-      gl.uniform1f(uniforms.uAudioTintLightStrength, audioTintLightStrength);
-      gl.uniform1f(uniforms.uAudioTintLevel, audioTintLevel);
-      gl.uniform1f(uniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
-      gl.uniform1f(uniforms.uCartoonLevels, cartoonLevels);
-      gl.uniform1f(uniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
-      gl.uniform1f(uniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
-      gl.uniform1f(uniforms.uCartoonSaturation, cartoonSaturation);
-      gl.uniform1f(uniforms.uCartoonThemeEnabled, cartoonThemeEnabled ? 1 : 0);
-      gl.uniform3f(uniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
-      gl.uniform3f(uniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
-      gl.uniform2f(uniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-      gl.uniform1f(uniforms.uSpread, spread);
-      gl.uniform1f(uniforms.uRotate180, rotate180 ? 1 : 0);
-      gl.uniform2f(uniforms.uUvScale, cover.sx, cover.sy);
-      gl.uniform2f(uniforms.uUvOffset, cover.ox, cover.oy);
-      gl.uniform1i(uniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
-      gl.uniform1f(uniforms.uCvdStrength, cvdStrength);
-      gl.uniform1f(uniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
-      gl.uniform1f(uniforms.uFreezeBlend, freezeBlend);
-      gl.uniform1f(uniforms.uFreezeSpread, freezeSpread);
-      gl.uniform1f(uniforms.uFreezeTone, freezeTone / 100);
+      applyCorrectionUniforms(gl, uniforms, video.videoWidth, video.videoHeight, cover, parseFloat(blendSlider.value) / 100);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       if (originalCtx) {
@@ -2788,38 +2802,7 @@
         // regardless of what the operator is locally previewing.
         fixedGl.bindTexture(fixedGl.TEXTURE_2D, fixedVideoTexture);
         fixedGl.texImage2D(fixedGl.TEXTURE_2D, 0, fixedGl.RGBA, fixedGl.RGBA, fixedGl.UNSIGNED_BYTE, video);
-        fixedGl.uniform1i(fixedUniforms.uTex, 0);
-        fixedGl.uniform1f(fixedUniforms.uBlend, 1);
-        fixedGl.uniform1f(fixedUniforms.uOutlineEnabled, outlinesEnabled ? 1 : 0);
-        fixedGl.uniform1f(fixedUniforms.uOutlineThickness, outlineThickness);
-        fixedGl.uniform1f(fixedUniforms.uOutlineBlend, outlineBlend);
-        fixedGl.uniform1f(fixedUniforms.uOutlineOpacity, outlineOpacity);
-        fixedGl.uniform3f(fixedUniforms.uOutlineColor, outlineColorRgb[0], outlineColorRgb[1], outlineColorRgb[2]);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintEnabled, audioTintEnabled ? 1 : 0);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintHue, audioTintHue);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintStrength, audioTintStrength);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintSatStrength, audioTintSatStrength);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintLightStrength, audioTintLightStrength);
-        fixedGl.uniform1f(fixedUniforms.uAudioTintLevel, audioTintLevel);
-        fixedGl.uniform1f(fixedUniforms.uCartoonEnabled, cartoonEnabled ? 1 : 0);
-        fixedGl.uniform1f(fixedUniforms.uCartoonLevels, cartoonLevels);
-        fixedGl.uniform1f(fixedUniforms.uCartoonEdgeThickness, cartoonEdgeThickness);
-        fixedGl.uniform1f(fixedUniforms.uCartoonEdgeStrength, cartoonEdgeStrength);
-        fixedGl.uniform1f(fixedUniforms.uCartoonSaturation, cartoonSaturation);
-        fixedGl.uniform1f(fixedUniforms.uCartoonThemeEnabled, cartoonThemeEnabled ? 1 : 0);
-        fixedGl.uniform3f(fixedUniforms.uCartoonThemeLo, cartoonThemeLoRgb[0], cartoonThemeLoRgb[1], cartoonThemeLoRgb[2]);
-        fixedGl.uniform3f(fixedUniforms.uCartoonThemeHi, cartoonThemeHiRgb[0], cartoonThemeHiRgb[1], cartoonThemeHiRgb[2]);
-        fixedGl.uniform2f(fixedUniforms.uTexelSize, 1 / video.videoWidth, 1 / video.videoHeight);
-        fixedGl.uniform1f(fixedUniforms.uSpread, spread);
-        fixedGl.uniform1f(fixedUniforms.uRotate180, rotate180 ? 1 : 0);
-        fixedGl.uniform2f(fixedUniforms.uUvScale, cover.sx, cover.sy);
-        fixedGl.uniform2f(fixedUniforms.uUvOffset, cover.ox, cover.oy);
-        fixedGl.uniform1i(fixedUniforms.uCvdType, CVD_TYPE_CODES[cvdType]);
-        fixedGl.uniform1f(fixedUniforms.uCvdStrength, cvdStrength);
-        fixedGl.uniform1f(fixedUniforms.uFreezeEnabled, freezeIsolateEnabled ? 1 : 0);
-        fixedGl.uniform1f(fixedUniforms.uFreezeBlend, freezeBlend);
-        fixedGl.uniform1f(fixedUniforms.uFreezeSpread, freezeSpread);
-        fixedGl.uniform1f(fixedUniforms.uFreezeTone, freezeTone / 100);
+        applyCorrectionUniforms(fixedGl, fixedUniforms, video.videoWidth, video.videoHeight, cover, 1);
         fixedGl.drawArrays(fixedGl.TRIANGLE_STRIP, 0, 4);
       }
 
@@ -3502,6 +3485,113 @@
       timelapseStatus.textContent = "Time-lapse rendering produced no data -- try again.";
     }
   }
+
+  // ---- Correct an animated image (WebCodecs ImageDecoder) ----
+  // Decodes an existing animated GIF/WebP frame-by-frame using the real
+  // WebCodecs ImageDecoder API (full container + codec decoding handled by
+  // the browser itself -- no demuxer/decoder of our own), draws each
+  // decoded VideoFrame through a brand-new, fully independent WebGL
+  // context (via the same initGLContext/uploadPointUniformsTo/
+  // applyCorrectionUniforms this page's live camera preview and shared-
+  // viewer canvas already use), and records the corrected output as a
+  // real video via canvas.captureStream(0) + requestFrame() -- capturing
+  // exactly one frame each time a decoded frame is drawn, so every
+  // frame's real original duration (GIF/WebP frames can each hold a
+  // different length) is preserved rather than resampled to a fixed
+  // rate. Entirely additive: this never touches the live `gl`/`stage` or
+  // the shared-viewer `fixedGl`, so an export can't disturb (or be
+  // disturbed by) whatever the live view is doing at the same time.
+  const imageDecoderSupported = typeof window.ImageDecoder === "function";
+  if (imageDecoderSupported) correctAnimatedBtn.classList.remove("hide");
+  let animatedCorrectionBusy = false;
+
+  async function correctAnimatedImageFile(file) {
+    if (animatedCorrectionBusy) return;
+    animatedCorrectionBusy = true;
+    correctAnimatedBtn.disabled = true;
+    correctAnimatedStatus.classList.remove("hide");
+    correctAnimatedStatus.textContent = `Decoding "${file.name}"…`;
+    let decoder = null;
+    try {
+      let decoded;
+      try {
+        decoder = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type });
+        await decoder.tracks.ready;
+      } catch (e) {
+        correctAnimatedStatus.textContent = `Couldn't decode "${file.name}": ${e.message || e.name || "unsupported format"}.`;
+        return;
+      }
+      const track = decoder.tracks.selectedTrack;
+      const frameCount = track ? track.frameCount : 0;
+      if (!frameCount || frameCount < 2) {
+        correctAnimatedStatus.textContent = `"${file.name}" doesn't have multiple frames to correct.`;
+        return;
+      }
+      const mimeType = pickRecordingMimeType();
+      if (!mimeType) {
+        correctAnimatedStatus.textContent = "Video recording isn't supported in this browser -- can't export a corrected version.";
+        return;
+      }
+
+      decoded = await decoder.decode({ frameIndex: 0 });
+      const w = decoded.image.displayWidth, h = decoded.image.displayHeight;
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = w;
+      exportCanvas.height = h;
+      const ctxState = initGLContext(exportCanvas);
+      ctxState.gl.viewport(0, 0, w, h);
+      uploadPointUniformsTo(ctxState.gl, ctxState.program, ctxState.uniforms);
+      const identityCover = { sx: 1, sy: 1, ox: 0, oy: 0 };
+
+      const track0 = exportCanvas.captureStream(0).getVideoTracks()[0];
+      const chunks = [];
+      const recorder = new MediaRecorder(new MediaStream([track0]), { mimeType });
+      recorder.addEventListener("dataavailable", (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); });
+      const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve));
+      recorder.start();
+
+      const drawAndCapture = (videoFrame) => {
+        ctxState.gl.bindTexture(ctxState.gl.TEXTURE_2D, ctxState.videoTexture);
+        ctxState.gl.texImage2D(ctxState.gl.TEXTURE_2D, 0, ctxState.gl.RGBA, ctxState.gl.RGBA, ctxState.gl.UNSIGNED_BYTE, videoFrame);
+        applyCorrectionUniforms(ctxState.gl, ctxState.uniforms, w, h, identityCover, 1);
+        ctxState.gl.drawArrays(ctxState.gl.TRIANGLE_STRIP, 0, 4);
+        track0.requestFrame();
+      };
+
+      for (let i = 0; i < frameCount; i++) {
+        if (i > 0) decoded = await decoder.decode({ frameIndex: i });
+        drawAndCapture(decoded.image);
+        const durationMs = (decoded.image.duration || 100000) / 1000;
+        decoded.image.close();
+        correctAnimatedStatus.textContent = `Correcting frame ${i + 1}/${frameCount}…`;
+        await new Promise((r) => setTimeout(r, durationMs));
+      }
+
+      recorder.stop();
+      await stopped;
+      const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+      const blob = new Blob(chunks, { type: mimeType });
+      if (blob.size > 0) {
+        const filename = `colour-vision-corrected-${timestampForFilename()}.${ext}`;
+        downloadBlob(blob, filename);
+        setLastCapture(blob, filename);
+        correctAnimatedStatus.textContent = `Corrected video ready: ${frameCount} frames from "${file.name}".`;
+      } else {
+        correctAnimatedStatus.textContent = "Correcting that file produced no data -- try again.";
+      }
+    } finally {
+      if (decoder) decoder.close();
+      animatedCorrectionBusy = false;
+      correctAnimatedBtn.disabled = false;
+    }
+  }
+
+  correctAnimatedBtn.addEventListener("click", () => correctAnimatedFileInput.click());
+  correctAnimatedFileInput.addEventListener("change", () => {
+    const file = correctAnimatedFileInput.files[0];
+    correctAnimatedFileInput.value = "";
+    if (file) correctAnimatedImageFile(file);
+  });
 
   // ---- Histogram ----
   // A real per-channel (red/green/blue) value-distribution graph of the
