@@ -81,6 +81,7 @@
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
   const calibrateAlarmBtn = document.getElementById("calibrateAlarmBtn");
+  const scanColorCodeBtn = document.getElementById("scanColorCodeBtn");
   const alarmColorsBtn = document.getElementById("alarmColorsBtn");
   const alarmColorsCount = document.getElementById("alarmColorsCount");
   const sensitivitySlider = document.getElementById("sensitivitySlider");
@@ -540,6 +541,77 @@
   closeNameColorBtn.addEventListener("click", closeNameColorPanel);
   alarmColorsBtn.addEventListener("click", openAlarmColorsPanel);
   closeAlarmColorsBtn.addEventListener("click", closeAlarmColorsPanel);
+
+  // ---- Scan a colour code (Shape Detection API) ----
+  // An alternative to aiming the camera at a physical colour: many paint/
+  // swatch cards print their own QR encoding their exact colour, and this
+  // decodes one (or one made with any free QR generator) straight into
+  // the same naming/save flow "Calibrate alarm colour" already uses --
+  // ground-truth from the code, no dependence on the ambient light a
+  // camera-aimed reading would be affected by.
+  let colorCodeBarcodeDetector = null;
+  let scanningForColorCode = false;
+  let colorCodeScanTimer = null;
+
+  async function initColorCodeBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    colorCodeBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    scanColorCodeBtn.classList.remove("hide");
+  }
+  initColorCodeBarcodeDetection();
+
+  function isValidColorCode(obj) {
+    return !!(obj && typeof obj === "object" && typeof obj.hex === "string" && /^#?[0-9a-f]{6}$/i.test(obj.hex));
+  }
+
+  async function colorCodeScanTick() {
+    if (!scanningForColorCode) return;
+    try {
+      const codes = await colorCodeBarcodeDetector.detect(video);
+      if (codes.length) {
+        let payload = null;
+        try { payload = JSON.parse(codes[0].rawValue); } catch (e) { /* not JSON -- ignore, keep scanning */ }
+        if (payload && isValidColorCode(payload)) {
+          stopScanningForColorCode();
+          openNameColorPanel(hexToRgb01(payload.hex));
+          return;
+        } else if (payload) {
+          setStatus("That QR code doesn't look like a colour code -- still scanning…");
+        }
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    colorCodeScanTimer = setTimeout(colorCodeScanTick, 300);
+  }
+
+  function startScanningForColorCode() {
+    if (!currentStream) {
+      setStatus("Enable the camera above first, then Scan a colour code.");
+      return;
+    }
+    scanningForColorCode = true;
+    scanColorCodeBtn.textContent = "Stop scanning";
+    scanColorCodeBtn.classList.add("active");
+    scanColorCodeBtn.setAttribute("aria-pressed", "true");
+    setStatus("Point the camera at a colour code's QR…");
+    colorCodeScanTick();
+  }
+
+  function stopScanningForColorCode() {
+    scanningForColorCode = false;
+    clearTimeout(colorCodeScanTimer);
+    colorCodeScanTimer = null;
+    scanColorCodeBtn.textContent = "\u{1F4F7} Scan a colour code";
+    scanColorCodeBtn.classList.remove("active");
+    scanColorCodeBtn.setAttribute("aria-pressed", "false");
+  }
+
+  scanColorCodeBtn.addEventListener("click", () => {
+    if (scanningForColorCode) stopScanningForColorCode(); else startScanningForColorCode();
+  });
 
   // ---- Alarm photos ----
   // Optional, off by default: a real evidence photo the moment the alarm
