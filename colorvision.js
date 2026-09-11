@@ -454,6 +454,11 @@
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
   const importExportStatus = document.getElementById("importExportStatus");
+  const cvCopyPointsJsonBtn = document.getElementById("cvCopyPointsJsonBtn");
+  const cvScanHint = document.getElementById("cvScanHint");
+  const cvScanControls = document.getElementById("cvScanControls");
+  const cvScanPointsBtn = document.getElementById("cvScanPointsBtn");
+  const cvScanStatus = document.getElementById("cvScanStatus");
   const profileSelect = document.getElementById("profileSelect");
   const loadProfileBtn = document.getElementById("loadProfileBtn");
   const deleteProfileBtn = document.getElementById("deleteProfileBtn");
@@ -5318,6 +5323,87 @@
     };
     reader.readAsText(file);
   }
+
+  // ---- Copy/Scan saved colours as a QR code (Shape Detection API) ----
+  // Same real round trip DMX's rig import already uses: this page has no
+  // QR *generator* built in -- copy the saved colours as plain JSON (the
+  // same shape Export/Import already produce/read), turn that into a code
+  // with any free QR generator, then scan it back in here (or on another
+  // device entirely) with the browser's own native barcode reader. Feeds
+  // the scanned text through the exact same applyImportedPointsJson used
+  // by file-based import, so a scanned calibration gets the same
+  // validation/defaulting/id-regeneration as any other import, not a
+  // separate, less-trusted path.
+  let pointsBarcodeDetector = null;
+  let scanningForPoints = false;
+  let pointsScanTimer = null;
+
+  async function initPointsBarcodeDetection() {
+    if (typeof window.BarcodeDetector !== "function") return;
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return;
+    } catch (e) { return; }
+    pointsBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    cvScanHint.classList.remove("hide");
+    cvScanControls.classList.remove("hide");
+  }
+  initPointsBarcodeDetection();
+
+  async function pointsScanTick() {
+    if (!scanningForPoints) return;
+    try {
+      const codes = await pointsBarcodeDetector.detect(video);
+      if (codes.length) {
+        stopScanningForPoints();
+        applyImportedPointsJson(codes[0].rawValue);
+        cvScanStatus.textContent = importExportStatus.textContent;
+        return;
+      }
+    } catch (e) { /* a single failed detect isn't fatal -- keep scanning */ }
+    pointsScanTimer = setTimeout(pointsScanTick, 300);
+  }
+
+  function startScanningForPoints() {
+    if (!currentStream) {
+      cvScanStatus.classList.remove("hide");
+      cvScanStatus.textContent = "Start the camera first, then Scan from QR.";
+      return;
+    }
+    scanningForPoints = true;
+    cvScanPointsBtn.textContent = "Stop scanning";
+    cvScanPointsBtn.classList.add("active");
+    cvScanPointsBtn.setAttribute("aria-pressed", "true");
+    cvScanStatus.classList.remove("hide");
+    cvScanStatus.textContent = "Point the camera at a saved-colours QR code…";
+    pointsScanTick();
+  }
+
+  function stopScanningForPoints() {
+    scanningForPoints = false;
+    clearTimeout(pointsScanTimer);
+    pointsScanTimer = null;
+    cvScanPointsBtn.textContent = "\u{1F4F7} Scan from QR";
+    cvScanPointsBtn.classList.remove("active");
+    cvScanPointsBtn.setAttribute("aria-pressed", "false");
+  }
+
+  cvScanPointsBtn.addEventListener("click", () => {
+    if (scanningForPoints) stopScanningForPoints(); else startScanningForPoints();
+  });
+
+  cvCopyPointsJsonBtn.addEventListener("click", async () => {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved colours to copy yet.";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(points));
+      importExportStatus.textContent = `Copied ${points.length} colour${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+    } catch (e) {
+      importExportStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
+    }
+  });
 
   // ---- File System Access: a real native Save/Open dialog instead of a
   // silent download-to-Downloads-folder and a hidden <input type=file>.

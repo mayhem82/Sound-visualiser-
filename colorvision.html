@@ -587,6 +587,15 @@
       <button id="importBtn" class="hud-btn reticle-btn-secondary">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden>
     </div>
+    <p class="hint" id="cvCopyQrHint" title="Copies every saved colour as plain JSON, the same shape Export/Import already use. Turn it into a QR code with any free generator to move a full calibration to another device instantly, without a file or network connection -- scan it back in below.">Or copy your saved colours as JSON and turn that into a QR code (any free generator) to move them to another device.</p>
+    <div class="tune-actions">
+      <button id="cvCopyPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+    </div>
+    <p class="hint hide" id="cvScanHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-colours QR (from "Copy as JSON" on another device) to import it here.</p>
+    <div class="tune-actions hide" id="cvScanControls">
+      <button id="cvScanPointsBtn" class="hud-btn reticle-btn-secondary">&#128247; Scan from QR</button>
+    </div>
+    <p id="cvScanStatus" class="hint hide" role="status" aria-live="polite"></p>
 
     <div class="profiles-section">
       <h3 id="profilesTitle">Templates</h3>
