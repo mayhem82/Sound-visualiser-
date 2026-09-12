@@ -74,6 +74,7 @@
   const outlineColorWrap = document.getElementById("outlineColorWrap");
   const outlineColorInput = document.getElementById("outlineColorInput");
   const calibrateBtn = document.getElementById("calibrateBtn");
+  const speakColourBtn = document.getElementById("speakColourBtn");
   const pointsBtn = document.getElementById("pointsBtn");
   const pointsCount = document.getElementById("pointsCount");
   const pauseBtn = document.getElementById("pauseBtn");
@@ -1197,6 +1198,59 @@
     return [r / n / 255, g / n / 255, b / n / 255];
   }
 
+  // ---- Speak colour name aloud ----
+  // Announces the nearest of the 148 standard CSS colour names (see
+  // colour-names.js) for whatever's centred in view -- an approximation
+  // ("steelblue," not an exact spectral match), but doesn't need looking
+  // at the screen, which is the point for a colourblind-assist tool.
+  const SPEAK_COLOUR_KEY = "speakColourEnabled_colorAssist_v1";
+  const hasSpeechSynthesis = typeof window.speechSynthesis === "object" && typeof window.SpeechSynthesisUtterance === "function";
+  const hasColourNames = typeof window.ColourNames === "object";
+  let speakColourEnabled = false;
+  let speakColourTimerId = null;
+  let lastSpokenColourName = null;
+
+  if (hasSpeechSynthesis && hasColourNames) {
+    speakColourBtn.classList.remove("hide");
+    try { speakColourEnabled = localStorage.getItem(SPEAK_COLOUR_KEY) === "1"; } catch (e) {}
+  }
+
+  function speakColourName(name) {
+    try {
+      window.speechSynthesis.cancel(); // drop anything still queued -- always announce the latest colour, never a backlog
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(name));
+    } catch (e) { /* ignore -- not fatal, just stays silent this once */ }
+  }
+
+  function checkAndSpeakColour() {
+    if (video.readyState < video.HAVE_CURRENT_DATA) return;
+    const [r, g, b] = sampleCenterColor();
+    const name = window.ColourNames.nearestColourName(r, g, b);
+    if (name !== lastSpokenColourName) {
+      lastSpokenColourName = name;
+      speakColourName(name);
+    }
+  }
+
+  function updateSpeakColourTimer() {
+    if (speakColourEnabled && !speakColourTimerId) {
+      lastSpokenColourName = null;
+      speakColourTimerId = setInterval(checkAndSpeakColour, 1200);
+    } else if (!speakColourEnabled && speakColourTimerId) {
+      clearInterval(speakColourTimerId);
+      speakColourTimerId = null;
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  function setSpeakColourEnabled(next) {
+    speakColourEnabled = next;
+    speakColourBtn.textContent = `Speak colour name: ${speakColourEnabled ? "On" : "Off"}`;
+    speakColourBtn.setAttribute("aria-pressed", String(speakColourEnabled));
+    try { localStorage.setItem(SPEAK_COLOUR_KEY, speakColourEnabled ? "1" : "0"); } catch (e) {}
+    updateSpeakColourTimer();
+  }
+
   // Converts a tap position (viewport CSS pixels) into a fraction of the
   // raw video frame (0,0 top-left .. 1,1 bottom-right) — the same
   // object-fit:cover cropping and rotate180 flip the correction shader
@@ -1735,6 +1789,8 @@
   applyFloatingCapturePos();
 
   calibrateBtn.addEventListener("click", openChoosePanel);
+  speakColourBtn.addEventListener("click", () => setSpeakColourEnabled(!speakColourEnabled));
+  setSpeakColourEnabled(speakColourEnabled);
   chooseAimBtn.addEventListener("click", () => {
     choosePanel.classList.add("hide");
     choosePanelReturnFocusEl = null;

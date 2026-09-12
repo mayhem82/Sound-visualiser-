@@ -56,6 +56,7 @@
     <input id="outlineColorInput" type="color" value="#ffffff" aria-label="Outline colour">
   </label>
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
+  <button id="speakColourBtn" class="hud-btn hide" aria-pressed="false" title="Speaks the name of whatever colour is centred in view out loud (nearest match of the 148 standard CSS colour names, e.g. 'steelblue') -- an approximation, not an exact match, but doesn't need looking at the screen to know roughly what colour something is. Hidden entirely where this browser doesn't support speech synthesis.">Speak colour name: Off</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
   <button id="rotateBtn" class="hud-btn" aria-pressed="false" title="Some phones deliver the back camera feed upside-down. Toggle this if the picture looks flipped.">Rotate 180&deg;</button>
@@ -200,6 +201,7 @@
 </div>
 
 <script src="colour-math.js"></script>
+<script src="colour-names.js"></script>
 <script src="hud-common.js"></script>
 <script src="camera-hardware.js"></script>
 <script src="camera-lifecycle.js"></script>
