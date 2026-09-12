@@ -555,6 +555,12 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#pcNfcHint.hide,
+#pcProfileNfcControls.hide,
+#pcNfcStatus.hide {
+  display: none;
+}
+
 #choosePanelInner,
 #quickPresetsPanelInner {
   width: 100%;

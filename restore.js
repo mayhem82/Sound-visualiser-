@@ -3136,6 +3136,92 @@
     if (scanningForProfile) stopScanningForProfile(); else startScanningForProfile();
   });
 
+  // ---- NFC property tags (Web NFC) ------------------------------------
+  // Same {propertyColourProfile: name} payload as the QR tag above, tapped
+  // onto/from a physical NFC tag instead of scanned as a QR code -- for
+  // taping a tag up at the property or room a template belongs to. Web NFC
+  // (NDEFReader) only exists on Android Chrome over HTTPS -- feature-
+  // detected and hidden entirely everywhere else, same as the QR scan
+  // controls above being hidden where Shape Detection isn't supported.
+  const pcNfcHint = document.getElementById("pcNfcHint");
+  const pcProfileNfcControls = document.getElementById("pcProfileNfcControls");
+  const pcWriteProfileNfcBtn = document.getElementById("pcWriteProfileNfcBtn");
+  const pcScanProfileNfcBtn = document.getElementById("pcScanProfileNfcBtn");
+  const pcNfcStatus = document.getElementById("pcNfcStatus");
+
+  const hasProfileNfc = typeof window.NDEFReader === "function";
+  let profileNdefReader = null;
+  let profileNfcScanAbort = null;
+  function getProfileNdefReader() {
+    if (!profileNdefReader) profileNdefReader = new NDEFReader();
+    return profileNdefReader;
+  }
+  if (hasProfileNfc) {
+    pcNfcHint.classList.remove("hide");
+    pcProfileNfcControls.classList.remove("hide");
+    pcNfcStatus.classList.remove("hide");
+  }
+
+  pcWriteProfileNfcBtn.addEventListener("click", async () => {
+    const prof = profiles.find((p) => p.id === profileSelect.value);
+    if (!prof) { pcNfcStatus.textContent = "Pick a template to write a tag for first."; return; }
+    try {
+      pcNfcStatus.textContent = "Tap an NFC tag to write it…";
+      await getProfileNdefReader().write({ records: [{ recordType: "text", data: JSON.stringify({ propertyColourProfile: prof.name }) }] });
+      pcNfcStatus.textContent = `Wrote a property tag for "${prof.name}" to the NFC tag.`;
+    } catch (e) {
+      pcNfcStatus.textContent = "NFC write failed: " + e.message;
+    }
+  });
+
+  function decodeProfileNdefText(record) {
+    try { return new TextDecoder(record.encoding || "utf-8").decode(record.data); } catch (e) { return null; }
+  }
+
+  async function startProfileNfcScan() {
+    try {
+      const reader = getProfileNdefReader();
+      profileNfcScanAbort = new AbortController();
+      await reader.scan({ signal: profileNfcScanAbort.signal });
+      pcScanProfileNfcBtn.textContent = "Stop NFC scan";
+      pcScanProfileNfcBtn.classList.add("active");
+      pcScanProfileNfcBtn.setAttribute("aria-pressed", "true");
+      pcNfcStatus.textContent = "Tap an NFC tag…";
+      reader.onreading = (event) => {
+        let payload = null;
+        for (const record of event.message.records) {
+          if (record.recordType !== "text") continue;
+          const text = decodeProfileNdefText(record);
+          if (!text) continue;
+          try { payload = JSON.parse(text); } catch (e) { continue; }
+          break;
+        }
+        if (payload && isValidProfileTag(payload)) {
+          const prof = profiles.find((p) => p.name.toLowerCase() === payload.propertyColourProfile.trim().toLowerCase());
+          if (!prof) { pcNfcStatus.textContent = `No template named "${payload.propertyColourProfile}" found on this device -- create it first.`; return; }
+          profileSelect.value = prof.id;
+          loadSelectedProfile();
+          pcNfcStatus.textContent = profileStatus.textContent;
+        } else {
+          pcNfcStatus.textContent = "That NFC tag doesn't look like a property tag from this page -- still scanning…";
+        }
+      };
+    } catch (e) {
+      pcNfcStatus.textContent = "NFC scan failed: " + e.message;
+      stopProfileNfcScan();
+    }
+  }
+  function stopProfileNfcScan() {
+    if (profileNfcScanAbort) { profileNfcScanAbort.abort(); profileNfcScanAbort = null; }
+    pcScanProfileNfcBtn.textContent = "\u{1F4F6} Scan from NFC";
+    pcScanProfileNfcBtn.classList.remove("active");
+    pcScanProfileNfcBtn.setAttribute("aria-pressed", "false");
+  }
+  pcScanProfileNfcBtn.addEventListener("click", () => {
+    if (profileNfcScanAbort) stopProfileNfcScan();
+    else startProfileNfcScan();
+  });
+
   // ---- Choose-colour panel ----
 
   function renderPresetGrid() {

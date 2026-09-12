@@ -363,6 +363,12 @@
         <button id="pcScanProfileBtn" class="hud-btn reticle-btn-secondary">&#128247; Scan property QR</button>
       </div>
       <p id="pcScanProfileStatus" class="hint hide" role="status" aria-live="polite"></p>
+      <p class="hint hide" id="pcNfcHint" title="Web NFC (NDEFReader) is Android Chrome only, over HTTPS -- not desktop, not iOS, not Firefox/Safari.">Or tap a physical NFC tag -- write a property tag to one, or scan one back in:</p>
+      <div class="profiles-row hide" id="pcProfileNfcControls">
+        <button id="pcWriteProfileNfcBtn" class="hud-btn reticle-btn-secondary" title="Writes a small tag naming the selected template to an NFC tag you tap during the write -- tape it up at the property or room it belongs to.">&#128246; Write tag to NFC</button>
+        <button id="pcScanProfileNfcBtn" class="hud-btn reticle-btn-secondary" aria-pressed="false" title="Waits for an NFC tag tap and loads the matching already-saved template by name.">&#128246; Scan from NFC</button>
+      </div>
+      <p id="pcNfcStatus" class="hint hide" role="status" aria-live="polite"></p>
     </div>
 
     <button id="closePointsBtn" class="hud-btn reticle-btn-secondary">Close</button>
