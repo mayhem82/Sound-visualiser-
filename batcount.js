@@ -17,6 +17,7 @@
   const MAX_LOG_ENTRIES = 200;
   const ANALYSIS_MAX_DIM = 320; // longest side of the downscaled analysis buffer
   const DETECT_INTERVAL_MS = 200; // ~5Hz — plenty for a human-paced tally aid
+  const vibrateSupported = typeof navigator.vibrate === "function";
 
   const cameraFeed = document.getElementById("cameraFeed");
   const outlineCanvas = document.getElementById("outlineCanvas");
@@ -856,8 +857,16 @@
   });
 
   function setTally(n, pulse) {
-    tally = Math.max(0, n);
+    const clamped = Math.max(0, n);
+    const changed = clamped !== tally;
+    tally = clamped;
     tallyCount.textContent = String(tally);
+    // A confirming buzz on every change, tap or auto-tracked -- the whole
+    // point of this page is watching the sky, not the screen, so a manual
+    // tally tap needs to be felt, not just seen.
+    if (changed && vibrateSupported) {
+      try { navigator.vibrate(25); } catch (e) { /* ignore */ }
+    }
     if (pulse) {
       // Distinguishes an auto-added count from a manual tap at a glance —
       // useful when the point is to be watching the sky, not the screen.
