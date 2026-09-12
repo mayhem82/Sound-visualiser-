@@ -12,13 +12,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="drum-machine.css?v=2">
+<link rel="stylesheet" href="drum-machine.css?v=3">
 </head>
 <body>
 <div id="overlay">
   <div id="panel">
     <h1>Vibration Drum Machine</h1>
-    <p>Four drum pads, played two ways at once: tap one on screen to play it directly, or tap one to arm it and then tap the table beside the phone instead -- the accelerometer picks up that real-world impact and plays the armed pad's sound. Arming stays on after you let go, so the hand that taps the table doesn't need to stay on the screen.</p>
+    <p>An 18-pad drum kit, played two ways at once: tap one on screen to play it directly, or tap one to arm it and then tap the table beside the phone instead -- the accelerometer picks up that real-world impact and plays the armed pad's sound. Arming stays on after you let go, so the hand that taps the table doesn't need to stay on the screen.</p>
     <p class="hint" id="dmSupportHint"></p>
     <button id="startBtn">Open drum machine</button>
     <p id="status" class="status"></p>
@@ -57,6 +57,62 @@
         <span class="dm-pad-icon" aria-hidden="true">👏</span>
         <span class="dm-pad-label">Clap</span>
       </button>
+      <button class="dm-pad" id="dmPad-tom" data-pad="tom" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🥁</span>
+        <span class="dm-pad-label">Tom</span>
+      </button>
+      <button class="dm-pad" id="dmPad-hightom" data-pad="hightom" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🥁</span>
+        <span class="dm-pad-label">High Tom</span>
+      </button>
+      <button class="dm-pad" id="dmPad-lowtom" data-pad="lowtom" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🥁</span>
+        <span class="dm-pad-label">Low Tom</span>
+      </button>
+      <button class="dm-pad" id="dmPad-rimshot" data-pad="rimshot" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🥢</span>
+        <span class="dm-pad-label">Rimshot</span>
+      </button>
+      <button class="dm-pad" id="dmPad-cowbell" data-pad="cowbell" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🔔</span>
+        <span class="dm-pad-label">Cowbell</span>
+      </button>
+      <button class="dm-pad" id="dmPad-crash" data-pad="crash" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">💥</span>
+        <span class="dm-pad-label">Crash</span>
+      </button>
+      <button class="dm-pad" id="dmPad-ride" data-pad="ride" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🎼</span>
+        <span class="dm-pad-label">Ride</span>
+      </button>
+      <button class="dm-pad" id="dmPad-openhihat" data-pad="openhihat" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🎩</span>
+        <span class="dm-pad-label">Open Hi-hat</span>
+      </button>
+      <button class="dm-pad" id="dmPad-conga" data-pad="conga" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🛢️</span>
+        <span class="dm-pad-label">Conga</span>
+      </button>
+      <button class="dm-pad" id="dmPad-shaker" data-pad="shaker" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🌽</span>
+        <span class="dm-pad-label">Shaker</span>
+      </button>
+      <button class="dm-pad" id="dmPad-tambourine" data-pad="tambourine" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🪇</span>
+        <span class="dm-pad-label">Tambourine</span>
+      </button>
+      <button class="dm-pad" id="dmPad-woodblock" data-pad="woodblock" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🪵</span>
+        <span class="dm-pad-label">Woodblock</span>
+      </button>
+      <button class="dm-pad" id="dmPad-snap" data-pad="snap" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🫰</span>
+        <span class="dm-pad-label">Snap</span>
+      </button>
+      <button class="dm-pad" id="dmPad-subkick" data-pad="subkick" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🔊</span>
+        <span class="dm-pad-label">808 Sub Kick</span>
+      </button>
     </div>
     <p class="hint">Tap a pad to play it and arm it -- it stays armed after you let go, so tapping the table beside the phone plays that same pad hands-free. Tap the armed pad again to release it.</p>
     <p id="dmArmedStatus" class="dm-armed-status"></p>
@@ -73,6 +129,10 @@
         Volume:
         <input id="dmVolumeSlider" type="range" min="0" max="100" value="70">
       </label>
+      <label class="hud-slider" title="How much time must pass after a detected tap before another one can trigger the armed pad again. Too low and one physical tap can double-trigger as it rings; too high and two real, fast taps get merged into one.">
+        Minimum gap between taps (ms):
+        <input id="dmMinGapSlider" type="range" min="0" max="300" step="10" value="60">
+      </label>
     </div>
     <p class="hint" id="dmMotionUnsupportedHint"></p>
   </section>
@@ -81,6 +141,6 @@
 </main>
 
 <script src="wake-lock.js"></script>
-<script src="drum-machine.js?v=2"></script>
+<script src="drum-machine.js?v=3"></script>
 </body>
 </html>

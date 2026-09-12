@@ -1,24 +1,29 @@
 (() => {
   "use strict";
 
-  // Vibration Drum Machine -- four drum pads playable two ways: tap one
-  // on screen for a direct hit, or press and hold one down while tapping
-  // the table beside the phone. The accelerometer can only ever report
-  // "an impact happened nearby, this strong," never which drum was
-  // physically tapped or where on the table -- there's no spatial
-  // information in a single vibration sensor. So real-world taps always
-  // play whichever pad is currently held (armed), never a pad chosen by
-  // tap location. See the caveat banner in the UI for the rest of the
-  // honesty around this (surface-dependent sensitivity, real latency).
+  // Vibration Drum Machine -- a full kit of drum pads playable two ways:
+  // tap one on screen for a direct hit, or tap one to arm it (it stays
+  // armed after you let go) and then tap the table beside the phone
+  // instead. The accelerometer can only ever report "an impact happened
+  // nearby, this strong," never which drum was physically tapped or
+  // where on the table -- there's no spatial information in a single
+  // vibration sensor. So real-world taps always play whichever pad is
+  // currently armed, never a pad chosen by tap location. See the caveat
+  // banner in the UI for the rest of the honesty around this
+  // (surface-dependent sensitivity, real latency).
   //
-  // The baseline/threshold/hysteresis tap-detection approach below is the
-  // same one Vibration Scan's passive monitor uses (an EMA rest baseline
-  // that only drifts while not spiking, so a real event doesn't get
-  // absorbed into "the new normal" mid-event), just tuned for a single
-  // one-shot trigger per tap instead of a continuous logged level.
+  // The baseline/threshold tap-detection approach below is the same one
+  // Vibration Scan's passive monitor uses (an EMA rest baseline that only
+  // drifts while not spiking, so a real event doesn't get absorbed into
+  // "the new normal" mid-event). Re-triggering is gated purely by
+  // elapsed time (the "Minimum gap between taps" setting) rather than
+  // requiring the level to first decay back below threshold -- a
+  // resonant surface can keep ringing above threshold well after the
+  // physical tap, which would otherwise suppress every next tap until it
+  // fully settles.
 
   const BASELINE_ALPHA = 0.02; // per-sample EMA rate for the drifting rest baseline
-  const LEVEL_ALPHA = 0.5;     // per-sample EMA rate for the live level -- faster than Vibration Scan's since a drum hit needs to decay back below threshold quickly to be ready for the next one
+  const LEVEL_ALPHA = 0.5;     // per-sample EMA rate for the live level
   const MIN_THRESHOLD = 0.15;  // m/s^2 at sensitivity 100 (most sensitive)
   const MAX_THRESHOLD = 5;     // m/s^2 at sensitivity 1 (least sensitive)
 
@@ -34,6 +39,7 @@
   const dmArmedStatus = document.getElementById("dmArmedStatus");
   const dmSensitivitySlider = document.getElementById("dmSensitivitySlider");
   const dmVolumeSlider = document.getElementById("dmVolumeSlider");
+  const dmMinGapSlider = document.getElementById("dmMinGapSlider");
   const dmMotionUnsupportedHint = document.getElementById("dmMotionUnsupportedHint");
   const pads = Array.from(document.querySelectorAll(".dm-pad"));
 
@@ -54,12 +60,12 @@
 
   let audioCtx = null;
   let noiseBuffer = null;
-  let armedPad = null; // pad id currently held down, or null
+  let armedPad = null; // pad id currently armed, or null
   let motionListening = false;
   let motionPermissionAsked = false;
   let monitorBaseline = null;
   let monitorLevel = 0;
-  let monitorArmed = true; // hysteresis: only fires again once the level drops back below threshold
+  let lastTriggerAt = -Infinity;
 
   function ensureAudio() {
     if (!audioCtx) audioCtx = new AudioContextCtor();
@@ -149,7 +155,135 @@
     });
   }
 
-  const PAD_SOUNDS = { kick: playKick, snare: playSnare, hihat: playHihat, clap: playClap };
+  // Shared helper for the "sweeping sine" family (kick/toms/sub kick) --
+  // just the start/end frequency and decay time differ between them.
+  function playSweep(startHz, endHz, decayS, volMult) {
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(startHz, now);
+    osc.frequency.exponentialRampToValueAtTime(endHz, now + decayS * 0.4);
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume() * volMult, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + decayS);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + decayS + 0.05);
+  }
+
+  // Shared helper for the "filtered noise burst" family (hats/cymbals/
+  // shaker/snap/rimshot) -- filter type/frequency and decay differ.
+  function playNoiseBurst(filterType, filterFreq, decayS, volMult) {
+    const now = audioCtx.currentTime;
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = filterFreq;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume() * volMult, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + decayS);
+    noise.connect(filter).connect(gain).connect(audioCtx.destination);
+    noise.start(now);
+    noise.stop(now + decayS + 0.02);
+  }
+
+  function playTom() { playSweep(220, 90, 0.3, 0.9); }
+  function playHighTom() { playSweep(300, 140, 0.25, 0.85); }
+  function playLowTom() { playSweep(150, 60, 0.35, 0.95); }
+  function play808SubKick() { playSweep(80, 30, 0.6, 1); }
+
+  function playRimshot() {
+    playNoiseBurst("bandpass", 2500, 0.05, 0.7);
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.value = 400;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume() * 0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  function playCowbell() {
+    const now = audioCtx.currentTime;
+    const vol = volume();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 800;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(vol * 0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    bp.connect(gain).connect(audioCtx.destination);
+    [587, 845].forEach((freq) => {
+      const osc = audioCtx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      osc.connect(bp);
+      osc.start(now);
+      osc.stop(now + 0.32);
+    });
+  }
+
+  function playCrash() {
+    playNoiseBurst("highpass", 5000, 1.2, 0.7);
+  }
+
+  function playRide() {
+    playNoiseBurst("highpass", 4000, 0.15, 0.4);
+    playNoiseBurst("bandpass", 3500, 0.6, 0.35);
+  }
+
+  function playOpenHihat() { playNoiseBurst("highpass", 6500, 0.4, 0.55); }
+
+  function playConga() {
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume() * 0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  function playShaker() {
+    playNoiseBurst("highpass", 8000, 0.08, 0.3);
+    setTimeout(() => { if (audioCtx) playNoiseBurst("highpass", 8000, 0.08, 0.25); }, 60);
+  }
+
+  function playTambourine() {
+    playNoiseBurst("highpass", 6000, 0.15, 0.3);
+    [4000, 6500, 9000].forEach((freq) => playNoiseBurst("bandpass", freq, 0.2, 0.18));
+  }
+
+  function playWoodblock() {
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = 1000;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume() * 0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  function playSnap() { playNoiseBurst("bandpass", 2800, 0.04, 0.6); }
+
+  const PAD_SOUNDS = {
+    kick: playKick, snare: playSnare, hihat: playHihat, clap: playClap,
+    tom: playTom, rimshot: playRimshot, cowbell: playCowbell, crash: playCrash,
+    openhihat: playOpenHihat, ride: playRide, hightom: playHighTom, lowtom: playLowTom,
+    conga: playConga, shaker: playShaker, tambourine: playTambourine,
+    woodblock: playWoodblock, snap: playSnap, subkick: play808SubKick,
+  };
 
   function triggerPad(padId, source) {
     const fn = PAD_SOUNDS[padId];
@@ -203,6 +337,8 @@
     return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
   }
 
+  function minGapMs() { return Number(dmMinGapSlider.value); }
+
   function handleMotion(e) {
     const m = magnitudeOf(e);
     if (m === null) return;
@@ -213,13 +349,12 @@
     monitorLevel += (deviation - monitorLevel) * LEVEL_ALPHA;
 
     if (monitorLevel >= threshold) {
-      if (monitorArmed) {
-        monitorArmed = false;
+      const now = performance.now();
+      if (now - lastTriggerAt >= minGapMs()) {
+        lastTriggerAt = now;
         if (armedPad) triggerPad(armedPad, "tap");
-        else dmArmedStatus.textContent = "Table tap detected -- hold a pad down to hear it next time.";
+        else dmArmedStatus.textContent = "Table tap detected -- tap a pad to arm one.";
       }
-    } else {
-      monitorArmed = true;
     }
   }
 
