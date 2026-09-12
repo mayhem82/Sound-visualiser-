@@ -148,6 +148,13 @@ body { overflow: auto; }
   transition: width 0.05s linear, left 0.05s linear;
 }
 
+/* Tilt mode's left side is the echo zone, not lower pitch -- a distinct
+   colour so it reads as a different control, not just "more of the same
+   meter going the other way." */
+#thMeterFill.echo {
+  background: linear-gradient(270deg, #fda4af, #fb923c);
+}
+
 #thMeterCenter {
   position: absolute;
   top: 0;

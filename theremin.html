@@ -18,7 +18,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Theremin</h1>
-    <p>Two ways to play, picked below once open: <strong>Doppler</strong> plays a fixed near-ultrasonic tone through the speaker and reads its echo with the microphone -- a moving hand nearby shifts that echo's frequency, driving pitch/volume, a one-antenna analogue of a real theremin's proximity sensing. <strong>Tilt + Touch</strong> instead uses two real, independent inputs like a real theremin's two antennas -- tilt the phone left/right for pitch, touch the pad with a finger for volume (no touch at all is silence, same as a real theremin's hand-away-from-the-loop silence).</p>
+    <p>Two ways to play, picked below once open: <strong>Doppler</strong> plays a fixed near-ultrasonic tone through the speaker and reads its echo with the microphone -- a moving hand nearby shifts that echo's frequency, driving pitch/volume, a one-antenna analogue of a real theremin's proximity sensing. <strong>Tilt + Touch</strong> instead uses two real, independent inputs -- tilt the phone <em>right</em> for pitch, tilt it <em>left</em> for a real echo/delay effect instead (the two tilt directions do two different things, not one pitch axis), and touch the pad with a finger for volume (no touch at all is silence, same as a real theremin's hand-away-from-the-loop silence).</p>
     <p class="hint"><strong>Doppler is an approximation, not a distance measurement</strong> -- "something moved closer/further," never an exact distance, and depends heavily on your device's speaker/mic and a quiet room; the probe tone sits at the edge of human hearing and may be faintly audible. <strong>Tilt + Touch are real, direct readings</strong> (no approximation), just a different physical interaction -- you're moving the device and touching a pad, not sensing a hand near a still one.</p>
     <p class="hint" id="thSupportHint"></p>
     <button id="startBtn">Open theremin</button>
@@ -39,13 +39,13 @@
 
   <section class="dmx-section" id="thCaveatBanner">
     <p id="thCaveatDoppler"><strong>Doppler: proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
-    <p id="thCaveatTilt" class="hide"><strong>Tilt + Touch: real, direct readings, no approximation</strong> -- but it's the phone's own tilt and a touch on the pad, not a hand's distance in mid-air. Unlike Doppler, holding a tilt angle holds the pitch (nothing decays back to centre on its own), and volume is silent until you actually touch the pad.</p>
+    <p id="thCaveatTilt" class="hide"><strong>Tilt + Touch: real, direct readings, no approximation</strong> -- but it's the phone's own tilt and a touch on the pad, not a hand's distance in mid-air. Tilt <em>right</em> for pitch (holding an angle holds the pitch, unlike Doppler's decay-to-centre); tilt <em>left</em> instead engages a real echo/delay effect -- pitch stays at its base note while tilted left, it doesn't keep dropping. MIDI output can't carry the echo effect (nothing local to process on a remote device's own note) -- only Synth and Instrument get it.</p>
   </section>
 
   <section class="dmx-section">
     <h2>Play</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="Doppler: ultrasonic echo senses a moving hand near the phone (see the caveat above). Tilt + Touch: the phone's own real orientation sensor for pitch, plus touching the pad below for volume.">
+      <label class="hud-slider" title="Doppler: ultrasonic echo senses a moving hand near the phone (see the caveat above). Tilt + Touch: tilt right for pitch, tilt left for a real echo/delay effect instead, touch the pad below for volume.">
         Sensing:
         <select id="thSensingSelect">
           <option value="doppler">Doppler (ultrasonic echo)</option>
@@ -63,7 +63,7 @@
     <div id="thMeterWrap">
       <div id="thMeterBar"><div id="thMeterFill"></div><div id="thMeterCenter"></div></div>
       <p class="hint" id="thMeterHintDoppler">Left = receding, right = approaching, centre = still</p>
-      <p class="hint hide" id="thMeterHintTilt">Left = tilted left, right = tilted right</p>
+      <p class="hint hide" id="thMeterHintTilt">Right (blue) = pitch, left (orange) = echo amount</p>
     </div>
     <p id="thNoteReadout" class="th-note-readout">--</p>
   </section>

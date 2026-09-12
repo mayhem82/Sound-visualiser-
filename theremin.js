@@ -39,8 +39,12 @@
   const ACTIVITY_SMOOTHING_PER_SEC = 8; // how fast the volume-driving activity estimate follows new energy
   const BASE_FREQ = 220;          // A3 -- centre pitch when position is 0
   const PITCH_RANGE_OCTAVES = 1.5;
-  const TILT_PITCH_RANGE_DEG = 45;   // gamma at +-this many degrees maps to position +-1
+  const TILT_PITCH_RANGE_DEG = 45;   // gamma at +this many degrees (tilt right) maps to pitch position 1
+  const TILT_ECHO_RANGE_DEG = 45;    // gamma at -this many degrees (tilt left) maps to full echo amount
   const TILT_SMOOTHING_PER_SEC = 12; // light smoothing only -- tilt/touch are direct readings, not signals that need heavy filtering
+  const ECHO_DELAY_SEC = 0.28;
+  const ECHO_MAX_FEEDBACK = 0.65;    // kept well under 1 so repeats always decay, never build up into runaway feedback
+  const ECHO_MAX_WET = 0.7;
   const THEREMIN_MIDI_CHANNEL = 0;
   const NOTE_DURATION_MS = 500;
   const PENTATONIC_DEGREES = [0, 2, 4, 7, 9]; // major pentatonic, same shape as sound-colour.js's chime scale
@@ -133,6 +137,7 @@
   let freqData = null;
   let probeOsc = null, probeGain = null;
   let synthOsc = null, synthGain = null;
+  let echoInputBus = null, echoDelay = null, echoFeedback = null, echoWet = null;
   let rafId = null;
   let lastTickAt = null;
   let playing = false;
@@ -153,7 +158,9 @@
   // as-is, unsmoothed -- see tiltPositionAndActivity for why.
   let rawTiltPos = 0;
   let rawTiltVolume = 0;
+  let rawEchoAmount = 0;
   let smoothedTiltPos = 0;
+  let smoothedEchoAmount = 0;
   let orientationPermissionGranted = false;
 
   function dbToLinearEnergy(db) {
@@ -184,9 +191,16 @@
     return `${name}${octave}`;
   }
 
+  // Tilt only works one way for pitch: tilting right (positive gamma)
+  // raises pitch as before, but tilting left no longer lowers it further
+  // -- that whole other direction is repurposed as a real echo/delay
+  // effect instead (see the DelayNode feedback chain below), so the two
+  // directions do two genuinely different things rather than one
+  // symmetric pitch axis.
   function handleOrientation(e) {
     if (typeof e.gamma !== "number") return;
-    rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
+    rawTiltPos = Math.max(0, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
+    rawEchoAmount = Math.max(0, Math.min(1, -e.gamma / TILT_ECHO_RANGE_DEG));
   }
 
   // Touch pad: silent (0) whenever no finger is on it, matching a real
@@ -200,7 +214,12 @@
   }
   function handleTouchPadDown(e) {
     thTouchPad.classList.add("active");
-    thTouchPad.setPointerCapture(e.pointerId);
+    // Best-effort -- pointer capture keeps the drag tracked even if the
+    // finger slides off the pad's edge, but its absence shouldn't block
+    // the volume update below (e.g. it can throw if the browser doesn't
+    // consider this pointer "active" for capture, which real devices can
+    // hit in edge cases too, not just synthetic test events).
+    try { thTouchPad.setPointerCapture(e.pointerId); } catch (err) {}
     updateTouchVolumeFromClientY(e.clientY);
   }
   function handleTouchPadMove(e) {
@@ -227,17 +246,19 @@
     }
 
     const { position: pos, smoothedActivity: act } = updateFromBands(aboveEnergy, belowEnergy, dtSeconds);
-    return { pos, activityGain: Math.max(0, Math.min(1, act * 3)) }; // scale so typical motion energy reaches full volume; silent when still
+    return { pos, activityGain: Math.max(0, Math.min(1, act * 3)), echoAmount: 0 }; // Doppler doesn't use the echo effect -- see handleOrientation
   }
 
   function tiltPositionAndActivity(dtSeconds) {
-    // Pitch gets light smoothing (a shaky hand shouldn't stutter the
-    // note), but volume is a direct touch on/off + position -- smoothing
-    // it would blur "release = instant silence" into a brief decay tail,
-    // breaking the one promise this mode makes that Doppler can't.
+    // Pitch and echo both get light smoothing (a shaky hand shouldn't
+    // stutter the note or zipper the delay's feedback level), but volume
+    // is a direct touch on/off + position -- smoothing it would blur
+    // "release = instant silence" into a brief decay tail, breaking the
+    // one promise this mode makes that Doppler can't.
     const smoothing = Math.min(1, TILT_SMOOTHING_PER_SEC * dtSeconds);
     smoothedTiltPos += (rawTiltPos - smoothedTiltPos) * smoothing;
-    return { pos: smoothedTiltPos, activityGain: rawTiltVolume };
+    smoothedEchoAmount += (rawEchoAmount - smoothedEchoAmount) * smoothing;
+    return { pos: smoothedTiltPos, activityGain: rawTiltVolume, echoAmount: smoothedEchoAmount };
   }
 
   function tick(now) {
@@ -245,7 +266,9 @@
     const dtSeconds = lastTickAt ? Math.min(0.2, (now - lastTickAt) / 1000) : 0.016;
     lastTickAt = now;
 
-    const { pos, activityGain } = sensingMode === "doppler" ? dopplerPositionAndActivity(dtSeconds) : tiltPositionAndActivity(dtSeconds);
+    const { pos, activityGain, echoAmount } = sensingMode === "doppler" ? dopplerPositionAndActivity(dtSeconds) : tiltPositionAndActivity(dtSeconds);
+    echoFeedback.gain.setTargetAtTime(echoAmount * ECHO_MAX_FEEDBACK, audioCtx.currentTime, 0.05);
+    echoWet.gain.setTargetAtTime(echoAmount * ECHO_MAX_WET, audioCtx.currentTime, 0.05);
 
     const freq = frequencyForPosition(pos);
     const synthVol = Number(thSynthVolSlider.value) / 100;
@@ -259,16 +282,32 @@
       // oscillator silent and instead trigger one discrete note each time
       // the quantized position crosses into a new scale step.
       synthGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-      const scaleIndex = Math.max(0, Math.min(SCALE_HZ.length - 1, Math.round(((pos + 1) / 2) * (SCALE_HZ.length - 1))));
+      // Doppler's pos is -1..1 (symmetric); Tilt's is 0..1 (pitch only
+      // ever rises from the base note, since 0 and below is the echo
+      // zone instead) -- normalize both onto the same 0..1 scale-index
+      // fraction rather than assuming one fixed convention.
+      const posFrac = sensingMode === "doppler" ? (pos + 1) / 2 : pos;
+      const scaleIndex = Math.max(0, Math.min(SCALE_HZ.length - 1, Math.round(posFrac * (SCALE_HZ.length - 1))));
       if (scaleIndex !== lastScaleIndex && activityGain > 0.05) {
         lastScaleIndex = scaleIndex;
         playDiscreteNote(SCALE_HZ[scaleIndex], Math.max(0.2, synthVol * activityGain));
       }
     }
 
-    thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
-    thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
-    thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
+    if (echoAmount > 0.02) {
+      // Echo zone (tilt mode, tilted left) -- pitch is pinned at the base
+      // note while this is active, so the meter and readout show echo
+      // intensity instead of a pitch that isn't actually changing.
+      thMeterFill.classList.add("echo");
+      thMeterFill.style.left = `${50 - echoAmount * 50}%`;
+      thMeterFill.style.width = `${echoAmount * 50}%`;
+      thNoteReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
+    } else {
+      thMeterFill.classList.remove("echo");
+      thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
+      thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
+      thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
+    }
 
     rafId = requestAnimationFrame(tick);
   }
@@ -280,7 +319,10 @@
       const inst = H.GM_ALL_INSTRUMENTS.find((i) => i.folder === instrument) || H.GM_ALL_INSTRUMENTS.find((i) => i.folder === "music_box");
       H.midi.playNote(THEREMIN_MIDI_CHANNEL, inst.program, midiNote, velocity, NOTE_DURATION_MS);
     } else if (output === "instrument") {
-      H.instrument.playNote(audioCtx, audioCtx.destination, instrument, midiNote, velocity, NOTE_DURATION_MS / 1000);
+      // Through the echo bus, not straight to destination -- so a sampled
+      // instrument's notes ring through the same left-tilt echo effect
+      // Synth output gets, instead of only the raw oscillator getting it.
+      H.instrument.playNote(audioCtx, echoInputBus, instrument, midiNote, velocity, NOTE_DURATION_MS / 1000);
     }
   }
 
@@ -335,7 +377,9 @@
     thTouchPad.addEventListener("pointercancel", handleTouchPadUp);
     rawTiltPos = 0;
     rawTiltVolume = 0; // silent until the pad is actually touched, same as a real theremin's volume antenna
+    rawEchoAmount = 0;
     smoothedTiltPos = 0;
+    smoothedEchoAmount = 0;
     orientationPill.className = "dmx-pill connected";
     orientationPillText.textContent = "Orientation sensor: on";
   }
@@ -405,12 +449,35 @@
     try {
       audioCtx = new AudioContextCtor();
 
+      // Echo bus: a real DelayNode + feedback loop, tilted-left in Tilt
+      // mode. Anything that should be affected by it (the synth
+      // oscillator, Instrument-output notes) connects here instead of
+      // straight to destination; echoInputBus itself always passes the
+      // dry signal through unconditionally, so Synth/Instrument sound
+      // identical to before whenever echoAmount is 0. MIDI output can't
+      // go through this at all -- there's no local audio to process on a
+      // remote device's own note.
+      echoInputBus = audioCtx.createGain();
+      echoInputBus.gain.value = 1;
+      echoInputBus.connect(audioCtx.destination);
+      echoDelay = audioCtx.createDelay(1.0);
+      echoDelay.delayTime.value = ECHO_DELAY_SEC;
+      echoFeedback = audioCtx.createGain();
+      echoFeedback.gain.value = 0;
+      echoWet = audioCtx.createGain();
+      echoWet.gain.value = 0;
+      echoInputBus.connect(echoDelay);
+      echoDelay.connect(echoFeedback);
+      echoFeedback.connect(echoDelay);
+      echoDelay.connect(echoWet);
+      echoWet.connect(audioCtx.destination);
+
       synthOsc = audioCtx.createOscillator();
       synthOsc.type = "sine";
       synthOsc.frequency.value = BASE_FREQ;
       synthGain = audioCtx.createGain();
       synthGain.gain.value = 0;
-      synthOsc.connect(synthGain).connect(audioCtx.destination);
+      synthOsc.connect(synthGain).connect(echoInputBus);
       synthOsc.start();
 
       await startSensing();
@@ -438,8 +505,10 @@
     stopSensing();
     if (synthOsc) { try { synthOsc.stop(); } catch (e) {} synthOsc = null; }
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+    echoInputBus = null; echoDelay = null; echoFeedback = null; echoWet = null;
     thStartBtn.classList.remove("hide");
     thStopBtn.classList.add("hide");
+    thMeterFill.classList.remove("echo");
     thMeterFill.style.width = "0%";
     thNoteReadout.textContent = "--";
     if (window.WakeLockHelper) window.WakeLockHelper.disable();
