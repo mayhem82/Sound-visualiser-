@@ -1,4 +1,4 @@
-/* Doppler Theremin — page-specific styles only.
+/* Theremin — page-specific styles only.
    Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider,
    .status) comes from style.css; .dmx-section/.dmx-pill/.dmx-connect-btn/
    .dmx-top-status/.back-link mirror the same small set of "plain panel"
@@ -105,6 +105,16 @@ body { overflow: auto; }
 .dmx-pill.error {
   background: rgba(248, 113, 113, 0.18);
   color: #fecaca;
+}
+
+#probePill.hide,
+#micPill.hide,
+#orientationPill.hide,
+#thCaveatDoppler.hide,
+#thCaveatTilt.hide,
+#thMeterHintDoppler.hide,
+#thMeterHintTilt.hide {
+  display: none;
 }
 
 .dmx-pill-dot {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Doppler Theremin</title>
+<title>Theremin</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👋</text></svg>">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -17,9 +17,9 @@
 <body>
 <div id="overlay">
   <div id="panel">
-    <h1>Doppler Theremin</h1>
-    <p>Plays a fixed, near-ultrasonic tone through the speaker and listens for its echo with the microphone -- a moving hand nearby shifts that echo's frequency (the Doppler effect), which drives a played pitch and volume in real time. A one-antenna analogue of a real theremin's proximity sensing, not a distance sensor.</p>
-    <p class="hint"><strong>Not precise sensing.</strong> This reads "something moved closer/further," never an exact distance -- results depend heavily on your device's speaker/mic and how quiet the room is. The probe tone sits right at the edge of human hearing and may be faintly audible, especially to younger listeners.</p>
+    <h1>Theremin</h1>
+    <p>Two ways to play, picked below once open: <strong>Doppler</strong> plays a fixed near-ultrasonic tone through the speaker and reads its echo with the microphone -- a moving hand nearby shifts that echo's frequency, driving pitch/volume, a one-antenna analogue of a real theremin's proximity sensing. <strong>Tilt</strong> instead reads the phone's own real orientation -- tilt left/right for pitch, forward/back for volume -- moving the instrument itself rather than a hand near it.</p>
+    <p class="hint"><strong>Doppler is an approximation, not a distance measurement</strong> -- "something moved closer/further," never an exact distance, and depends heavily on your device's speaker/mic and a quiet room; the probe tone sits at the edge of human hearing and may be faintly audible. <strong>Tilt is a real, direct reading</strong> (no approximation), just a different physical interaction -- you're moving the device, not sensing a hand near a still one.</p>
     <p class="hint" id="thSupportHint"></p>
     <button id="startBtn">Open theremin</button>
     <p id="status" class="status"></p>
@@ -33,22 +33,34 @@
   <div class="dmx-top-status">
     <span id="probePill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="probePillText">Probe tone: off</span></span>
     <span id="micPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="micPillText">Microphone: off</span></span>
+    <span id="orientationPill" class="dmx-pill hide"><span class="dmx-pill-dot"></span><span id="orientationPillText">Orientation sensor: off</span></span>
     <p id="thStatus" class="status"></p>
   </div>
 
   <section class="dmx-section" id="thCaveatBanner">
-    <p><strong>Proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
+    <p id="thCaveatDoppler"><strong>Doppler: proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
+    <p id="thCaveatTilt" class="hide"><strong>Tilt: a real, direct reading, no approximation</strong> -- but it's the phone's own tilt, not a hand's distance. Unlike Doppler, holding a tilt angle holds the pitch (nothing decays back to centre on its own).</p>
   </section>
 
   <section class="dmx-section">
     <h2>Play</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Doppler: ultrasonic echo senses a moving hand near the phone (see the caveat above). Tilt: the phone's own real orientation sensor -- tilt left/right for pitch, forward/back for volume.">
+        Sensing:
+        <select id="thSensingSelect">
+          <option value="doppler">Doppler (ultrasonic echo)</option>
+          <option value="tilt">Tilt (device orientation)</option>
+        </select>
+      </label>
+    </div>
     <div class="dmx-inline-controls">
       <button id="thStartBtn" class="dmx-connect-btn">Start playing</button>
       <button id="thStopBtn" class="hud-btn hide">Stop</button>
     </div>
     <div id="thMeterWrap">
       <div id="thMeterBar"><div id="thMeterFill"></div><div id="thMeterCenter"></div></div>
-      <p class="hint">Left = receding, right = approaching, centre = still</p>
+      <p class="hint" id="thMeterHintDoppler">Left = receding, right = approaching, centre = still</p>
+      <p class="hint hide" id="thMeterHintTilt">Left = tilted left, right = tilted right</p>
     </div>
     <p id="thNoteReadout" class="th-note-readout">--</p>
   </section>
@@ -56,7 +68,7 @@
   <section class="dmx-section">
     <h2>Settings</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="How loud the near-ultrasonic probe tone plays through the speaker -- louder gives a stronger echo (better detection) at the cost of being more likely to be faintly audible.">
+      <label id="thProbeVolWrap" class="hud-slider" title="How loud the near-ultrasonic probe tone plays through the speaker -- louder gives a stronger echo (better detection) at the cost of being more likely to be faintly audible. Doppler only.">
         Probe volume:
         <input id="thProbeVolSlider" type="range" min="0" max="100" value="40">
       </label>

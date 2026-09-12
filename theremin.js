@@ -1,22 +1,32 @@
 (() => {
   "use strict";
 
-  // Doppler Theremin — a one-antenna analogue of a real theremin's
-  // proximity sensing, built entirely from Web Audio primitives already
-  // used elsewhere in this suite (AudioContext, AnalyserNode). A fixed,
+  // Theremin — two independent sensing modes driving the same played
+  // pitch/volume:
+  //
+  // Doppler: a one-antenna analogue of a real theremin's proximity
+  // sensing, built entirely from Web Audio primitives already used
+  // elsewhere in this suite (AudioContext, AnalyserNode). A fixed,
   // near-ultrasonic tone plays continuously through the speaker; a moving
   // hand nearby Doppler-shifts the echo the microphone picks up, and that
-  // shift drives a played pitch/volume.
+  // shift drives a played pitch/volume. Important honest limit, not just a
+  // caveat banner: only MOTION produces a detectable Doppler shift at all
+  // -- a hand held still and close looks identical (acoustically) to no
+  // hand there, because the probe tone bleeds from speaker to mic directly
+  // regardless, swamping any static reflection at the same frequency. So
+  // this responds to "hand moving toward/away," not "hand held at a
+  // certain distance," and the pitch estimate decays back toward centre on
+  // its own when nothing's moving rather than holding -- a real theremin
+  // can hold a pitch by holding a position; this mode can't, and doesn't
+  // pretend to.
   //
-  // Important honest limits, not just a caveat banner: only MOTION
-  // produces a detectable Doppler shift at all -- a hand held still and
-  // close looks identical (acoustically) to no hand there, because the
-  // probe tone bleeds from speaker to mic directly regardless, swamping
-  // any static reflection at the same frequency. So this responds to
-  // "hand moving toward/away," not "hand held at a certain distance," and
-  // the pitch estimate below decays back toward centre on its own when
-  // nothing's moving rather than holding -- a real theremin can hold a
-  // pitch by holding a position; this one can't, and doesn't pretend to.
+  // Tilt: the phone's own real DeviceOrientationEvent reading -- gamma
+  // (left/right tilt) drives pitch, beta (forward/back tilt) drives
+  // volume. A real, direct, non-approximated reading (unlike Doppler),
+  // just a different physical interaction: you're moving the instrument
+  // itself, not sensing a hand near a still one -- and holding a tilt
+  // angle genuinely holds the pitch, since there's no decay-to-centre
+  // reason to fake here the way Doppler's velocity-derived signal needs.
 
   const PROBE_FREQ = 18500;       // Hz -- near-ultrasonic; may be faintly audible, especially to younger listeners
   const FFT_SIZE = 16384;         // ~2.7Hz/bin at 44.1kHz -- fine enough to resolve a walking-speed hand's Doppler shift
@@ -27,6 +37,9 @@
   const ACTIVITY_SMOOTHING_PER_SEC = 8; // how fast the volume-driving activity estimate follows new energy
   const BASE_FREQ = 220;          // A3 -- centre pitch when position is 0
   const PITCH_RANGE_OCTAVES = 1.5;
+  const TILT_PITCH_RANGE_DEG = 45;   // gamma at +-this many degrees maps to position +-1
+  const TILT_VOLUME_RANGE_DEG = 45;  // beta at +-this many degrees maps to volume 0..1
+  const TILT_SMOOTHING_PER_SEC = 12; // light smoothing only -- tilt is a direct reading, not a signal that needs heavy filtering
   const THEREMIN_MIDI_CHANNEL = 0;
   const NOTE_DURATION_MS = 500;
   const PENTATONIC_DEGREES = [0, 2, 4, 7, 9]; // major pentatonic, same shape as sound-colour.js's chime scale
@@ -58,11 +71,14 @@
   const probePillText = document.getElementById("probePillText");
   const micPill = document.getElementById("micPill");
   const micPillText = document.getElementById("micPillText");
+  const orientationPill = document.getElementById("orientationPill");
+  const orientationPillText = document.getElementById("orientationPillText");
 
   const thStartBtn = document.getElementById("thStartBtn");
   const thStopBtn = document.getElementById("thStopBtn");
   const thMeterFill = document.getElementById("thMeterFill");
   const thNoteReadout = document.getElementById("thNoteReadout");
+  const thProbeVolWrap = document.getElementById("thProbeVolWrap");
   const thProbeVolSlider = document.getElementById("thProbeVolSlider");
   const thSynthVolSlider = document.getElementById("thSynthVolSlider");
   const thOutputSelect = document.getElementById("thOutputSelect");
@@ -71,17 +87,27 @@
   const thMidiOutputWrap = document.getElementById("thMidiOutputWrap");
   const thMidiOutputSelect = document.getElementById("thMidiOutputSelect");
   const thMidiUnsupportedHint = document.getElementById("thMidiUnsupportedHint");
+  const thSensingSelect = document.getElementById("thSensingSelect");
+  const thCaveatDoppler = document.getElementById("thCaveatDoppler");
+  const thCaveatTilt = document.getElementById("thCaveatTilt");
+  const thMeterHintDoppler = document.getElementById("thMeterHintDoppler");
+  const thMeterHintTilt = document.getElementById("thMeterHintTilt");
 
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   const hasAudio = typeof AudioContextCtor === "function";
   const hasMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  if (!hasAudio || !hasMic) {
-    thSupportHint.textContent = "This browser doesn't support the Web Audio API and/or microphone access -- both are needed here.";
+  const hasOrientation = typeof window.DeviceOrientationEvent !== "undefined";
+  if (!hasAudio || (!hasMic && !hasOrientation)) {
+    thSupportHint.textContent = "This browser doesn't support the Web Audio API and/or any sensing method (microphone, device orientation) -- at least one sensing method is needed here.";
     startBtn.disabled = true;
     startBtn.style.opacity = "0.4";
     startBtn.style.cursor = "not-allowed";
     return;
   }
+  if (!hasMic) thSensingSelect.querySelector('option[value="doppler"]').disabled = true;
+  if (!hasOrientation) thSensingSelect.querySelector('option[value="tilt"]').disabled = true;
+  let sensingMode = hasMic ? "doppler" : "tilt";
+  thSensingSelect.value = sensingMode;
 
   // MidiInstrumentHelper (midi-instrument.js) is a hard dependency of the
   // MIDI/Instrument outputs only -- Synth (the default) works without it,
@@ -112,9 +138,20 @@
   // activity (0..~) -- both pure state updated once per animation frame;
   // kept outside the loop function so a test can drive updateFromBands()
   // directly with synthetic spectra instead of needing real audio/mic
-  // hardware to exercise the mapping logic.
+  // hardware to exercise the mapping logic. Doppler mode only.
   let position = 0;
   let smoothedActivity = 0;
+
+  // Tilt mode's own state: raw values updated asynchronously by
+  // handleOrientation whenever a deviceorientation event arrives, and
+  // smoothed values tick() eases toward each frame -- a real direct
+  // reading needs far lighter smoothing than Doppler's derived signal,
+  // just enough to take the jitter off a shaky hand.
+  let rawTiltPos = 0;
+  let rawTiltVolume = 0;
+  let smoothedTiltPos = 0;
+  let smoothedTiltVolume = 0;
+  let orientationPermissionGranted = false;
 
   function dbToLinearEnergy(db) {
     if (!isFinite(db)) return 0;
@@ -144,11 +181,13 @@
     return `${name}${octave}`;
   }
 
-  function tick(now) {
-    if (!playing) return;
-    const dtSeconds = lastTickAt ? Math.min(0.2, (now - lastTickAt) / 1000) : 0.016;
-    lastTickAt = now;
+  function handleOrientation(e) {
+    if (typeof e.gamma !== "number" || typeof e.beta !== "number") return;
+    rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
+    rawTiltVolume = Math.max(0, Math.min(1, (e.beta + TILT_VOLUME_RANGE_DEG) / (2 * TILT_VOLUME_RANGE_DEG)));
+  }
 
+  function dopplerPositionAndActivity(dtSeconds) {
     analyser.getFloatFrequencyData(freqData);
     const binHz = audioCtx.sampleRate / FFT_SIZE;
     const f0Bin = Math.round(PROBE_FREQ / binHz);
@@ -163,10 +202,25 @@
     }
 
     const { position: pos, smoothedActivity: act } = updateFromBands(aboveEnergy, belowEnergy, dtSeconds);
+    return { pos, activityGain: Math.max(0, Math.min(1, act * 3)) }; // scale so typical motion energy reaches full volume; silent when still
+  }
+
+  function tiltPositionAndActivity(dtSeconds) {
+    const smoothing = Math.min(1, TILT_SMOOTHING_PER_SEC * dtSeconds);
+    smoothedTiltPos += (rawTiltPos - smoothedTiltPos) * smoothing;
+    smoothedTiltVolume += (rawTiltVolume - smoothedTiltVolume) * smoothing;
+    return { pos: smoothedTiltPos, activityGain: smoothedTiltVolume };
+  }
+
+  function tick(now) {
+    if (!playing) return;
+    const dtSeconds = lastTickAt ? Math.min(0.2, (now - lastTickAt) / 1000) : 0.016;
+    lastTickAt = now;
+
+    const { pos, activityGain } = sensingMode === "doppler" ? dopplerPositionAndActivity(dtSeconds) : tiltPositionAndActivity(dtSeconds);
 
     const freq = frequencyForPosition(pos);
     const synthVol = Number(thSynthVolSlider.value) / 100;
-    const activityGain = Math.max(0, Math.min(1, act * 3)); // scale so typical motion energy reaches full volume; silent when still
 
     if (output === "synth") {
       synthOsc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.03);
@@ -202,26 +256,117 @@
     }
   }
 
+  async function startDopplerSensing() {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    const micSource = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = FFT_SIZE;
+    analyser.smoothingTimeConstant = 0;
+    freqData = new Float32Array(analyser.frequencyBinCount);
+    micSource.connect(analyser);
+
+    probeOsc = audioCtx.createOscillator();
+    probeOsc.type = "sine";
+    probeOsc.frequency.value = PROBE_FREQ;
+    probeGain = audioCtx.createGain();
+    probeGain.gain.value = Number(thProbeVolSlider.value) / 100;
+    probeOsc.connect(probeGain).connect(audioCtx.destination);
+    probeOsc.start();
+
+    position = 0;
+    smoothedActivity = 0;
+    probePill.className = "dmx-pill connected";
+    probePillText.textContent = "Probe tone: on";
+    micPill.className = "dmx-pill connected";
+    micPillText.textContent = "Microphone: on";
+  }
+
+  function stopDopplerSensing() {
+    if (probeOsc) { try { probeOsc.stop(); } catch (e) {} probeOsc = null; }
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    analyser = null;
+    freqData = null;
+    probePill.className = "dmx-pill";
+    probePillText.textContent = "Probe tone: off";
+    micPill.className = "dmx-pill";
+    micPillText.textContent = "Microphone: off";
+  }
+
+  async function startTiltSensing() {
+    if (typeof DeviceOrientationEvent.requestPermission === "function" && !orientationPermissionGranted) {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== "granted") throw new Error("Orientation sensor: permission denied.");
+      orientationPermissionGranted = true;
+    }
+    window.addEventListener("deviceorientation", handleOrientation);
+    rawTiltPos = 0;
+    rawTiltVolume = 0.5;
+    smoothedTiltPos = 0;
+    smoothedTiltVolume = 0.5;
+    orientationPill.className = "dmx-pill connected";
+    orientationPillText.textContent = "Orientation sensor: on";
+  }
+
+  function stopTiltSensing() {
+    window.removeEventListener("deviceorientation", handleOrientation);
+    orientationPill.className = "dmx-pill";
+    orientationPillText.textContent = "Orientation sensor: off";
+  }
+
+  async function startSensing() {
+    if (sensingMode === "doppler") await startDopplerSensing();
+    else await startTiltSensing();
+  }
+  function stopSensing() {
+    stopDopplerSensing();
+    stopTiltSensing();
+  }
+
+  // Reflects sensingMode into every mode-specific control -- called on
+  // page load and whenever Sensing changes.
+  function applySensingModeUI() {
+    const isDoppler = sensingMode === "doppler";
+    probePill.classList.toggle("hide", !isDoppler);
+    micPill.classList.toggle("hide", !isDoppler);
+    orientationPill.classList.toggle("hide", isDoppler);
+    thProbeVolWrap.classList.toggle("hide", !isDoppler);
+    thCaveatDoppler.classList.toggle("hide", !isDoppler);
+    thCaveatTilt.classList.toggle("hide", isDoppler);
+    thMeterHintDoppler.classList.toggle("hide", !isDoppler);
+    thMeterHintTilt.classList.toggle("hide", isDoppler);
+  }
+  applySensingModeUI();
+
+  thSensingSelect.addEventListener("change", async () => {
+    const next = thSensingSelect.value;
+    if (next === sensingMode) return;
+    if (playing) {
+      // tick()'s rAF loop must not run while a sensor is mid-switch --
+      // otherwise it can read Doppler's analyser (or tilt's smoothed
+      // state) between stopSensing() clearing it and startSensing()
+      // (an async mic-permission wait) finishing it, crashing on a null
+      // analyser or just briefly reading stale state.
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      stopSensing();
+      sensingMode = next;
+      applySensingModeUI();
+      try { await startSensing(); }
+      catch (e) { thStatus.textContent = "Couldn't switch sensing: " + e.message; stopPlaying(); return; }
+      lastTickAt = null;
+      lastScaleIndex = -1;
+      rafId = requestAnimationFrame(tick);
+    } else {
+      sensingMode = next;
+      applySensingModeUI();
+    }
+  });
+
   async function startPlaying() {
     try {
       audioCtx = new AudioContextCtor();
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      });
-      const micSource = audioCtx.createMediaStreamSource(micStream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = FFT_SIZE;
-      analyser.smoothingTimeConstant = 0;
-      freqData = new Float32Array(analyser.frequencyBinCount);
-      micSource.connect(analyser);
-
-      probeOsc = audioCtx.createOscillator();
-      probeOsc.type = "sine";
-      probeOsc.frequency.value = PROBE_FREQ;
-      probeGain = audioCtx.createGain();
-      probeGain.gain.value = Number(thProbeVolSlider.value) / 100;
-      probeOsc.connect(probeGain).connect(audioCtx.destination);
-      probeOsc.start();
 
       synthOsc = audioCtx.createOscillator();
       synthOsc.type = "sine";
@@ -231,16 +376,12 @@
       synthOsc.connect(synthGain).connect(audioCtx.destination);
       synthOsc.start();
 
-      position = 0;
-      smoothedActivity = 0;
+      await startSensing();
+
       lastTickAt = null;
       lastScaleIndex = -1;
       playing = true;
 
-      probePill.className = "dmx-pill connected";
-      probePillText.textContent = "Probe tone: on";
-      micPill.className = "dmx-pill connected";
-      micPillText.textContent = "Microphone: on";
       thStartBtn.classList.add("hide");
       thStopBtn.classList.remove("hide");
       thStatus.textContent = "";
@@ -257,14 +398,9 @@
     playing = false;
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
-    if (probeOsc) { try { probeOsc.stop(); } catch (e) {} probeOsc = null; }
+    stopSensing();
     if (synthOsc) { try { synthOsc.stop(); } catch (e) {} synthOsc = null; }
-    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
-    probePill.className = "dmx-pill";
-    probePillText.textContent = "Probe tone: off";
-    micPill.className = "dmx-pill";
-    micPillText.textContent = "Microphone: off";
     thStartBtn.classList.remove("hide");
     thStopBtn.classList.add("hide");
     thMeterFill.style.width = "0%";
