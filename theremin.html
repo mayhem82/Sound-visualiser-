@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Doppler Theremin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👋</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="theremin.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Doppler Theremin</h1>
+    <p>Plays a fixed, near-ultrasonic tone through the speaker and listens for its echo with the microphone -- a moving hand nearby shifts that echo's frequency (the Doppler effect), which drives a played pitch and volume in real time. A one-antenna analogue of a real theremin's proximity sensing, not a distance sensor.</p>
+    <p class="hint"><strong>Not precise sensing.</strong> This reads "something moved closer/further," never an exact distance -- results depend heavily on your device's speaker/mic and how quiet the room is. The probe tone sits right at the edge of human hearing and may be faintly audible, especially to younger listeners.</p>
+    <p class="hint" id="thSupportHint"></p>
+    <button id="startBtn">Open theremin</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="sound-colour.html">Sound Colour &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="thMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="probePill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="probePillText">Probe tone: off</span></span>
+    <span id="micPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="micPillText">Microphone: off</span></span>
+    <p id="thStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section" id="thCaveatBanner">
+    <p><strong>Proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Play</h2>
+    <div class="dmx-inline-controls">
+      <button id="thStartBtn" class="dmx-connect-btn">Start playing</button>
+      <button id="thStopBtn" class="hud-btn hide">Stop</button>
+    </div>
+    <div id="thMeterWrap">
+      <div id="thMeterBar"><div id="thMeterFill"></div><div id="thMeterCenter"></div></div>
+      <p class="hint">Left = receding, right = approaching, centre = still</p>
+    </div>
+    <p id="thNoteReadout" class="th-note-readout">--</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Settings</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="How loud the near-ultrasonic probe tone plays through the speaker -- louder gives a stronger echo (better detection) at the cost of being more likely to be faintly audible.">
+        Probe volume:
+        <input id="thProbeVolSlider" type="range" min="0" max="100" value="40">
+      </label>
+      <label class="hud-slider" title="How loud the played synth pitch is.">
+        Synth volume:
+        <input id="thSynthVolSlider" type="range" min="0" max="100" value="60">
+      </label>
+    </div>
+  </section>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="wake-lock.js"></script>
+<script src="theremin.js"></script>
+</body>
+</html>
