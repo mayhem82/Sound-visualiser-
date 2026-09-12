@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sensor Bridge</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="serial-sensor.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Sensor Bridge</h1>
+    <p>Talks to an ESP32/Arduino-class board (or anything else on the other end of a USB-serial chip) over the Web Serial API -- the same connection this suite's DMX page already uses for a real DMX interface, generalised here to plain text/JSON sensor readings instead of one fixed protocol.</p>
+    <p class="hint">No custom firmware protocol required beyond one line: have the board print each reading as its own newline-terminated line -- plain text, or a small JSON object -- over its regular serial/USB connection.</p>
+    <p class="hint" id="ssSupportHint"></p>
+    <button id="startBtn">Open sensor bridge</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="dmx.html">DMX Lighting Control &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="ssMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="serialPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="serialPillText">Port: not connected</span></span>
+    <p id="ssStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section">
+    <h2>Serial port</h2>
+    <p class="hint" title="Web Serial only exists in Chromium browsers (Chrome, Edge, Opera) over HTTPS or localhost -- not Firefox, not Safari, and not inside most wrapped mobile apps.">Desktop Chrome/Edge/Opera only. Picking a port opens the browser's own device chooser.</p>
+    <div class="dmx-inline-controls">
+      <button id="serialConnectBtn" class="dmx-connect-btn">Connect device&hellip;</button>
+      <button id="serialDisconnectBtn" class="hud-btn hide">Disconnect</button>
+      <label class="hud-slider">
+        Baud:
+        <select id="baudSelect">
+          <option value="9600" selected>9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+          <option value="250000">250000</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Latest reading</h2>
+    <p class="hint">If the most recent line parses as a JSON object, its fields are shown here as a quick readout; otherwise this stays empty and every line is still in the log below.</p>
+    <div id="ssLatestFields" class="ss-latest-fields"></div>
+    <p id="ssLatestEmptyHint" class="dmx-empty-hint">No JSON reading parsed yet.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Send to device</h2>
+    <p class="hint">Sends one line (a newline is appended) -- for a config value, a command, or anything the sketch on the other end reads back from Serial.</p>
+    <div class="dmx-inline-controls">
+      <input id="ssSendInput" type="text" placeholder="Line to send" aria-label="Line to send" disabled>
+      <button id="ssSendBtn" class="hud-btn" disabled>Send</button>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Log</h2>
+    <div class="dmx-inline-controls">
+      <button id="ssClearLogBtn" class="hud-btn">Clear log</button>
+      <label class="ss-autoscroll-label"><input type="checkbox" id="ssAutoscrollCheckbox" checked> Autoscroll</label>
+    </div>
+    <div id="ssLog" class="ss-log" aria-live="polite"></div>
+  </section>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="serial-sensor.js"></script>
+</body>
+</html>

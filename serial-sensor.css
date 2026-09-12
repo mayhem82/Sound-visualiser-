@@ -1,0 +1,173 @@
+/* Sensor Bridge — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider,
+   .status) comes from style.css; .dmx-section/.dmx-pill/.dmx-connect-btn/
+   .dmx-top-status/.dmx-empty-hint/.back-link mirror the same small set of
+   "plain panel" classes dmx.css defines (duplicated here, not shared via a
+   common stylesheet, same as vibro-scan.css). */
+
+body { overflow: auto; }
+
+#ssMain {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#ssMain.hide { display: none; }
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.dmx-section p.hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.6);
+  margin: 0 0 12px;
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.dmx-inline-controls input[type="text"] {
+  flex: 1 1 200px;
+  min-width: 120px;
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.25);
+  background: rgba(5, 5, 10, 0.4);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.dmx-connect-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+.dmx-connect-btn:hover { filter: brightness(1.08); }
+.dmx-connect-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dmx-empty-hint {
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.5);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.ss-latest-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ss-latest-fields .ss-field-chip {
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  background: rgba(125, 211, 252, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #bae6fd;
+}
+
+.ss-autoscroll-label {
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.65);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ss-log {
+  height: 260px;
+  overflow-y: auto;
+  background: rgba(5, 5, 10, 0.45);
+  border: 1px solid rgba(242, 242, 247, 0.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.85);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ss-log-line-in { color: #bae6fd; }
+.ss-log-line-out { color: #fde68a; }
+.ss-log-line-sys { color: rgba(242, 242, 247, 0.5); }
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }
