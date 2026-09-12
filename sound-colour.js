@@ -4252,6 +4252,100 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     saveChimePatternPref();
   }
 
+  // ---- Voice control (sets the chime's Instrument by voice) ----
+  // A standalone control, independent of chime being on/off -- it just
+  // sets chimeInstrument, same as picking one from the dropdown by hand.
+  // Fuzzy keyword matching, not real language understanding: each
+  // instrument's name is reduced to a few significant words (numbers and
+  // very short words dropped), and whichever instrument has the most of
+  // its words in what you said wins -- so "piano" matches the first
+  // "Piano"-containing instrument in GM order (Acoustic Grand Piano), not
+  // necessarily an exact instrument name spoken in full.
+  const chimeVoiceBtn = document.getElementById("chimeVoiceBtn");
+  const chimeVoiceStatus = document.getElementById("chimeVoiceStatus");
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const hasSpeechRecognition = typeof SpeechRecognitionCtor === "function";
+  let voiceControlEnabled = false;
+  let voiceRecognition = null;
+
+  function instrumentKeywords(name) {
+    return name.toLowerCase().replace(/[()]/g, " ").replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+      .filter((w) => w.length > 2 && !/^\d+$/.test(w));
+  }
+  const INSTRUMENT_KEYWORDS = GM_ALL_INSTRUMENTS.map((inst) => ({ inst, keywords: instrumentKeywords(inst.name) }));
+
+  function bestInstrumentMatch(spokenWords) {
+    let best = null, bestScore = 0;
+    for (const { inst, keywords } of INSTRUMENT_KEYWORDS) {
+      const score = keywords.filter((k) => spokenWords.includes(k)).length;
+      if (score > bestScore) { bestScore = score; best = inst; }
+    }
+    return best;
+  }
+
+  function handleVoiceTranscript(transcript) {
+    const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+    if (words.includes("randomise") || words.includes("randomize")) {
+      const pick = GM_ALL_INSTRUMENTS[Math.floor(Math.random() * GM_ALL_INSTRUMENTS.length)];
+      setChimeInstrument(pick.folder);
+      chimeInstrumentSelect.value = pick.folder;
+      chimeVoiceStatus.textContent = `Heard "${transcript}" -- randomised to "${pick.name}".`;
+      return;
+    }
+    const match = bestInstrumentMatch(words);
+    if (match) {
+      setChimeInstrument(match.folder);
+      chimeInstrumentSelect.value = match.folder;
+      chimeVoiceStatus.textContent = `Heard "${transcript}" -- set instrument to "${match.name}".`;
+    } else {
+      chimeVoiceStatus.textContent = `Heard "${transcript}" -- didn't match an instrument or "randomise".`;
+    }
+  }
+
+  function startVoiceControl() {
+    if (voiceRecognition) return;
+    voiceRecognition = new SpeechRecognitionCtor();
+    voiceRecognition.continuous = true;
+    voiceRecognition.interimResults = false;
+    voiceRecognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript;
+      handleVoiceTranscript(transcript);
+    };
+    voiceRecognition.onerror = (event) => {
+      chimeVoiceStatus.textContent = "Voice control error: " + event.error;
+    };
+    voiceRecognition.onend = () => {
+      // Browsers auto-stop recognition after a period of silence even in
+      // continuous mode -- restart transparently while still enabled, so
+      // "on" actually means "keeps listening," not "listened once."
+      if (voiceControlEnabled) { try { voiceRecognition.start(); } catch (e) {} }
+    };
+    try { voiceRecognition.start(); } catch (e) { chimeVoiceStatus.textContent = "Couldn't start voice control: " + e.message; }
+  }
+
+  function stopVoiceControl() {
+    if (!voiceRecognition) return;
+    const r = voiceRecognition;
+    voiceRecognition = null; // cleared first so the onend handler above sees voiceControlEnabled=false and doesn't restart
+    try { r.stop(); } catch (e) {}
+  }
+
+  if (hasSpeechRecognition) {
+    chimeVoiceBtn.classList.remove("hide");
+  }
+  chimeVoiceBtn.addEventListener("click", () => {
+    voiceControlEnabled = !voiceControlEnabled;
+    chimeVoiceBtn.textContent = `Voice control (instrument): ${voiceControlEnabled ? "On" : "Off"}`;
+    chimeVoiceBtn.setAttribute("aria-pressed", String(voiceControlEnabled));
+    chimeVoiceStatus.classList.toggle("hide", !voiceControlEnabled);
+    if (voiceControlEnabled) {
+      chimeVoiceStatus.textContent = "Listening…";
+      startVoiceControl();
+    } else {
+      stopVoiceControl();
+    }
+  });
+
   // ---- Dominant colour tone ----
   // A second, more ambient sonification, alongside the proximity chime
   // above: a soft continuous tone tracking the whole corrected scene's

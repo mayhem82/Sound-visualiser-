@@ -428,6 +428,10 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+#chimeVoiceStatus.hide {
+  display: none;
+}
+
 #choosePanelInner {
   width: 100%;
   max-width: 480px;
