@@ -136,7 +136,6 @@
   let rotate180 = loadBoolPref(ROTATE_KEY, false);
   const torch = createTorchController(torchBtn);
   let zoomTrack = null, zoomSupported = false, zoomMin = 1, zoomMax = 1, zoomStep = 0.1;
-  let wakeLock = null;
 
   function setStatus(msg) { status.textContent = msg; }
 
@@ -197,18 +196,8 @@
   }
   zoomSlider.addEventListener("input", () => applyZoom(parseFloat(zoomSlider.value)));
 
-  // ---- Wake lock ----
-
-  async function requestWakeLock() {
-    if (!("wakeLock" in navigator)) return;
-    try {
-      wakeLock = await navigator.wakeLock.request("screen");
-      wakeLock.addEventListener("release", () => { wakeLock = null; });
-    } catch (e) {}
-  }
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && currentStream && !wakeLock) requestWakeLock();
-  });
+  // Wake lock is handled by the shared wake-lock.js (window.WakeLockHelper)
+  // now -- see the startBtn listener below.
 
   // ---- Camera ----
 
@@ -317,7 +306,6 @@
       await attachStream(stream);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
-      requestWakeLock();
       // The siren has to be ready to fire the moment detection first
       // trips it, with no manual "Test alarm" click in between to supply
       // one -- so the AudioContext gets created/resumed HERE, inside this
@@ -335,6 +323,7 @@
     }
   }
   startBtn.addEventListener("click", startCamera);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
 
   pauseBtn.addEventListener("click", () => {
     paused = !paused;

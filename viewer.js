@@ -329,6 +329,7 @@
   }
 
   connectBtn.addEventListener("click", connect);
+  connectBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
   switchCameraBtn.addEventListener("click", () => {
     if (activeRoom) activeRoom.switchCamera();
   });

@@ -900,6 +900,7 @@
       if (recordSessionCheckbox.checked) startRecording();
       startDetectionLoop();
       setStatus("");
+      if (window.WakeLockHelper) window.WakeLockHelper.enable();
     } catch (err) {
       setStatus("Couldn't start the camera: " + (err.message || err.name || "unknown error"));
     } finally {
@@ -910,6 +911,7 @@
   endSessionBtn.addEventListener("click", async () => {
     endSessionBtn.disabled = true;
     stopDetectionLoop();
+    if (window.WakeLockHelper) window.WakeLockHelper.disable();
     const durationMinutes = sessionStartedAt ? Math.round((Date.now() - sessionStartedAt) / 60000) : 0;
     const entries = loadLog();
     entries.unshift({

@@ -177,5 +177,6 @@
   startBtn.addEventListener("click", () => {
     overlay.classList.add("hide");
     ssMain.classList.remove("hide");
+    if (window.WakeLockHelper) window.WakeLockHelper.enable();
   });
 })();

@@ -226,5 +226,6 @@
   startBtn.addEventListener("click", () => {
     overlay.classList.add("hide");
     vsMain.classList.remove("hide");
+    if (window.WakeLockHelper) window.WakeLockHelper.enable();
   });
 })();

@@ -4092,6 +4092,7 @@
   }
 
   startBtn.addEventListener("click", startAudio);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
   pauseBtn.addEventListener("click", togglePause);
   restartBtn.addEventListener("click", restart);
   micModeBtn.addEventListener("click", toggleMicMode);

@@ -212,6 +212,7 @@
     }
   }
   startBtn.addEventListener("click", startCamera);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
 
   pauseBtn.addEventListener("click", () => {
     paused = !paused;

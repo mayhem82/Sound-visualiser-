@@ -45,21 +45,8 @@
   // ---- Screen Wake Lock ----
   // The whole point of this page is extended low-light viewing -- exactly
   // the situation where a phone's own screen timeout is most likely to
-  // kick in and undo it. Real API (Wake Lock), feature-detected the same
-  // way as everything else here; the browser releases the lock whenever
-  // the tab is backgrounded regardless, so it's re-requested on
-  // visibilitychange rather than assumed to persist.
-  let wakeLock = null;
-  async function requestWakeLock() {
-    if (!("wakeLock" in navigator)) return;
-    try {
-      wakeLock = await navigator.wakeLock.request("screen");
-      wakeLock.addEventListener("release", () => { wakeLock = null; });
-    } catch (e) { /* not fatal -- the screen just times out normally */ }
-  }
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && currentStream && !wakeLock) requestWakeLock();
-  });
+  // kick in and undo it. Handled by the shared wake-lock.js
+  // (window.WakeLockHelper) now -- see the startBtn listener below.
 
   // Ambient-brightness/blue-light-share sampling now lives in
   // bluelight-core.js too.
@@ -140,7 +127,6 @@
       await attachStream(stream);
       overlay.classList.add("hide");
       hud.classList.remove("hide");
-      requestWakeLock();
       blueLight.start();
       await refreshVideoDevices();
     } catch (err) {
@@ -149,6 +135,7 @@
   }
 
   startBtn.addEventListener("click", startCamera);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
 
   pauseBtn.addEventListener("click", () => {
     paused = !paused;

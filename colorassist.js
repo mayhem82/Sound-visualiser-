@@ -1664,6 +1664,7 @@
   // ---- Wiring ----
 
   startBtn.addEventListener("click", startCamera);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
 
   blendSlider.addEventListener("input", () => {
     blendLabel.textContent = `${blendSlider.value}%`;

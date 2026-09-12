@@ -1330,6 +1330,7 @@
     dmxMain.classList.remove("hide");
     renderFixtures();
     restartTickLoop();
+    if (window.WakeLockHelper) window.WakeLockHelper.enable();
   });
 
   window.addEventListener("beforeunload", () => {

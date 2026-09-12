@@ -7071,6 +7071,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // ---- Wiring ----
 
   startBtn.addEventListener("click", startCamera);
+  startBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
 
   blendSlider.addEventListener("input", () => {
     blendLabel.textContent = `${blendSlider.value}%`;

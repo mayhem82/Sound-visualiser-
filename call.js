@@ -594,6 +594,7 @@
 
   function endCall(message) {
     torn = true;
+    if (window.WakeLockHelper) window.WakeLockHelper.disable();
     stopHeartbeat();
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     clients.forEach((c) => { try { c.end(true); } catch (e) {} });
@@ -917,7 +918,9 @@
   });
 
   startCallBtn.addEventListener("click", startCall);
+  startCallBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
   joinCallBtn.addEventListener("click", joinCall);
+  joinCallBtn.addEventListener("click", () => { if (window.WakeLockHelper) window.WakeLockHelper.enable(); });
   roomInput.addEventListener("keypress", (e) => { if (e.key === "Enter") joinCall(); });
 
   // ---- Scan a room code (Shape Detection API) ----
