@@ -60,17 +60,38 @@
         Probe volume:
         <input id="thProbeVolSlider" type="range" min="0" max="100" value="40">
       </label>
-      <label class="hud-slider" title="How loud the played synth pitch is.">
+      <label class="hud-slider" title="How loud the played pitch is.">
         Synth volume:
         <input id="thSynthVolSlider" type="range" min="0" max="100" value="60">
       </label>
     </div>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Synth: a continuous glide, pitch bending smoothly with your hand -- the original behaviour, works everywhere. MIDI: sends discrete notes on a small scale out to a connected MIDI device instead of playing through the speaker directly -- needs a MIDI output selected below. Instrument: plays those same discrete notes as a real sampled instrument (piano, strings, etc.) instead of a plain synth tone.">
+        Output:
+        <select id="thOutputSelect">
+          <option value="synth">Synth (continuous)</option>
+          <option value="midi">MIDI</option>
+          <option value="instrument">Instrument</option>
+        </select>
+      </label>
+      <label id="thInstrumentWrap" class="hud-slider hide" title="Which instrument MIDI/Instrument output plays through.">
+        Instrument:
+        <select id="thInstrumentSelect"></select>
+      </label>
+      <label id="thMidiOutputWrap" class="hud-slider hide" title="Which connected MIDI device receives notes.">
+        MIDI output:
+        <select id="thMidiOutputSelect"></select>
+      </label>
+    </div>
+    <p class="hint" id="thMidiUnsupportedHint"></p>
+    <p class="hint">MIDI/Instrument play discrete notes on a small scale when your hand crosses into a new step, not a continuous glide -- Synth is the only output that bends pitch smoothly.</p>
   </section>
 
   <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
 </main>
 
 <script src="wake-lock.js"></script>
+<script src="midi-instrument.js"></script>
 <script src="theremin.js"></script>
 </body>
 </html>
