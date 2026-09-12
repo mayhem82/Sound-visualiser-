@@ -75,7 +75,7 @@
   // or distorting when several sounds overlap. The compressor is what
   // makes the boost usable: it reins in peaks so simultaneous/overlapping
   // hits don't turn into harsh clipping instead of just being louder.
-  const MASTER_BOOST = 2.2;
+  const MASTER_BOOST = 1.0;
   let masterBus = null;
 
   function ensureAudio() {
@@ -83,12 +83,19 @@
     if (!masterBus) {
       masterBus = audioCtx.createGain();
       masterBus.gain.value = MASTER_BOOST;
+      // A gentle safety net, not a loudness-flattener -- a -24dB threshold
+      // with a 12:1 ratio (tried first) squashed almost the entire volume
+      // slider range down to nearly the same output level, which is
+      // exactly why 25% sounded about as loud as 100%. This only reins in
+      // genuine near-clipping (several pads overlapping at once); a single
+      // hit at any volume setting should pass through essentially
+      // untouched.
       const compressor = audioCtx.createDynamicsCompressor();
-      compressor.threshold.value = -24;
-      compressor.knee.value = 24;
-      compressor.ratio.value = 12;
-      compressor.attack.value = 0.003;
-      compressor.release.value = 0.2;
+      compressor.threshold.value = -6;
+      compressor.knee.value = 6;
+      compressor.ratio.value = 3;
+      compressor.attack.value = 0.01;
+      compressor.release.value = 0.25;
       masterBus.connect(compressor).connect(audioCtx.destination);
     }
     if (!noiseBuffer) {
@@ -236,7 +243,9 @@
     bp.type = "bandpass";
     bp.frequency.value = 800;
     const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(vol * 0.8, now);
+    // Two oscillators sum into this one gain stage -- 0.45, not 0.8,
+    // since the pre-gain peak is roughly double a single oscillator's.
+    gain.gain.setValueAtTime(vol * 0.45, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     bp.connect(gain).connect(masterBus);
     [587, 845].forEach((freq) => {
@@ -250,7 +259,10 @@
   }
 
   function playCrash() {
-    playNoiseBurst("highpass", 5000, 1.2, 0.7);
+    // A highpass leaves most of white noise's flat spectrum untouched
+    // (and can even overshoot slightly near its cutoff), so this needs a
+    // lower multiplier than a bandpass burst to land at a similar peak.
+    playNoiseBurst("highpass", 5000, 1.2, 0.5);
   }
 
   function playRide() {
