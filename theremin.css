@@ -166,6 +166,36 @@ body { overflow: auto; }
   margin: 8px 0 0;
 }
 
+#thTouchPadWrap.hide { display: none; }
+
+#thTouchPad {
+  margin-top: 12px;
+  height: 140px;
+  border-radius: 14px;
+  border: 1px dashed rgba(125, 211, 252, 0.35);
+  background: rgba(125, 211, 252, 0.06);
+  color: rgba(242, 242, 247, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  text-align: center;
+  padding: 12px;
+  /* Prevents the browser's own scroll/zoom gestures from hijacking a
+     touch on the pad -- every touch here is this page's own volume
+     control, never a page scroll. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+#thTouchPad.active {
+  border-color: rgba(125, 211, 252, 0.7);
+  background: rgba(125, 211, 252, 0.18);
+  color: var(--fg);
+}
+
 .back-link {
   display: block;
   margin-top: 24px;

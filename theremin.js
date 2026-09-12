@@ -20,13 +20,15 @@
   // can hold a pitch by holding a position; this mode can't, and doesn't
   // pretend to.
   //
-  // Tilt: the phone's own real DeviceOrientationEvent reading -- gamma
-  // (left/right tilt) drives pitch, beta (forward/back tilt) drives
-  // volume. A real, direct, non-approximated reading (unlike Doppler),
-  // just a different physical interaction: you're moving the instrument
-  // itself, not sensing a hand near a still one -- and holding a tilt
-  // angle genuinely holds the pitch, since there's no decay-to-centre
-  // reason to fake here the way Doppler's velocity-derived signal needs.
+  // Tilt + Touch: two independent, real, direct inputs -- like a real
+  // theremin's two separate antennas, not one signal doing double duty.
+  // DeviceOrientationEvent's gamma (left/right tilt) drives pitch; a
+  // finger held on the touch pad drives volume, silent the instant it's
+  // released, same as a real theremin going quiet the moment a hand
+  // leaves the volume loop. Both are direct readings (unlike Doppler's
+  // approximation), so holding a tilt angle genuinely holds the pitch --
+  // there's no decay-to-centre reason to fake here the way Doppler's
+  // velocity-derived signal needs.
 
   const PROBE_FREQ = 18500;       // Hz -- near-ultrasonic; may be faintly audible, especially to younger listeners
   const FFT_SIZE = 16384;         // ~2.7Hz/bin at 44.1kHz -- fine enough to resolve a walking-speed hand's Doppler shift
@@ -38,8 +40,7 @@
   const BASE_FREQ = 220;          // A3 -- centre pitch when position is 0
   const PITCH_RANGE_OCTAVES = 1.5;
   const TILT_PITCH_RANGE_DEG = 45;   // gamma at +-this many degrees maps to position +-1
-  const TILT_VOLUME_RANGE_DEG = 45;  // beta at +-this many degrees maps to volume 0..1
-  const TILT_SMOOTHING_PER_SEC = 12; // light smoothing only -- tilt is a direct reading, not a signal that needs heavy filtering
+  const TILT_SMOOTHING_PER_SEC = 12; // light smoothing only -- tilt/touch are direct readings, not signals that need heavy filtering
   const THEREMIN_MIDI_CHANNEL = 0;
   const NOTE_DURATION_MS = 500;
   const PENTATONIC_DEGREES = [0, 2, 4, 7, 9]; // major pentatonic, same shape as sound-colour.js's chime scale
@@ -88,6 +89,8 @@
   const thMidiOutputSelect = document.getElementById("thMidiOutputSelect");
   const thMidiUnsupportedHint = document.getElementById("thMidiUnsupportedHint");
   const thSensingSelect = document.getElementById("thSensingSelect");
+  const thTouchPadWrap = document.getElementById("thTouchPadWrap");
+  const thTouchPad = document.getElementById("thTouchPad");
   const thCaveatDoppler = document.getElementById("thCaveatDoppler");
   const thCaveatTilt = document.getElementById("thCaveatTilt");
   const thMeterHintDoppler = document.getElementById("thMeterHintDoppler");
@@ -142,15 +145,15 @@
   let position = 0;
   let smoothedActivity = 0;
 
-  // Tilt mode's own state: raw values updated asynchronously by
-  // handleOrientation whenever a deviceorientation event arrives, and
-  // smoothed values tick() eases toward each frame -- a real direct
-  // reading needs far lighter smoothing than Doppler's derived signal,
-  // just enough to take the jitter off a shaky hand.
+  // Tilt + Touch mode's own state: rawTiltPos updated asynchronously by
+  // handleOrientation, smoothedTiltPos is what tick() actually eases
+  // toward each frame (a real direct reading needs far lighter smoothing
+  // than Doppler's derived signal, just enough to take the jitter off a
+  // shaky hand). rawTiltVolume comes from the touch pad and is used
+  // as-is, unsmoothed -- see tiltPositionAndActivity for why.
   let rawTiltPos = 0;
   let rawTiltVolume = 0;
   let smoothedTiltPos = 0;
-  let smoothedTiltVolume = 0;
   let orientationPermissionGranted = false;
 
   function dbToLinearEnergy(db) {
@@ -182,9 +185,31 @@
   }
 
   function handleOrientation(e) {
-    if (typeof e.gamma !== "number" || typeof e.beta !== "number") return;
+    if (typeof e.gamma !== "number") return;
     rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
-    rawTiltVolume = Math.max(0, Math.min(1, (e.beta + TILT_VOLUME_RANGE_DEG) / (2 * TILT_VOLUME_RANGE_DEG)));
+  }
+
+  // Touch pad: silent (0) whenever no finger is on it, matching a real
+  // theremin's volume antenna -- a hand away from it means no sound, not
+  // "sound at some idle default." Position within the pad (higher = louder)
+  // only matters while actively touching.
+  function updateTouchVolumeFromClientY(clientY) {
+    const rect = thTouchPad.getBoundingClientRect();
+    const frac = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    rawTiltVolume = frac;
+  }
+  function handleTouchPadDown(e) {
+    thTouchPad.classList.add("active");
+    thTouchPad.setPointerCapture(e.pointerId);
+    updateTouchVolumeFromClientY(e.clientY);
+  }
+  function handleTouchPadMove(e) {
+    if (!thTouchPad.classList.contains("active")) return;
+    updateTouchVolumeFromClientY(e.clientY);
+  }
+  function handleTouchPadUp() {
+    thTouchPad.classList.remove("active");
+    rawTiltVolume = 0;
   }
 
   function dopplerPositionAndActivity(dtSeconds) {
@@ -206,10 +231,13 @@
   }
 
   function tiltPositionAndActivity(dtSeconds) {
+    // Pitch gets light smoothing (a shaky hand shouldn't stutter the
+    // note), but volume is a direct touch on/off + position -- smoothing
+    // it would blur "release = instant silence" into a brief decay tail,
+    // breaking the one promise this mode makes that Doppler can't.
     const smoothing = Math.min(1, TILT_SMOOTHING_PER_SEC * dtSeconds);
     smoothedTiltPos += (rawTiltPos - smoothedTiltPos) * smoothing;
-    smoothedTiltVolume += (rawTiltVolume - smoothedTiltVolume) * smoothing;
-    return { pos: smoothedTiltPos, activityGain: smoothedTiltVolume };
+    return { pos: smoothedTiltPos, activityGain: rawTiltVolume };
   }
 
   function tick(now) {
@@ -301,16 +329,24 @@
       orientationPermissionGranted = true;
     }
     window.addEventListener("deviceorientation", handleOrientation);
+    thTouchPad.addEventListener("pointerdown", handleTouchPadDown);
+    thTouchPad.addEventListener("pointermove", handleTouchPadMove);
+    thTouchPad.addEventListener("pointerup", handleTouchPadUp);
+    thTouchPad.addEventListener("pointercancel", handleTouchPadUp);
     rawTiltPos = 0;
-    rawTiltVolume = 0.5;
+    rawTiltVolume = 0; // silent until the pad is actually touched, same as a real theremin's volume antenna
     smoothedTiltPos = 0;
-    smoothedTiltVolume = 0.5;
     orientationPill.className = "dmx-pill connected";
     orientationPillText.textContent = "Orientation sensor: on";
   }
 
   function stopTiltSensing() {
     window.removeEventListener("deviceorientation", handleOrientation);
+    thTouchPad.removeEventListener("pointerdown", handleTouchPadDown);
+    thTouchPad.removeEventListener("pointermove", handleTouchPadMove);
+    thTouchPad.removeEventListener("pointerup", handleTouchPadUp);
+    thTouchPad.removeEventListener("pointercancel", handleTouchPadUp);
+    thTouchPad.classList.remove("active");
     orientationPill.className = "dmx-pill";
     orientationPillText.textContent = "Orientation sensor: off";
   }
@@ -332,6 +368,7 @@
     micPill.classList.toggle("hide", !isDoppler);
     orientationPill.classList.toggle("hide", isDoppler);
     thProbeVolWrap.classList.toggle("hide", !isDoppler);
+    thTouchPadWrap.classList.toggle("hide", isDoppler);
     thCaveatDoppler.classList.toggle("hide", !isDoppler);
     thCaveatTilt.classList.toggle("hide", isDoppler);
     thMeterHintDoppler.classList.toggle("hide", !isDoppler);

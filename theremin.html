@@ -18,8 +18,8 @@
 <div id="overlay">
   <div id="panel">
     <h1>Theremin</h1>
-    <p>Two ways to play, picked below once open: <strong>Doppler</strong> plays a fixed near-ultrasonic tone through the speaker and reads its echo with the microphone -- a moving hand nearby shifts that echo's frequency, driving pitch/volume, a one-antenna analogue of a real theremin's proximity sensing. <strong>Tilt</strong> instead reads the phone's own real orientation -- tilt left/right for pitch, forward/back for volume -- moving the instrument itself rather than a hand near it.</p>
-    <p class="hint"><strong>Doppler is an approximation, not a distance measurement</strong> -- "something moved closer/further," never an exact distance, and depends heavily on your device's speaker/mic and a quiet room; the probe tone sits at the edge of human hearing and may be faintly audible. <strong>Tilt is a real, direct reading</strong> (no approximation), just a different physical interaction -- you're moving the device, not sensing a hand near a still one.</p>
+    <p>Two ways to play, picked below once open: <strong>Doppler</strong> plays a fixed near-ultrasonic tone through the speaker and reads its echo with the microphone -- a moving hand nearby shifts that echo's frequency, driving pitch/volume, a one-antenna analogue of a real theremin's proximity sensing. <strong>Tilt + Touch</strong> instead uses two real, independent inputs like a real theremin's two antennas -- tilt the phone left/right for pitch, touch the pad with a finger for volume (no touch at all is silence, same as a real theremin's hand-away-from-the-loop silence).</p>
+    <p class="hint"><strong>Doppler is an approximation, not a distance measurement</strong> -- "something moved closer/further," never an exact distance, and depends heavily on your device's speaker/mic and a quiet room; the probe tone sits at the edge of human hearing and may be faintly audible. <strong>Tilt + Touch are real, direct readings</strong> (no approximation), just a different physical interaction -- you're moving the device and touching a pad, not sensing a hand near a still one.</p>
     <p class="hint" id="thSupportHint"></p>
     <button id="startBtn">Open theremin</button>
     <p id="status" class="status"></p>
@@ -39,19 +39,22 @@
 
   <section class="dmx-section" id="thCaveatBanner">
     <p id="thCaveatDoppler"><strong>Doppler: proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
-    <p id="thCaveatTilt" class="hide"><strong>Tilt: a real, direct reading, no approximation</strong> -- but it's the phone's own tilt, not a hand's distance. Unlike Doppler, holding a tilt angle holds the pitch (nothing decays back to centre on its own).</p>
+    <p id="thCaveatTilt" class="hide"><strong>Tilt + Touch: real, direct readings, no approximation</strong> -- but it's the phone's own tilt and a touch on the pad, not a hand's distance in mid-air. Unlike Doppler, holding a tilt angle holds the pitch (nothing decays back to centre on its own), and volume is silent until you actually touch the pad.</p>
   </section>
 
   <section class="dmx-section">
     <h2>Play</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="Doppler: ultrasonic echo senses a moving hand near the phone (see the caveat above). Tilt: the phone's own real orientation sensor -- tilt left/right for pitch, forward/back for volume.">
+      <label class="hud-slider" title="Doppler: ultrasonic echo senses a moving hand near the phone (see the caveat above). Tilt + Touch: the phone's own real orientation sensor for pitch, plus touching the pad below for volume.">
         Sensing:
         <select id="thSensingSelect">
           <option value="doppler">Doppler (ultrasonic echo)</option>
-          <option value="tilt">Tilt (device orientation)</option>
+          <option value="tilt">Tilt + Touch</option>
         </select>
       </label>
+    </div>
+    <div id="thTouchPadWrap" class="hide">
+      <div id="thTouchPad" title="Touch and hold anywhere on this pad for volume -- higher on the pad is louder, and release to go silent, the same way a real theremin goes quiet when your hand leaves the volume antenna.">Touch here for volume</div>
     </div>
     <div class="dmx-inline-controls">
       <button id="thStartBtn" class="dmx-connect-btn">Start playing</button>
