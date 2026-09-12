@@ -415,6 +415,11 @@
   const dmxShowRigTagQrBtn = document.getElementById("dmxShowRigTagQrBtn");
   const scanRigBtn = document.getElementById("dmxScanRigBtn");
   const scanStatus = document.getElementById("dmxScanStatus");
+  const nfcHint = document.getElementById("dmxNfcHint");
+  const rigNfcControls = document.getElementById("dmxRigNfcControls");
+  const writeRigNfcBtn = document.getElementById("dmxWriteRigNfcBtn");
+  const scanRigNfcBtn = document.getElementById("dmxScanRigNfcBtn");
+  const nfcStatus = document.getElementById("dmxNfcStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
   const cameraFeed = document.getElementById("cameraFeed");
   const screenFeed = document.getElementById("screenFeed");
@@ -708,6 +713,91 @@
     const tag = rigTagPayload();
     if (!tag) { rigStatus.textContent = "Pick a saved rig to show a tag QR code for first."; return; }
     showQrPopup(tag.text, { title: "Rig tag", caption: `Scan this to load "${tag.name}" by name on any device with it saved.` });
+  });
+
+  // ---- NFC rig tags (Web NFC) -----------------------------------------
+  // Same idea as the QR rig tag above -- a small {dmxLoadRig: name} payload
+  // naming an already-saved rig, tapped onto/from a physical NFC tag
+  // instead of scanned as a QR code. Only the name-only tag, never a full
+  // rig export -- most writable NFC tags don't have room for a whole
+  // fixture list, unlike a QR code's much higher capacity. Web NFC
+  // (NDEFReader) only exists on Android Chrome over HTTPS -- feature-
+  // detected and hidden entirely everywhere else, same as the QR scan
+  // controls above being hidden where Shape Detection isn't supported.
+  const hasNfc = typeof window.NDEFReader === "function";
+  let ndefReader = null;
+  let nfcScanAbort = null;
+  function getNdefReader() {
+    if (!ndefReader) ndefReader = new NDEFReader();
+    return ndefReader;
+  }
+  if (hasNfc) {
+    nfcHint.classList.remove("hide");
+    rigNfcControls.classList.remove("hide");
+    nfcStatus.classList.remove("hide");
+  }
+
+  writeRigNfcBtn.addEventListener("click", async () => {
+    const tag = rigTagPayload();
+    if (!tag) { nfcStatus.textContent = "Pick a saved rig to write a tag for first."; return; }
+    try {
+      nfcStatus.textContent = "Tap an NFC tag to write it…";
+      await getNdefReader().write({ records: [{ recordType: "text", data: tag.text }] });
+      nfcStatus.textContent = `Wrote a rig tag for "${tag.name}" to the NFC tag.`;
+    } catch (e) {
+      nfcStatus.textContent = "NFC write failed: " + e.message;
+    }
+  });
+
+  function decodeNdefText(record) {
+    try { return new TextDecoder(record.encoding || "utf-8").decode(record.data); } catch (e) { return null; }
+  }
+
+  async function startNfcRigScan() {
+    try {
+      const reader = getNdefReader();
+      nfcScanAbort = new AbortController();
+      await reader.scan({ signal: nfcScanAbort.signal });
+      scanRigNfcBtn.textContent = "Stop NFC scan";
+      scanRigNfcBtn.classList.add("active");
+      scanRigNfcBtn.setAttribute("aria-pressed", "true");
+      nfcStatus.textContent = "Tap an NFC tag…";
+      reader.onreading = (event) => {
+        let payload = null;
+        for (const record of event.message.records) {
+          if (record.recordType !== "text") continue;
+          const text = decodeNdefText(record);
+          if (!text) continue;
+          try { payload = JSON.parse(text); } catch (e) { continue; }
+          break;
+        }
+        if (payload && isValidLoadRigTag(payload)) {
+          const rig = rigPresets.find((r) => r.name.toLowerCase() === payload.dmxLoadRig.trim().toLowerCase());
+          if (!rig) { nfcStatus.textContent = `No saved rig named "${payload.dmxLoadRig}" found -- create it first.`; return; }
+          rigSelect.value = rig.id;
+          loadSelectedRig();
+          nfcStatus.textContent = rigStatus.textContent;
+        } else if (payload && isValidRigPayload(payload)) {
+          importRigPayload(payload);
+          nfcStatus.textContent = rigStatus.textContent;
+        } else {
+          nfcStatus.textContent = "That NFC tag doesn't look like a rig or rig tag from this page -- still scanning…";
+        }
+      };
+    } catch (e) {
+      nfcStatus.textContent = "NFC scan failed: " + e.message;
+      stopNfcRigScan();
+    }
+  }
+  function stopNfcRigScan() {
+    if (nfcScanAbort) { nfcScanAbort.abort(); nfcScanAbort = null; }
+    scanRigNfcBtn.textContent = "📶 Scan rig from NFC";
+    scanRigNfcBtn.classList.remove("active");
+    scanRigNfcBtn.setAttribute("aria-pressed", "false");
+  }
+  scanRigNfcBtn.addEventListener("click", () => {
+    if (nfcScanAbort) stopNfcRigScan();
+    else startNfcRigScan();
   });
 
   let refreshHz = (() => {

@@ -25,7 +25,10 @@ video#cameraFeed, canvas#sampleCanvas {
    plain class="... hide" on a new element does nothing without one. */
 #dmxScanHint.hide,
 #dmxRigQrControls.hide,
-#dmxScanStatus.hide {
+#dmxScanStatus.hide,
+#dmxNfcHint.hide,
+#dmxRigNfcControls.hide,
+#dmxNfcStatus.hide {
   display: none;
 }
 

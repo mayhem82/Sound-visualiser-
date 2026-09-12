@@ -112,6 +112,12 @@
       <button id="dmxScanRigBtn" class="hud-btn" aria-pressed="false" title="Points the already-running camera feed at a QR code -- a full rig export imports it as a new saved rig; a rig tag (from 'Copy rig tag') loads the matching already-saved rig by name instead.">&#128247; Scan rig from QR</button>
     </div>
     <p id="dmxScanStatus" class="status hide"></p>
+    <p class="hint hide" id="dmxNfcHint" title="Web NFC (NDEFReader) is Android Chrome only, over HTTPS -- not desktop, not iOS, not Firefox/Safari. Only the small name-only tag is written to NFC, not a full rig export -- most writable tags don't have the room for a whole fixture list, unlike a QR code's much higher capacity.">Or tap a physical NFC tag -- write a rig tag to one, or scan one back in:</p>
+    <div class="dmx-inline-controls hide" id="dmxRigNfcControls">
+      <button id="dmxWriteRigNfcBtn" class="hud-btn" title="Writes a small tag naming (not containing) the selected rig to an NFC tag you tap during the write -- tape it up near a fixture group so tapping it later loads this exact rig immediately.">&#128246; Write rig tag to NFC</button>
+      <button id="dmxScanRigNfcBtn" class="hud-btn" aria-pressed="false" title="Waits for an NFC tag tap and loads the matching already-saved rig by name.">&#128246; Scan rig from NFC</button>
+    </div>
+    <p id="dmxNfcStatus" class="status hide"></p>
   </section>
 
   <button id="dmxBlackoutBtn" class="hud-btn">Blackout (zero all channels)</button>
