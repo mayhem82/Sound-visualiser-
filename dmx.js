@@ -397,6 +397,8 @@
   const motionToggleBtn = document.getElementById("motionToggleBtn");
   const motionPill = document.getElementById("motionPill");
   const motionPillText = document.getElementById("motionPillText");
+  const headingPill = document.getElementById("headingPill");
+  const headingPillText = document.getElementById("headingPillText");
   const beatSensitivitySlider = document.getElementById("beatSensitivitySlider");
   const fixtureList = document.getElementById("fixtureList");
   const fixtureEmptyHint = document.getElementById("fixtureEmptyHint");
@@ -1118,6 +1120,24 @@
   function handleOrientation(e) {
     state.tiltX = normalizeTiltAngle(e.gamma, 90);
     state.tiltY = normalizeTiltAngle(e.beta, 90);
+    // A real compass heading, not raw magnetic-field sensing (the web
+    // platform has no API for that at all -- see IDEAS.md). iOS reports it
+    // directly as webkitCompassHeading; everywhere else, alpha only means
+    // a true compass bearing when the browser flags the reading as
+    // absolute (tied to true/magnetic north) -- a plain relative alpha
+    // (e.absolute === false, most desktop/laptop trackpads-as-devices and
+    // some Android setups) is arbitrary and never shown as a heading, to
+    // avoid faking a bearing that isn't one.
+    let heading = null;
+    if (typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
+      heading = e.webkitCompassHeading;
+    } else if (e.absolute === true && typeof e.alpha === "number") {
+      heading = (360 - e.alpha) % 360;
+    }
+    if (heading !== null) {
+      headingPill.classList.remove("hide");
+      headingPillText.textContent = `Heading: ${Math.round(heading)}°`;
+    }
   }
 
   function handleMotion(e) {
@@ -1161,6 +1181,7 @@
     motionToggleBtn.textContent = "Enable motion sensors";
     motionToggleBtn.classList.remove("active");
     motionToggleBtn.setAttribute("aria-pressed", "false");
+    headingPill.classList.add("hide");
     updateMotionPill();
   }
   if (typeof window.DeviceOrientationEvent !== "undefined" || typeof window.DeviceMotionEvent !== "undefined") {
