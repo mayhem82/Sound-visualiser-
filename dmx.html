@@ -64,6 +64,7 @@
         <input id="refreshSlider" type="range" min="10" max="40" step="1" value="30">
         <span id="refreshLabel">30</span> Hz
       </label>
+      <button id="reduceLoadBtn" class="hud-btn hide" title="This device is reporting real CPU/thermal pressure (the Compute Pressure API) -- halves the Refresh rate above to cut this page's own CPU load. Manual, not automatic: appears only while pressure is actually elevated, and only takes effect when you press it.">&#9888;&#65039; Reduce load</button>
     </div>
   </section>
 
@@ -129,6 +130,7 @@
 <script src="qrcode-gen.js"></script>
 <script src="qr-display.js"></script>
 <script src="wake-lock.js"></script>
+<script src="compute-pressure.js"></script>
 <script src="dmx.js"></script>
 </body>
 </html>

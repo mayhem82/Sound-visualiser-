@@ -1312,6 +1312,26 @@
   });
   refreshSlider.addEventListener("change", () => { try { localStorage.setItem(REFRESH_KEY, String(refreshHz)); } catch (e) {} });
 
+  // ---- Reduce load (Compute Pressure API) ------------------------------
+  // Manual, not automatic: the button only appears while this device is
+  // actually reporting elevated CPU/thermal pressure, and only lowers the
+  // refresh rate when clicked -- never silently on its own.
+  const reduceLoadBtn = document.getElementById("reduceLoadBtn");
+  if (window.ComputePressureHelper && window.ComputePressureHelper.supported) {
+    window.ComputePressureHelper.start();
+    window.ComputePressureHelper.onChange((state) => {
+      reduceLoadBtn.classList.toggle("hide", !window.ComputePressureHelper.isElevated());
+    });
+  }
+  reduceLoadBtn.addEventListener("click", () => {
+    const next = Math.max(Number(refreshSlider.min), Math.round(refreshHz / 2));
+    refreshHz = next;
+    refreshSlider.value = String(next);
+    refreshLabel.textContent = String(next);
+    restartTickLoop();
+    try { localStorage.setItem(REFRESH_KEY, String(next)); } catch (e) {}
+  });
+
   blackoutBtn.addEventListener("click", () => {
     blackoutActive = !blackoutActive;
     blackoutBtn.textContent = blackoutActive ? "Resume from blackout" : "Blackout (zero all channels)";
