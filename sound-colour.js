@@ -3816,7 +3816,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   let chimeSource = (() => {
     try {
       const raw = localStorage.getItem(CHIME_SOURCE_KEY);
-      return raw === "live" || raw === "calibrated" ? raw : "saved";
+      return raw === "live" || raw === "calibrated" || raw === "doppler" ? raw : "saved";
     } catch (e) { return "saved"; }
   })();
   // Range: how far away (in Lab colour distance) the chime starts
@@ -3852,6 +3852,87 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   // note and then going quiet while you're still matched.
   let chimeLastNoteIndex = -1;
   let chimeTicksSinceLastNote = 0;
+
+  // ---- Doppler gesture (a chime Source, not a separate channel) ----
+  // Same one-antenna theremin idea as the standalone theremin.js: a fixed
+  // near-ultrasonic tone plays through the speaker, and a moving hand's
+  // Doppler-shifted echo (read back through the mic) drives closeness.
+  // Reuses chimeAudioCtx rather than a second AudioContext -- this feature
+  // only ever runs while the chime is already on, so that context already
+  // exists. Constants match theremin.js's tuned values; the leaky
+  // integrator's gain/decay are expressed as per-second rates, so they
+  // carry over unchanged even though this runs on the chime's 150ms timer
+  // instead of theremin.js's own per-frame requestAnimationFrame loop.
+  const DOPPLER_PROBE_FREQ = 18500;
+  const DOPPLER_FFT_SIZE = 16384;
+  const DOPPLER_SIDE_BAND_LO_HZ = 60;
+  const DOPPLER_SIDE_BAND_HI_HZ = 400;
+  const DOPPLER_POSITION_GAIN = 0.35;
+  const DOPPLER_POSITION_DECAY_PER_SEC = 0.15;
+  const DOPPLER_TICK_SECONDS = 0.15; // matches updateChimeSamplingTimer's setInterval period
+  let dopplerMicStream = null;
+  let dopplerAnalyser = null;
+  let dopplerFreqData = null;
+  let dopplerProbeOsc = null;
+  let dopplerProbeGain = null;
+  let dopplerPosition = 0;
+
+  function dopplerDbToLinearEnergy(db) {
+    if (!isFinite(db)) return 0;
+    return Math.pow(10, db / 20);
+  }
+
+  async function startDopplerGesture() {
+    if (dopplerAnalyser) return;
+    ensureChimeAudio();
+    if (!chimeAudioCtx) return;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (e) {
+      setStatus("Doppler gesture needs microphone access: " + (e.message || e.name || "unknown error"));
+      return;
+    }
+    // The source may have been switched away again while the permission
+    // prompt was open -- don't leave an unwanted mic stream running.
+    if (chimeSource !== "doppler" || !chimeEnabled) { stream.getTracks().forEach((t) => t.stop()); return; }
+    dopplerMicStream = stream;
+    const micSource = chimeAudioCtx.createMediaStreamSource(dopplerMicStream);
+    dopplerAnalyser = chimeAudioCtx.createAnalyser();
+    dopplerAnalyser.fftSize = DOPPLER_FFT_SIZE;
+    dopplerAnalyser.smoothingTimeConstant = 0;
+    dopplerFreqData = new Float32Array(dopplerAnalyser.frequencyBinCount);
+    micSource.connect(dopplerAnalyser);
+
+    dopplerProbeOsc = chimeAudioCtx.createOscillator();
+    dopplerProbeOsc.type = "sine";
+    dopplerProbeOsc.frequency.value = DOPPLER_PROBE_FREQ;
+    dopplerProbeGain = chimeAudioCtx.createGain();
+    dopplerProbeGain.gain.value = 0.4;
+    dopplerProbeOsc.connect(dopplerProbeGain).connect(chimeAudioCtx.destination);
+    dopplerProbeOsc.start();
+    dopplerPosition = 0;
+  }
+
+  function stopDopplerGesture() {
+    if (dopplerProbeOsc) { try { dopplerProbeOsc.stop(); } catch (e) {} dopplerProbeOsc = null; }
+    dopplerProbeGain = null;
+    if (dopplerMicStream) { dopplerMicStream.getTracks().forEach((t) => t.stop()); dopplerMicStream = null; }
+    dopplerAnalyser = null;
+    dopplerFreqData = null;
+    dopplerPosition = 0;
+  }
+
+  // Starts/stops the mic + probe tone exactly when Doppler gesture is the
+  // active Source AND the chime is on -- called after both setChimeEnabled
+  // and setChimeSource, since either one can flip that condition.
+  function updateDopplerGestureLifecycle() {
+    const shouldRun = chimeEnabled && chimeSource === "doppler";
+    if (shouldRun && !dopplerAnalyser) startDopplerGesture();
+    else if (!shouldRun && dopplerAnalyser) stopDopplerGesture();
+  }
 
   // Lab-space distance at which the chime is essentially "on the exact
   // colour" (full volume/pitch) -- the far end (fully faded to silence)
@@ -3960,6 +4041,33 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       // scene," which is all this signal is actually trying to detect.
       const vividness = Math.max(s, sampleSceneColorSpread());
       closeness = Math.max(0, Math.min(1, vividness * Math.min(1, l * 1.5)));
+    } else if (chimeSource === "doppler") {
+      // No colour signal at all here -- closeness comes from a moving
+      // hand's Doppler-shifted echo instead (see startDopplerGesture).
+      // Only motion produces a detectable shift, so a still hand looks
+      // identical to no hand at all; dopplerPosition honestly decays back
+      // toward 0 (closeness 0.5, the scale's midpoint) rather than holding,
+      // same limitation theremin.js documents for its standalone version.
+      if (!dopplerAnalyser) {
+        chimeLastNoteIndex = -1;
+        return;
+      }
+      dopplerAnalyser.getFloatFrequencyData(dopplerFreqData);
+      const binHz = chimeAudioCtx.sampleRate / DOPPLER_FFT_SIZE;
+      const f0Bin = Math.round(DOPPLER_PROBE_FREQ / binHz);
+      const loOffset = Math.round(DOPPLER_SIDE_BAND_LO_HZ / binHz);
+      const hiOffset = Math.round(DOPPLER_SIDE_BAND_HI_HZ / binHz);
+      let aboveEnergy = 0, belowEnergy = 0;
+      for (let i = loOffset; i <= hiOffset; i++) {
+        const aboveBin = f0Bin + i, belowBin = f0Bin - i;
+        if (aboveBin < dopplerFreqData.length) aboveEnergy += dopplerDbToLinearEnergy(dopplerFreqData[aboveBin]);
+        if (belowBin >= 0) belowEnergy += dopplerDbToLinearEnergy(dopplerFreqData[belowBin]);
+      }
+      const balance = aboveEnergy - belowEnergy;
+      dopplerPosition += balance * DOPPLER_POSITION_GAIN * DOPPLER_TICK_SECONDS;
+      dopplerPosition *= Math.pow(DOPPLER_POSITION_DECAY_PER_SEC, DOPPLER_TICK_SECONDS);
+      dopplerPosition = Math.max(-1, Math.min(1, dopplerPosition));
+      closeness = (dopplerPosition + 1) / 2;
     } else {
       const dist = nearestSavedPointLabDistance(sampleCenterColor());
       if (dist == null) {
@@ -4070,6 +4178,10 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   function updateChimeSourceControlsVisibility() {
     chimeRangeWrap.classList.toggle("hide", !chimeEnabled || (chimeSource !== "saved" && chimeSource !== "calibrated"));
   }
+  // Doppler gesture never uses camera colour, so "no camera" isn't a
+  // reason to fall back silently the way Saved/Calibrated need a saved
+  // point -- nothing else to gate here beyond chimeEnabled, already
+  // handled by updateDopplerGestureLifecycle.
 
   function setChimeEnabled(next) {
     if (next === chimeEnabled) return;
@@ -4087,6 +4199,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     chimePatternWrap.classList.toggle("hide", !chimeEnabled);
     saveChimeEnabledPref();
     updateChimeSamplingTimer();
+    updateDopplerGestureLifecycle();
   }
 
   function setChimeOutput(next) {
@@ -4104,11 +4217,12 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   }
 
   function setChimeSource(next) {
-    if (next !== "saved" && next !== "live" && next !== "calibrated") return;
+    if (next !== "saved" && next !== "live" && next !== "calibrated" && next !== "doppler") return;
     chimeSource = next;
     chimeLastNoteIndex = -1;
     updateChimeSourceControlsVisibility();
     saveChimeSourcePref();
+    updateDopplerGestureLifecycle();
   }
 
   function setChimeRange(next) {
@@ -6548,7 +6662,7 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
       setChimeInstrument(s.chimeInstrument);
       chimeInstrumentSelect.value = chimeInstrument;
     }
-    if (s.chimeSource === "saved" || s.chimeSource === "live" || s.chimeSource === "calibrated") {
+    if (s.chimeSource === "saved" || s.chimeSource === "live" || s.chimeSource === "calibrated" || s.chimeSource === "doppler") {
       setChimeSource(s.chimeSource);
       chimeSourceSelect.value = chimeSource;
     }
