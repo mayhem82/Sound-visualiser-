@@ -1,0 +1,156 @@
+/* Vibration Scan — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .status) comes
+   from style.css; .dmx-section/.dmx-pill/.dmx-connect-btn/.dmx-top-status/
+   .dmx-empty-hint/.back-link are the same small set of shared "plain panel"
+   classes dmx.css defines for dmx.html -- duplicated here (not shared via a
+   common stylesheet) since this page has no other overlap with dmx.css. */
+
+body { overflow: auto; }
+
+#vsMain {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#vsMain.hide { display: none; }
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.dmx-section p.hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.6);
+  margin: 0 0 12px;
+}
+
+.dmx-section p.hint:last-child { margin-bottom: 0; }
+
+#vsCaveatBanner {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+#vsCaveatBanner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(254, 240, 138, 0.9);
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dmx-connect-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+.dmx-connect-btn:hover { filter: brightness(1.08); }
+.dmx-connect-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dmx-empty-hint {
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.5);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.vs-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.vs-log-table th, .vs-log-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(242, 242, 247, 0.12);
+}
+
+.vs-log-table th {
+  color: rgba(242, 242, 247, 0.55);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.vs-log-table tr.flagged td {
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }

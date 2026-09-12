@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vibration Scan</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📳</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="vibro-scan.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Vibration Scan</h1>
+    <p>Buzzes the phone's own vibration motor, then reads the accelerometer's response right after -- a rough, comparative way to spot a point that "rings" differently than its neighbours while you move the phone along something (a pipe, a panel, a beam).</p>
+    <p class="hint"><strong>Not a crack detector.</strong> The phone's vibration motor has no amplitude/frequency control and the accelerometer isn't a calibrated sensor -- how hard and how squarely you hold the phone against the surface affects the reading far more than a real defect would. Use this only to flag "this point looked different from the others nearby," never as a diagnosis.</p>
+    <p class="hint" id="vsSupportHint"></p>
+    <button id="startBtn">Open vibration scan</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="vsMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="motionPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="motionPillText">Motion sensor: off</span></span>
+    <span id="vibratePill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="vibratePillText">Vibration motor: ready</span></span>
+    <p id="vsStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section" id="vsCaveatBanner">
+    <p><strong>Comparative aid only, not a validated crack/defect detector.</strong> The vibration pulse is uncalibrated (the phone's own on/off motor, no amplitude or frequency control) and the accelerometer reading is dominated by how firmly and squarely you're pressing the phone against the surface. A flagged point means "this reading differed from its neighbours" -- nothing more. Keep contact pressure and angle as consistent as you can between points for the comparison to mean anything at all.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Sensors</h2>
+    <div class="dmx-inline-controls">
+      <button id="motionToggleBtn" class="hud-btn" aria-pressed="false">Enable motion sensor</button>
+    </div>
+    <p class="hint" id="vsUnsupportedHint"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Scan</h2>
+    <p class="hint">Hold the phone against the surface at your first point, keep it still for a moment, then press Pulse &amp; measure. Move to the next point along the pipe/panel and repeat.</p>
+    <div class="dmx-inline-controls">
+      <button id="pulseBtn" class="dmx-connect-btn" disabled>Pulse &amp; measure</button>
+      <button id="clearLogBtn" class="hud-btn">Clear log</button>
+      <button id="exportLogBtn" class="hud-btn">Export CSV</button>
+    </div>
+    <p id="pulseStatus" class="status"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Log</h2>
+    <p id="vsLogEmptyHint" class="dmx-empty-hint">No scan points yet.</p>
+    <div id="vsLogTableWrap" class="hide">
+      <table id="vsLogTable" class="vs-log-table">
+        <thead>
+          <tr><th>#</th><th>Peak</th><th>Residual</th><th>Flag</th></tr>
+        </thead>
+        <tbody id="vsLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="vibro-scan.js"></script>
+</body>
+</html>
