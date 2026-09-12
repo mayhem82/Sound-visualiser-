@@ -84,6 +84,8 @@
   const thMeterFill = document.getElementById("thMeterFill");
   const thNoteReadout = document.getElementById("thNoteReadout");
   const thEchoReadout = document.getElementById("thEchoReadout");
+  const thEchoMeterWrap = document.getElementById("thEchoMeterWrap");
+  const thEchoMeterFill = document.getElementById("thEchoMeterFill");
   const thProbeVolWrap = document.getElementById("thProbeVolWrap");
   const thProbeVolSlider = document.getElementById("thProbeVolSlider");
   const thSynthVolSlider = document.getElementById("thSynthVolSlider");
@@ -162,6 +164,7 @@
   let rawEchoAmount = 0;
   let smoothedTiltPos = 0;
   let smoothedEchoAmount = 0;
+  let betaBaseline = null; // captured from the first reading each time tilt sensing starts -- see handleOrientation
   let orientationPermissionGranted = false;
 
   function dbToLinearEnergy(db) {
@@ -194,17 +197,25 @@
 
   // Two genuinely independent, simultaneous axes of the same tilt sensor
   // -- not one axis doing double duty by sign. Gamma (left/right) drives
-  // pitch, full symmetric range, same as Doppler's -1..1 convention. Beta
-  // (forward/back, either direction) independently drives the echo/delay
-  // effect -- tilting the phone away from flat either way adds echo, with
-  // no relation to which way gamma is currently tilted, so pitch and echo
-  // can both be active together (e.g. tilted right AND forward at once).
+  // pitch, full symmetric range, same as Doppler's -1..1 convention.
+  //
+  // Beta (forward/back) independently drives the echo/delay effect, but
+  // NOT from beta's raw spec value -- beta=0 means the device lying flat
+  // on a table; held upright for normal use (however that particular
+  // phone/grip settles) it can already sit well away from 0 before anyone
+  // tilts anything, which would leave the echo pinned at a constant
+  // reading that never seems to respond. So the first orientation
+  // reading after entering Tilt mode is captured as a baseline, and echo
+  // tracks the ongoing DEVIATION from that baseline (tilt away from
+  // however you started holding it, either direction) instead of an
+  // absolute angle from the spec's flat-on-a-table zero.
   function handleOrientation(e) {
     if (typeof e.gamma === "number") {
       rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
     }
     if (typeof e.beta === "number") {
-      rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta) / TILT_ECHO_RANGE_DEG));
+      if (betaBaseline === null) betaBaseline = e.beta;
+      rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta - betaBaseline) / TILT_ECHO_RANGE_DEG));
     }
   }
 
@@ -302,7 +313,10 @@
     thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
     thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
     thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
-    if (sensingMode === "tilt") thEchoReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
+    if (sensingMode === "tilt") {
+      thEchoReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
+      thEchoMeterFill.style.width = `${echoAmount * 100}%`;
+    }
 
     rafId = requestAnimationFrame(tick);
   }
@@ -375,6 +389,7 @@
     rawEchoAmount = 0;
     smoothedTiltPos = 0;
     smoothedEchoAmount = 0;
+    betaBaseline = null; // recalibrated from the next reading -- see handleOrientation
     orientationPill.className = "dmx-pill connected";
     orientationPillText.textContent = "Orientation sensor: on";
   }
@@ -413,7 +428,8 @@
     thMeterHintDoppler.classList.toggle("hide", !isDoppler);
     thMeterHintTilt.classList.toggle("hide", isDoppler);
     thEchoReadout.classList.toggle("hide", isDoppler);
-    if (isDoppler) thEchoReadout.textContent = "";
+    thEchoMeterWrap.classList.toggle("hide", isDoppler);
+    if (isDoppler) { thEchoReadout.textContent = ""; thEchoMeterFill.style.width = "0%"; }
   }
   applySensingModeUI();
 
@@ -508,6 +524,7 @@
     thMeterFill.style.width = "0%";
     thNoteReadout.textContent = "--";
     thEchoReadout.textContent = "";
+    thEchoMeterFill.style.width = "0%";
     if (window.WakeLockHelper) window.WakeLockHelper.disable();
   }
 
