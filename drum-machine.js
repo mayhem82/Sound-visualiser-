@@ -67,8 +67,30 @@
   let monitorLevel = 0;
   let lastTriggerAt = -Infinity;
 
+  // Master boost + limiter, not a direct-to-destination connection --
+  // most voices below sit well under unity gain even at full volume
+  // (filtered noise loses most of its energy to the filter, and several
+  // pads layer 2-4 quick bursts that would otherwise sum into clipping),
+  // so straight gain alone can't get louder without either staying quiet
+  // or distorting when several sounds overlap. The compressor is what
+  // makes the boost usable: it reins in peaks so simultaneous/overlapping
+  // hits don't turn into harsh clipping instead of just being louder.
+  const MASTER_BOOST = 2.2;
+  let masterBus = null;
+
   function ensureAudio() {
     if (!audioCtx) audioCtx = new AudioContextCtor();
+    if (!masterBus) {
+      masterBus = audioCtx.createGain();
+      masterBus.gain.value = MASTER_BOOST;
+      const compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 12;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.2;
+      masterBus.connect(compressor).connect(audioCtx.destination);
+    }
     if (!noiseBuffer) {
       const len = audioCtx.sampleRate; // 1 second of white noise, sliced from for every hit
       noiseBuffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
@@ -89,7 +111,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume(), now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterBus);
     osc.start(now);
     osc.stop(now + 0.4);
   }
@@ -106,7 +128,7 @@
     const noiseGain = audioCtx.createGain();
     noiseGain.gain.setValueAtTime(vol, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-    noise.connect(bp).connect(noiseGain).connect(audioCtx.destination);
+    noise.connect(bp).connect(noiseGain).connect(masterBus);
     noise.start(now);
     noise.stop(now + 0.2);
 
@@ -116,7 +138,7 @@
     const oscGain = audioCtx.createGain();
     oscGain.gain.setValueAtTime(vol * 0.7, now);
     oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-    osc.connect(oscGain).connect(audioCtx.destination);
+    osc.connect(oscGain).connect(masterBus);
     osc.start(now);
     osc.stop(now + 0.15);
   }
@@ -132,7 +154,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(vol * 0.6, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-    noise.connect(hp).connect(gain).connect(audioCtx.destination);
+    noise.connect(hp).connect(gain).connect(masterBus);
     noise.start(now);
     noise.stop(now + 0.08);
   }
@@ -149,7 +171,7 @@
       const gain = audioCtx.createGain();
       gain.gain.setValueAtTime(vol * (i === 2 ? 1 : 0.6), now + offset);
       gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.08);
-      noise.connect(bp).connect(gain).connect(audioCtx.destination);
+      noise.connect(bp).connect(gain).connect(masterBus);
       noise.start(now + offset);
       noise.stop(now + offset + 0.1);
     });
@@ -166,7 +188,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume() * volMult, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + decayS);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterBus);
     osc.start(now);
     osc.stop(now + decayS + 0.05);
   }
@@ -183,7 +205,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume() * volMult, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + decayS);
-    noise.connect(filter).connect(gain).connect(audioCtx.destination);
+    noise.connect(filter).connect(gain).connect(masterBus);
     noise.start(now);
     noise.stop(now + decayS + 0.02);
   }
@@ -202,7 +224,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume() * 0.5, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterBus);
     osc.start(now);
     osc.stop(now + 0.06);
   }
@@ -216,7 +238,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(vol * 0.8, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-    bp.connect(gain).connect(audioCtx.destination);
+    bp.connect(gain).connect(masterBus);
     [587, 845].forEach((freq) => {
       const osc = audioCtx.createOscillator();
       osc.type = "square";
@@ -247,7 +269,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume() * 0.8, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterBus);
     osc.start(now);
     osc.stop(now + 0.17);
   }
@@ -270,7 +292,7 @@
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(volume() * 0.6, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterBus);
     osc.start(now);
     osc.stop(now + 0.06);
   }
