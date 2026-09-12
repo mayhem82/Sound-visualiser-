@@ -864,8 +864,9 @@
     // A confirming buzz on every change, tap or auto-tracked -- the whole
     // point of this page is watching the sky, not the screen, so a manual
     // tally tap needs to be felt, not just seen.
-    if (changed && vibrateSupported) {
-      try { navigator.vibrate(25); } catch (e) { /* ignore */ }
+    if (changed) {
+      if (window.HapticHelper) window.HapticHelper.pulse(0.5, 25);
+      else if (vibrateSupported) { try { navigator.vibrate(25); } catch (e) { /* ignore */ } }
     }
     if (pulse) {
       // Distinguishes an auto-added count from a manual tap at a glance —

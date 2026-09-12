@@ -2277,8 +2277,13 @@
   }
 
   function fireBeatEffects(strength) {
-    if (beatVibrateEnabled && vibrateSupported) {
-      try { navigator.vibrate(35); } catch (e) { /* ignore */ }
+    if (beatVibrateEnabled) {
+      // Real amplitude control via a connected gamepad's rumble motors
+      // when one's available -- the beat's own strength becomes how hard
+      // it buzzes, not just a fixed on/off blip like navigator.vibrate()
+      // alone can do.
+      if (window.HapticHelper) window.HapticHelper.pulse(strength, 35);
+      else if (vibrateSupported) { try { navigator.vibrate(35); } catch (e) { /* ignore */ } }
     }
     if (torchSupported && torchTrack && !beatTorchBusy) {
       pulseBeatTorch(lerp(beatMinFlashMs, beatMaxFlashMs, strength));
