@@ -410,7 +410,9 @@
   const scanHint = document.getElementById("dmxScanHint");
   const rigQrControls = document.getElementById("dmxRigQrControls");
   const copyRigJsonBtn = document.getElementById("dmxCopyRigJsonBtn");
+  const dmxShowRigJsonQrBtn = document.getElementById("dmxShowRigJsonQrBtn");
   const copyRigTagBtn = document.getElementById("dmxCopyRigTagBtn");
+  const dmxShowRigTagQrBtn = document.getElementById("dmxShowRigTagQrBtn");
   const scanRigBtn = document.getElementById("dmxScanRigBtn");
   const scanStatus = document.getElementById("dmxScanStatus");
   const blackoutBtn = document.getElementById("dmxBlackoutBtn");
@@ -665,35 +667,47 @@
     else startScanningForRig();
   });
 
+  function rigJsonPayload() {
+    const rig = rigPresets.find((r) => r.id === rigSelect.value);
+    return rig ? JSON.stringify({ name: rig.name, fixtures: rig.fixtures }) : null;
+  }
+  function rigTagPayload() {
+    const rig = rigPresets.find((r) => r.id === rigSelect.value);
+    return rig ? { text: JSON.stringify({ dmxLoadRig: rig.name }), name: rig.name } : null;
+  }
+
   copyRigJsonBtn.addEventListener("click", async () => {
-    const id = rigSelect.value;
-    const rig = rigPresets.find((r) => r.id === id);
-    if (!rig) {
-      rigStatus.textContent = "Pick a saved rig to copy first.";
-      return;
-    }
-    const payload = JSON.stringify({ name: rig.name, fixtures: rig.fixtures });
+    const payload = rigJsonPayload();
+    if (!payload) { rigStatus.textContent = "Pick a saved rig to copy first."; return; }
     try {
       await navigator.clipboard.writeText(payload);
-      rigStatus.textContent = `Copied "${rig.name}" as JSON -- paste it into any QR generator.`;
+      rigStatus.textContent = "Copied as JSON -- paste it into any QR generator, or use \"Show as QR code\" instead.";
     } catch (e) {
       rigStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
   });
 
+  dmxShowRigJsonQrBtn.addEventListener("click", () => {
+    const payload = rigJsonPayload();
+    if (!payload) { rigStatus.textContent = "Pick a saved rig to show a QR code for first."; return; }
+    showQrPopup(payload, { title: "Rig JSON", caption: "Scan with \"Scan rig from QR\" on any device to import this rig." });
+  });
+
   copyRigTagBtn.addEventListener("click", async () => {
-    const id = rigSelect.value;
-    const rig = rigPresets.find((r) => r.id === id);
-    if (!rig) {
-      rigStatus.textContent = "Pick a saved rig to copy a tag for first.";
-      return;
-    }
+    const tag = rigTagPayload();
+    if (!tag) { rigStatus.textContent = "Pick a saved rig to copy a tag for first."; return; }
     try {
-      await navigator.clipboard.writeText(JSON.stringify({ dmxLoadRig: rig.name }));
-      rigStatus.textContent = `Copied a rig tag for "${rig.name}" -- paste it into any QR generator.`;
+      await navigator.clipboard.writeText(tag.text);
+      rigStatus.textContent = `Copied a rig tag for "${tag.name}" -- paste it into any QR generator, or use "Show tag as QR code" instead.`;
     } catch (e) {
       rigStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
+  });
+
+  dmxShowRigTagQrBtn.addEventListener("click", () => {
+    const tag = rigTagPayload();
+    if (!tag) { rigStatus.textContent = "Pick a saved rig to show a tag QR code for first."; return; }
+    showQrPopup(tag.text, { title: "Rig tag", caption: `Scan this to load "${tag.name}" by name on any device with it saved.` });
   });
 
   let refreshHz = (() => {

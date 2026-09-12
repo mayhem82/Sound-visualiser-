@@ -103,7 +103,9 @@
     <p class="hint" id="dmxRigQrHint" title="Copies the selected rig as plain JSON text -- paste that into any free QR generator to turn it into a scannable code (there's no QR generator built into this page). Bring that code back to any device to import it -- the scan side needs a real QR reader (see below), but copying the JSON itself works in any browser.">Copy a rig as JSON, then turn it into a QR code with any generator:</p>
     <div class="dmx-inline-controls">
       <button id="dmxCopyRigJsonBtn" class="hud-btn" title="Copies the currently selected saved rig as JSON text to the clipboard.">Copy selected rig as JSON</button>
+      <button id="dmxShowRigJsonQrBtn" class="hud-btn" title="Shows the selected saved rig as a real QR code, generated right here (no external site) -- scan it directly, or save/print it.">Show as QR code</button>
       <button id="dmxCopyRigTagBtn" class="hud-btn" title="Copies a small QR payload naming (not containing) the selected rig -- print it and tape it up near a fixture group so scanning it later loads (applies) this exact rig immediately, without hunting the dropdown.">Copy rig tag (name only)</button>
+      <button id="dmxShowRigTagQrBtn" class="hud-btn" title="Shows the rig tag as a real QR code, generated right here -- scan it directly, or save/print it to tape up near a fixture group.">Show tag as QR code</button>
     </div>
     <p class="hint hide" id="dmxScanHint" title="A real QR/barcode reader (the browser's own Shape Detection API), not a library -- hidden entirely on a browser that doesn't support it (unlike copying the JSON above, which works everywhere), same as every other feature-detected control in this suite.">Scan a rig's QR code, or a rig tag, back in with the already-running camera:</p>
     <div class="dmx-inline-controls hide" id="dmxRigQrControls">
@@ -117,6 +119,8 @@
 </main>
 
 <script src="colour-math.js"></script>
+<script src="qrcode-gen.js"></script>
+<script src="qr-display.js"></script>
 <script src="dmx.js"></script>
 </body>
 </html>
