@@ -81,11 +81,12 @@
 
   const thStartBtn = document.getElementById("thStartBtn");
   const thStopBtn = document.getElementById("thStopBtn");
+  const thMeterWrap = document.getElementById("thMeterWrap");
   const thMeterFill = document.getElementById("thMeterFill");
   const thNoteReadout = document.getElementById("thNoteReadout");
   const thEchoReadout = document.getElementById("thEchoReadout");
-  const thEchoMeterWrap = document.getElementById("thEchoMeterWrap");
-  const thEchoMeterFill = document.getElementById("thEchoMeterFill");
+  const thTiltPad2DWrap = document.getElementById("thTiltPad2DWrap");
+  const thTiltMarble = document.getElementById("thTiltMarble");
   const thSensorDebug = document.getElementById("thSensorDebug");
   const thProbeVolWrap = document.getElementById("thProbeVolWrap");
   const thProbeVolSlider = document.getElementById("thProbeVolSlider");
@@ -101,8 +102,6 @@
   const thTouchPad = document.getElementById("thTouchPad");
   const thCaveatDoppler = document.getElementById("thCaveatDoppler");
   const thCaveatTilt = document.getElementById("thCaveatTilt");
-  const thMeterHintDoppler = document.getElementById("thMeterHintDoppler");
-  const thMeterHintTilt = document.getElementById("thMeterHintTilt");
 
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   const hasAudio = typeof AudioContextCtor === "function";
@@ -163,8 +162,10 @@
   let rawTiltPos = 0;
   let rawTiltVolume = 0;
   let rawEchoAmount = 0;
+  let rawEchoSigned = 0; // signed -1..1 version of the same reading, for the 2D marble's Y position only -- audio echo stays symmetric (abs), see tick()
   let smoothedTiltPos = 0;
   let smoothedEchoAmount = 0;
+  let smoothedEchoSigned = 0;
   let betaBaseline = null; // fallback path only -- see handleOrientation
   let echoFromMotion = false; // true once a real accelerationIncludingGravity reading has arrived this session -- see handleMotion/handleOrientation
   let orientationPermissionGranted = false;
@@ -243,7 +244,8 @@
       lastRawBeta = e.beta;
       if (!echoFromMotion) {
         if (betaBaseline === null) betaBaseline = e.beta;
-        rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta - betaBaseline) / TILT_ECHO_RANGE_DEG));
+        rawEchoSigned = Math.max(-1, Math.min(1, (e.beta - betaBaseline) / TILT_ECHO_RANGE_DEG));
+        rawEchoAmount = Math.abs(rawEchoSigned);
       }
     }
   }
@@ -255,7 +257,8 @@
     echoFromMotion = true;
     const pitchDeg = Math.atan2(g.y, Math.sqrt(g.x * g.x + g.z * g.z)) * 180 / Math.PI;
     lastAccelPitchDeg = pitchDeg;
-    rawEchoAmount = Math.max(0, Math.min(1, Math.abs(pitchDeg) / TILT_ECHO_RANGE_DEG));
+    rawEchoSigned = Math.max(-1, Math.min(1, pitchDeg / TILT_ECHO_RANGE_DEG));
+    rawEchoAmount = Math.abs(rawEchoSigned);
   }
 
   // Touch pad: silent (0) whenever no finger is on it, matching a real
@@ -313,6 +316,7 @@
     const smoothing = Math.min(1, TILT_SMOOTHING_PER_SEC * dtSeconds);
     smoothedTiltPos += (rawTiltPos - smoothedTiltPos) * smoothing;
     smoothedEchoAmount += (rawEchoAmount - smoothedEchoAmount) * smoothing;
+    smoothedEchoSigned += (rawEchoSigned - smoothedEchoSigned) * smoothing;
     return { pos: smoothedTiltPos, activityGain: rawTiltVolume, echoAmount: smoothedEchoAmount };
   }
 
@@ -345,17 +349,20 @@
       }
     }
 
-    // Pitch meter is the same in both modes now (gamma and Doppler's
-    // position both use -1..1). Echo is a separate, simultaneous readout
-    // in Tilt mode -- it's an independent axis (beta), not an alternate
-    // state the pitch meter switches into.
-    thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
-    thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
     thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
     if (sensingMode === "tilt") {
+      // A real 2D surface, not two independent 1D bars -- the marble can
+      // reach any corner (both axes at their extreme at once), not just
+      // slide along a single line, because pos (left/right) and
+      // smoothedEchoSigned (forward/back) are genuinely separate values
+      // both driving this one dot's position at the same time.
       thEchoReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
-      thEchoMeterFill.style.width = `${echoAmount * 100}%`;
+      thTiltMarble.style.left = `${(pos + 1) / 2 * 100}%`;
+      thTiltMarble.style.top = `${(1 - (smoothedEchoSigned + 1) / 2) * 100}%`;
       thSensorDebug.textContent = `raw: γ ${fmtDeg(lastRawGamma)} β ${fmtDeg(lastRawBeta)} | accel x ${fmtNum(lastRawAccelX)} y ${fmtNum(lastRawAccelY)} z ${fmtNum(lastRawAccelZ)} | echo angle ${fmtDeg(lastAccelPitchDeg)} (source: ${echoFromMotion ? "accelerometer" : "beta fallback"})`;
+    } else {
+      thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
+      thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
     }
 
     rafId = requestAnimationFrame(tick);
@@ -478,12 +485,17 @@
     thTouchPadWrap.classList.toggle("hide", isDoppler);
     thCaveatDoppler.classList.toggle("hide", !isDoppler);
     thCaveatTilt.classList.toggle("hide", isDoppler);
-    thMeterHintDoppler.classList.toggle("hide", !isDoppler);
-    thMeterHintTilt.classList.toggle("hide", isDoppler);
+    thMeterWrap.classList.toggle("hide", !isDoppler);
+    thTiltPad2DWrap.classList.toggle("hide", isDoppler);
     thEchoReadout.classList.toggle("hide", isDoppler);
-    thEchoMeterWrap.classList.toggle("hide", isDoppler);
     thSensorDebug.classList.toggle("hide", isDoppler);
-    if (isDoppler) { thEchoReadout.textContent = ""; thEchoMeterFill.style.width = "0%"; thSensorDebug.textContent = ""; }
+    if (isDoppler) {
+      thEchoReadout.textContent = "";
+      thSensorDebug.textContent = "";
+    } else {
+      thTiltMarble.style.left = "50%";
+      thTiltMarble.style.top = "50%";
+    }
   }
   applySensingModeUI();
 
@@ -576,9 +588,10 @@
     thStartBtn.classList.remove("hide");
     thStopBtn.classList.add("hide");
     thMeterFill.style.width = "0%";
+    thTiltMarble.style.left = "50%";
+    thTiltMarble.style.top = "50%";
     thNoteReadout.textContent = "--";
     thEchoReadout.textContent = "";
-    thEchoMeterFill.style.width = "0%";
     thSensorDebug.textContent = "";
     if (window.WakeLockHelper) window.WakeLockHelper.disable();
   }

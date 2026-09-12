@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="theremin.css?v=3">
+<link rel="stylesheet" href="theremin.css?v=4">
 </head>
 <body>
 <div id="overlay">
@@ -62,14 +62,13 @@
     </div>
     <div id="thMeterWrap">
       <div id="thMeterBar"><div id="thMeterFill"></div><div id="thMeterCenter"></div></div>
-      <p class="hint" id="thMeterHintDoppler">Left = receding, right = approaching, centre = still</p>
-      <p class="hint hide" id="thMeterHintTilt">Left = tilted left (lower pitch), right = tilted right (higher pitch)</p>
+      <p class="hint">Left = receding, right = approaching, centre = still</p>
+    </div>
+    <div id="thTiltPad2DWrap" class="hide">
+      <div id="thTiltPad2D"><div id="thTiltMarble"></div></div>
+      <p class="hint">The marble moves freely in both directions at once -- left/right = pitch, up/down = echo. It's not locked to one line: tilt diagonally and it moves diagonally.</p>
     </div>
     <p id="thNoteReadout" class="th-note-readout">--</p>
-    <div id="thEchoMeterWrap" class="hide">
-      <div id="thEchoMeterBar"><div id="thEchoMeterFill"></div></div>
-      <p class="hint">Forward/back tilt (either direction, from however you started holding it) = echo</p>
-    </div>
     <p id="thEchoReadout" class="th-echo-readout hide"></p>
     <p id="thSensorDebug" class="th-sensor-debug hide"></p>
   </section>
@@ -113,6 +112,6 @@
 
 <script src="wake-lock.js"></script>
 <script src="midi-instrument.js"></script>
-<script src="theremin.js?v=3"></script>
+<script src="theremin.js?v=4"></script>
 </body>
 </html>

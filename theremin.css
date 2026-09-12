@@ -128,6 +128,8 @@ body { overflow: auto; }
   margin-top: 4px;
 }
 
+#thMeterWrap.hide { display: none; }
+
 #thMeterBar {
   position: relative;
   height: 18px;
@@ -148,30 +150,47 @@ body { overflow: auto; }
   transition: width 0.05s linear, left 0.05s linear;
 }
 
-#thEchoMeterWrap {
-  margin-top: 14px;
+#thTiltPad2DWrap {
+  margin-top: 4px;
 }
 
-#thEchoMeterWrap.hide { display: none; }
+#thTiltPad2DWrap.hide { display: none; }
 
-#thEchoMeterBar {
+#thTiltPad2D {
   position: relative;
-  height: 14px;
-  border-radius: 999px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 260px;
+  margin: 0 auto 6px;
+  border-radius: 14px;
   background: rgba(5, 5, 10, 0.5);
   border: 1px solid rgba(242, 242, 247, 0.15);
   overflow: hidden;
-  margin-bottom: 6px;
 }
 
-#thEchoMeterFill {
+#thTiltPad2D::before,
+#thTiltPad2D::after {
+  content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 0%;
-  background: linear-gradient(90deg, #fda4af, #fb923c);
-  transition: width 0.05s linear;
+  background: rgba(242, 242, 247, 0.15);
+}
+
+/* Centre crosshair -- a fixed visual reference so the marble's motion
+   away from centre (in any direction) is easy to judge at a glance. */
+#thTiltPad2D::before { top: 50%; left: 0; right: 0; height: 1px; }
+#thTiltPad2D::after { left: 50%; top: 0; bottom: 0; width: 1px; }
+
+#thTiltMarble {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fef3c7, #a78bfa 55%, #fb923c 100%);
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.6);
+  transition: left 0.05s linear, top 0.05s linear;
 }
 
 #thMeterCenter {
