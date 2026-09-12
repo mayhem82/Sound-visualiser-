@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="theremin.css">
+<link rel="stylesheet" href="theremin.css?v=3">
 </head>
 <body>
 <div id="overlay">
@@ -39,7 +39,7 @@
 
   <section class="dmx-section" id="thCaveatBanner">
     <p id="thCaveatDoppler"><strong>Doppler: proximity/motion analogue only, not a ranging tool.</strong> The pitch you hear tracks a smoothed estimate of "hand approaching vs. receding," not a real distance. Loud rooms, other ultrasonic-capable devices, and quiet speakers/mics all degrade it -- if nothing seems to respond, try moving your hand within about 20&ndash;30cm of the phone in a quiet room.</p>
-    <p id="thCaveatTilt" class="hide"><strong>Tilt + Touch: real, direct readings, no approximation</strong> -- but it's the phone's own tilt and a touch on the pad, not a hand's distance in mid-air. Left/right tilt (gamma) is pitch, holding an angle holds the pitch (unlike Doppler's decay-to-centre); forward/back tilt (beta), either direction, independently drives a real echo/delay effect -- both axes work at the same time, so tilting right AND forward at once means a higher pitch with more echo, not one replacing the other. Echo is measured from however you were holding the phone the moment you pressed Start playing, not a fixed angle -- tilt away from that starting position, either way, for more echo. MIDI output can't carry the echo effect (nothing local to process on a remote device's own note) -- only Synth and Instrument get it.</p>
+    <p id="thCaveatTilt" class="hide"><strong>Tilt + Touch: real, direct, absolute readings, no approximation and no calibration step</strong> -- but it's the phone's own tilt and a touch on the pad, not a hand's distance in mid-air. Left/right tilt is pitch, holding an angle holds the pitch (unlike Doppler's decay-to-centre); forward/back tilt, either direction, independently drives a real echo/delay effect, read straight from the accelerometer the same way a bubble-level app reads it -- an absolute angle, not a deviation from wherever you started holding the phone. Both axes work at the same time and work the same way whether the phone is flat, upright, or anywhere between: tilting right AND forward at once means a higher pitch with more echo, not one replacing the other. A raw sensor readout below shows the exact numbers driving both axes. MIDI output can't carry the echo effect (nothing local to process on a remote device's own note) -- only Synth and Instrument get it.</p>
   </section>
 
   <section class="dmx-section">
@@ -71,6 +71,7 @@
       <p class="hint">Forward/back tilt (either direction, from however you started holding it) = echo</p>
     </div>
     <p id="thEchoReadout" class="th-echo-readout hide"></p>
+    <p id="thSensorDebug" class="th-sensor-debug hide"></p>
   </section>
 
   <section class="dmx-section">
@@ -112,6 +113,6 @@
 
 <script src="wake-lock.js"></script>
 <script src="midi-instrument.js"></script>
-<script src="theremin.js"></script>
+<script src="theremin.js?v=3"></script>
 </body>
 </html>

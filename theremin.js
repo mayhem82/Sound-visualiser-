@@ -40,7 +40,7 @@
   const BASE_FREQ = 220;          // A3 -- centre pitch when position is 0
   const PITCH_RANGE_OCTAVES = 1.5;
   const TILT_PITCH_RANGE_DEG = 45;   // gamma at +this many degrees (tilt right) maps to pitch position 1
-  const TILT_ECHO_RANGE_DEG = 45;    // gamma at -this many degrees (tilt left) maps to full echo amount
+  const TILT_ECHO_RANGE_DEG = 45;    // this many degrees of forward/back tilt (accelerometer-derived, or beta-fallback deviation) maps to full echo amount
   const TILT_SMOOTHING_PER_SEC = 12; // light smoothing only -- tilt/touch are direct readings, not signals that need heavy filtering
   const ECHO_DELAY_SEC = 0.28;
   const ECHO_MAX_FEEDBACK = 0.65;    // kept well under 1 so repeats always decay, never build up into runaway feedback
@@ -86,6 +86,7 @@
   const thEchoReadout = document.getElementById("thEchoReadout");
   const thEchoMeterWrap = document.getElementById("thEchoMeterWrap");
   const thEchoMeterFill = document.getElementById("thEchoMeterFill");
+  const thSensorDebug = document.getElementById("thSensorDebug");
   const thProbeVolWrap = document.getElementById("thProbeVolWrap");
   const thProbeVolSlider = document.getElementById("thProbeVolSlider");
   const thSynthVolSlider = document.getElementById("thSynthVolSlider");
@@ -164,8 +165,15 @@
   let rawEchoAmount = 0;
   let smoothedTiltPos = 0;
   let smoothedEchoAmount = 0;
-  let betaBaseline = null; // captured from the first reading each time tilt sensing starts -- see handleOrientation
+  let betaBaseline = null; // fallback path only -- see handleOrientation
+  let echoFromMotion = false; // true once a real accelerationIncludingGravity reading has arrived this session -- see handleMotion/handleOrientation
   let orientationPermissionGranted = false;
+  let motionPermissionGranted = false;
+  const hasMotion = typeof window.DeviceMotionEvent !== "undefined";
+  // Raw last-seen sensor values, kept only to render thSensorDebug -- lets
+  // a real device be diagnosed from a screenshot instead of guesswork
+  // when tilt behaviour doesn't match what the code intends.
+  let lastRawGamma = null, lastRawBeta = null, lastRawAccelX = null, lastRawAccelY = null, lastRawAccelZ = null, lastAccelPitchDeg = null;
 
   function dbToLinearEnergy(db) {
     if (!isFinite(db)) return 0;
@@ -187,6 +195,9 @@
     return BASE_FREQ * Math.pow(2, pos * PITCH_RANGE_OCTAVES);
   }
 
+  function fmtDeg(v) { return typeof v === "number" ? `${v.toFixed(1)}°` : "--"; }
+  function fmtNum(v) { return typeof v === "number" ? v.toFixed(1) : "--"; }
+
   function noteNameForFrequency(freq) {
     const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     const midi = Math.round(69 + 12 * Math.log2(freq / 440));
@@ -195,28 +206,56 @@
     return `${name}${octave}`;
   }
 
-  // Two genuinely independent, simultaneous axes of the same tilt sensor
-  // -- not one axis doing double duty by sign. Gamma (left/right) drives
-  // pitch, full symmetric range, same as Doppler's -1..1 convention.
+  // Two genuinely independent, simultaneous axes -- not one axis doing
+  // double duty by sign, and not calibrated against wherever the device
+  // happened to be at the moment Start was pressed. Both are absolute,
+  // direct readings, like a phone's own bubble-level tool: point the
+  // camera app's level at the ground or at a wall and it reads the real
+  // angle immediately, with no "hold still while I calibrate a zero"
+  // step -- that's the behaviour this now matches, not just for a phone
+  // held upright, but flat on a table or anywhere in between.
   //
-  // Beta (forward/back) independently drives the echo/delay effect, but
-  // NOT from beta's raw spec value -- beta=0 means the device lying flat
-  // on a table; held upright for normal use (however that particular
-  // phone/grip settles) it can already sit well away from 0 before anyone
-  // tilts anything, which would leave the echo pinned at a constant
-  // reading that never seems to respond. So the first orientation
-  // reading after entering Tilt mode is captured as a baseline, and echo
-  // tracks the ongoing DEVIATION from that baseline (tilt away from
-  // however you started holding it, either direction) instead of an
-  // absolute angle from the spec's flat-on-a-table zero.
+  // Gamma (DeviceOrientationEvent) drives pitch -- left/right tilt.
+  //
+  // Echo is driven by forward/back tilt, but deliberately NOT read from
+  // DeviceOrientationEvent's beta. Beta/gamma are Euler angles decomposed
+  // from a fused orientation matrix, and that decomposition has a
+  // gimbal-lock singularity at beta = +-90 deg where beta and gamma can
+  // bleed into each other -- a real failure mode for *some* holding
+  // angles, not a universal one. Rather than assume any particular
+  // holding angle at all, echo instead comes straight from the
+  // accelerometer's raw gravity vector (DeviceMotionEvent), decomposed
+  // with the same atan2-based trig a bubble-level app uses:
+  // atan2(y, sqrt(x^2 + z^2)) gives the device's forward/back tilt angle
+  // directly from the three raw axes, with no fitted zero-point and no
+  // dependency on how the device happens to be oriented -- flat, upright,
+  // or anywhere between, tilting front/back always moves this angle, and
+  // rolling left/right (which changes x and z, not y) barely touches it.
+  // This only falls back to beta (still baseline-calibrated, since beta's
+  // own zero can't be assumed either) if a device/browser never delivers
+  // a devicemotion reading with real gravity data at all.
   function handleOrientation(e) {
     if (typeof e.gamma === "number") {
+      lastRawGamma = e.gamma;
       rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
     }
     if (typeof e.beta === "number") {
-      if (betaBaseline === null) betaBaseline = e.beta;
-      rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta - betaBaseline) / TILT_ECHO_RANGE_DEG));
+      lastRawBeta = e.beta;
+      if (!echoFromMotion) {
+        if (betaBaseline === null) betaBaseline = e.beta;
+        rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta - betaBaseline) / TILT_ECHO_RANGE_DEG));
+      }
     }
+  }
+
+  function handleMotion(e) {
+    const g = e.accelerationIncludingGravity;
+    if (!g || typeof g.x !== "number" || typeof g.y !== "number" || typeof g.z !== "number") return;
+    lastRawAccelX = g.x; lastRawAccelY = g.y; lastRawAccelZ = g.z;
+    echoFromMotion = true;
+    const pitchDeg = Math.atan2(g.y, Math.sqrt(g.x * g.x + g.z * g.z)) * 180 / Math.PI;
+    lastAccelPitchDeg = pitchDeg;
+    rawEchoAmount = Math.max(0, Math.min(1, Math.abs(pitchDeg) / TILT_ECHO_RANGE_DEG));
   }
 
   // Touch pad: silent (0) whenever no finger is on it, matching a real
@@ -316,6 +355,7 @@
     if (sensingMode === "tilt") {
       thEchoReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
       thEchoMeterFill.style.width = `${echoAmount * 100}%`;
+      thSensorDebug.textContent = `raw: γ ${fmtDeg(lastRawGamma)} β ${fmtDeg(lastRawBeta)} | accel x ${fmtNum(lastRawAccelX)} y ${fmtNum(lastRawAccelY)} z ${fmtNum(lastRawAccelZ)} | echo angle ${fmtDeg(lastAccelPitchDeg)} (source: ${echoFromMotion ? "accelerometer" : "beta fallback"})`;
     }
 
     rafId = requestAnimationFrame(tick);
@@ -379,7 +419,18 @@
       if (perm !== "granted") throw new Error("Orientation sensor: permission denied.");
       orientationPermissionGranted = true;
     }
+    // Separate iOS permission gate from DeviceOrientationEvent's -- best
+    // effort only. If it's denied (or the device has no motion sensor at
+    // all), echo just falls back to the beta path in handleOrientation
+    // rather than failing the whole page.
+    if (hasMotion && typeof DeviceMotionEvent.requestPermission === "function" && !motionPermissionGranted) {
+      try {
+        const permM = await DeviceMotionEvent.requestPermission();
+        if (permM === "granted") motionPermissionGranted = true;
+      } catch (e) {}
+    }
     window.addEventListener("deviceorientation", handleOrientation);
+    if (hasMotion) window.addEventListener("devicemotion", handleMotion);
     thTouchPad.addEventListener("pointerdown", handleTouchPadDown);
     thTouchPad.addEventListener("pointermove", handleTouchPadMove);
     thTouchPad.addEventListener("pointerup", handleTouchPadUp);
@@ -389,13 +440,15 @@
     rawEchoAmount = 0;
     smoothedTiltPos = 0;
     smoothedEchoAmount = 0;
-    betaBaseline = null; // recalibrated from the next reading -- see handleOrientation
+    betaBaseline = null; // recalibrated from the next reading -- see handleOrientation (fallback path only)
+    echoFromMotion = false;
     orientationPill.className = "dmx-pill connected";
     orientationPillText.textContent = "Orientation sensor: on";
   }
 
   function stopTiltSensing() {
     window.removeEventListener("deviceorientation", handleOrientation);
+    if (hasMotion) window.removeEventListener("devicemotion", handleMotion);
     thTouchPad.removeEventListener("pointerdown", handleTouchPadDown);
     thTouchPad.removeEventListener("pointermove", handleTouchPadMove);
     thTouchPad.removeEventListener("pointerup", handleTouchPadUp);
@@ -429,7 +482,8 @@
     thMeterHintTilt.classList.toggle("hide", isDoppler);
     thEchoReadout.classList.toggle("hide", isDoppler);
     thEchoMeterWrap.classList.toggle("hide", isDoppler);
-    if (isDoppler) { thEchoReadout.textContent = ""; thEchoMeterFill.style.width = "0%"; }
+    thSensorDebug.classList.toggle("hide", isDoppler);
+    if (isDoppler) { thEchoReadout.textContent = ""; thEchoMeterFill.style.width = "0%"; thSensorDebug.textContent = ""; }
   }
   applySensingModeUI();
 
@@ -525,6 +579,7 @@
     thNoteReadout.textContent = "--";
     thEchoReadout.textContent = "";
     thEchoMeterFill.style.width = "0%";
+    thSensorDebug.textContent = "";
     if (window.WakeLockHelper) window.WakeLockHelper.disable();
   }
 

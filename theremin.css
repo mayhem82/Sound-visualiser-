@@ -202,6 +202,17 @@ body { overflow: auto; }
 
 .th-echo-readout.hide { display: none; }
 
+.th-sensor-debug {
+  text-align: center;
+  font-size: 10.5px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  color: rgba(242, 242, 247, 0.4);
+  margin: 6px 0 0;
+  word-break: break-word;
+}
+
+.th-sensor-debug.hide { display: none; }
+
 #thTouchPadWrap.hide { display: none; }
 
 #thTouchPad {
