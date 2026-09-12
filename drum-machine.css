@@ -1,0 +1,155 @@
+/* Vibration Drum Machine — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider,
+   .status) comes from style.css; .dmx-section/.dmx-pill/.dmx-top-status/
+   .back-link mirror the same small set of "plain panel" classes dmx.css
+   defines (duplicated here, same as theremin.css/vibro-scan.css). */
+
+body { overflow: auto; }
+
+#dmMain {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#dmMain.hide { display: none; }
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.dmx-section p.hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.6);
+  margin: 0 0 12px;
+}
+
+.dmx-section p.hint:last-child { margin-bottom: 0; }
+
+#dmCaveatBanner {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+#dmCaveatBanner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(254, 240, 138, 0.9);
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#dmPadGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dm-pad {
+  appearance: none;
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  background: rgba(5, 5, 10, 0.5);
+  color: var(--fg);
+  padding: 22px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.05s linear, background 0.1s linear, border-color 0.1s linear;
+}
+
+.dm-pad-icon { font-size: 32px; }
+.dm-pad-label { font-size: 13px; font-weight: 600; }
+
+.dm-pad.armed {
+  border-color: rgba(167, 139, 250, 0.8);
+  background: rgba(167, 139, 250, 0.16);
+}
+
+.dm-pad.hit {
+  transform: scale(0.94);
+  background: rgba(125, 211, 252, 0.22);
+  border-color: rgba(125, 211, 252, 0.7);
+}
+
+.dm-armed-status {
+  text-align: center;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.7);
+  min-height: 18px;
+  margin: 0;
+}
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }

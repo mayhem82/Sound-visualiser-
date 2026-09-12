@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vibration Drum Machine</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥁</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="drum-machine.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Vibration Drum Machine</h1>
+    <p>Four drum pads, played two ways at once: tap one on screen to play it directly, or press and hold one down while tapping the table beside the phone -- the accelerometer picks up that real-world impact and plays the held pad's sound, same as tapping the screen would.</p>
+    <p class="hint" id="dmSupportHint"></p>
+    <button id="startBtn">Open drum machine</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="vibro-scan.html">Vibration Scan &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="dmMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="motionPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="motionPillText">Motion sensor: off</span></span>
+    <p id="dmStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section" id="dmCaveatBanner">
+    <p><strong>The accelerometer only knows "something hit the table nearby," never which drum or where.</strong> A single vibration sensor can't tell a kick-shaped tap from a snare-shaped one, or where on the table it landed -- there's no way to route a real tap to a specific drum by position or feel. So instead: whichever pad you're actively holding down is the one a real tap plays. Only one pad can be armed this way at a time, and it's whatever your finger is on, not the table. Table material, phone case, and distance from the tap all change how strong the signal looks, so the sensitivity slider below will likely need retuning per surface -- and there's real sensor + event-loop latency, so it won't feel as tight as a physical drum pad.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Pads</h2>
+    <div id="dmPadGrid">
+      <button class="dm-pad" id="dmPad-kick" data-pad="kick" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🥁</span>
+        <span class="dm-pad-label">Kick</span>
+      </button>
+      <button class="dm-pad" id="dmPad-snare" data-pad="snare" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🪘</span>
+        <span class="dm-pad-label">Snare</span>
+      </button>
+      <button class="dm-pad" id="dmPad-hihat" data-pad="hihat" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">🎩</span>
+        <span class="dm-pad-label">Hi-hat</span>
+      </button>
+      <button class="dm-pad" id="dmPad-clap" data-pad="clap" type="button">
+        <span class="dm-pad-icon" aria-hidden="true">👏</span>
+        <span class="dm-pad-label">Clap</span>
+      </button>
+    </div>
+    <p class="hint">Tap a pad to play it. Press and hold one to arm it -- while held, tapping the table beside the phone plays that same pad. Release to disarm.</p>
+    <p id="dmArmedStatus" class="dm-armed-status"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Settings</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="How hard a real-world tap needs to be to trigger the armed pad -- lower means more sensitive. Retune this per surface (a hard tabletop needs less sensitivity than a soft one).">
+        Tap sensitivity:
+        <input id="dmSensitivitySlider" type="range" min="1" max="100" value="55">
+      </label>
+      <label class="hud-slider" title="How loud the drum sounds play.">
+        Volume:
+        <input id="dmVolumeSlider" type="range" min="0" max="100" value="70">
+      </label>
+    </div>
+    <p class="hint" id="dmMotionUnsupportedHint"></p>
+  </section>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="wake-lock.js"></script>
+<script src="drum-machine.js"></script>
+</body>
+</html>
