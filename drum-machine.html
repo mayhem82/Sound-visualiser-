@@ -18,7 +18,7 @@
 <div id="overlay">
   <div id="panel">
     <h1>Vibration Drum Machine</h1>
-    <p>Four drum pads, played two ways at once: tap one on screen to play it directly, or press and hold one down while tapping the table beside the phone -- the accelerometer picks up that real-world impact and plays the held pad's sound, same as tapping the screen would.</p>
+    <p>Four drum pads, played two ways at once: tap one on screen to play it directly, or tap one to arm it and then tap the table beside the phone instead -- the accelerometer picks up that real-world impact and plays the armed pad's sound. Arming stays on after you let go, so the hand that taps the table doesn't need to stay on the screen.</p>
     <p class="hint" id="dmSupportHint"></p>
     <button id="startBtn">Open drum machine</button>
     <p id="status" class="status"></p>
@@ -35,7 +35,7 @@
   </div>
 
   <section class="dmx-section" id="dmCaveatBanner">
-    <p><strong>The accelerometer only knows "something hit the table nearby," never which drum or where.</strong> A single vibration sensor can't tell a kick-shaped tap from a snare-shaped one, or where on the table it landed -- there's no way to route a real tap to a specific drum by position or feel. So instead: whichever pad you're actively holding down is the one a real tap plays. Only one pad can be armed this way at a time, and it's whatever your finger is on, not the table. Table material, phone case, and distance from the tap all change how strong the signal looks, so the sensitivity slider below will likely need retuning per surface -- and there's real sensor + event-loop latency, so it won't feel as tight as a physical drum pad.</p>
+    <p><strong>The accelerometer only knows "something hit the table nearby," never which drum or where.</strong> A single vibration sensor can't tell a kick-shaped tap from a snare-shaped one, or where on the table it landed -- there's no way to route a real tap to a specific drum by position or feel. So instead: whichever pad you last tapped is the one armed, and a real tap plays that one -- it stays armed after you let go, precisely so the hand doing the tapping doesn't have to stay on the phone. Only one pad is armed at a time. Table material, phone case, and distance from the tap all change how strong the signal looks, so the sensitivity slider below will likely need retuning per surface -- and there's real sensor + event-loop latency, so it won't feel as tight as a physical drum pad.</p>
   </section>
 
   <section class="dmx-section">
@@ -58,7 +58,7 @@
         <span class="dm-pad-label">Clap</span>
       </button>
     </div>
-    <p class="hint">Tap a pad to play it. Press and hold one to arm it -- while held, tapping the table beside the phone plays that same pad. Release to disarm.</p>
+    <p class="hint">Tap a pad to play it and arm it -- it stays armed after you let go, so tapping the table beside the phone plays that same pad hands-free. Tap the armed pad again to release it.</p>
     <p id="dmArmedStatus" class="dm-armed-status"></p>
   </section>
 

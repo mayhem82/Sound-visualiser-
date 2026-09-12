@@ -173,22 +173,23 @@
     if (armedPad) {
       const el = document.getElementById(`dmPad-${armedPad}`);
       if (el) el.classList.add("armed");
-      dmArmedStatus.textContent = `${armedPad} armed -- tap the table beside the phone to play it.`;
+      dmArmedStatus.textContent = `${armedPad} armed -- tap the table beside the phone to play it, hands-free.`;
     } else {
       dmArmedStatus.textContent = "";
     }
   }
 
+  // Tap to select, not hold-to-arm -- holding a pad down would pin the
+  // hand that should be free to tap the table right onto the screen,
+  // defeating the entire point. A tap plays the pad AND leaves it armed
+  // afterward; tapping the same armed pad again releases it (no pad
+  // armed at all), tapping a different pad switches which one's armed.
   pads.forEach((pad) => {
     const padId = pad.dataset.pad;
-    pad.addEventListener("pointerdown", (e) => {
+    pad.addEventListener("pointerdown", () => {
       triggerPad(padId, "press");
-      setArmedPad(padId);
-      try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+      setArmedPad(armedPad === padId ? null : padId);
     });
-    pad.addEventListener("pointerup", () => { if (armedPad === padId) setArmedPad(null); });
-    pad.addEventListener("pointercancel", () => { if (armedPad === padId) setArmedPad(null); });
-    pad.addEventListener("pointerleave", () => { if (armedPad === padId) setArmedPad(null); });
   });
 
   function sensitivityThreshold() {
