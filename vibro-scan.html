@@ -18,8 +18,8 @@
 <div id="overlay">
   <div id="panel">
     <h1>Vibration Scan</h1>
-    <p>Buzzes the phone's own vibration motor, then reads the accelerometer's response right after -- a rough, comparative way to spot a point that "rings" differently than its neighbours while you move the phone along something (a pipe, a panel, a beam).</p>
-    <p class="hint"><strong>Not a crack detector.</strong> The phone's vibration motor has no amplitude/frequency control and the accelerometer isn't a calibrated sensor -- how hard and how squarely you hold the phone against the surface affects the reading far more than a real defect would. Use this only to flag "this point looked different from the others nearby," never as a diagnosis.</p>
+    <p>Buzzes the phone's own vibration motor, then reads the accelerometer's response right after -- a rough, comparative way to spot a point that "rings" differently than its neighbours while you move the phone along something (a pipe, a panel, a beam). Also includes a passive monitor further down that never buzzes anything -- just watches the accelerometer on its own for vibration events, like a rough seismometer.</p>
+    <p class="hint"><strong>Not a crack detector, and not a calibrated seismometer either.</strong> The phone's vibration motor has no amplitude/frequency control and the accelerometer isn't a calibrated sensor -- how hard and how squarely you hold the phone against the surface affects the reading far more than a real defect would. Use this only to flag "this point/moment looked different from the baseline," never as a diagnosis or a scientific measurement.</p>
     <p class="hint" id="vsSupportHint"></p>
     <button id="startBtn">Open vibration scan</button>
     <p id="status" class="status"></p>
@@ -67,6 +67,39 @@
           <tr><th>#</th><th>Peak</th><th>Residual</th><th>Flag</th></tr>
         </thead>
         <tbody id="vsLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Passive monitor (no pulse)</h2>
+    <p class="hint">Never sends a pulse or makes a sound -- just watches the accelerometer on its own. Rest the phone on a surface (a machine housing, a floor, a table) and it flags moments the reading jumps above the recent baseline.</p>
+    <p class="hint"><strong>Not a calibrated seismometer.</strong> This flags "vibrated more than the recent baseline," nothing about real amplitude, frequency, or distance -- picking the phone up or bumping the table counts the same as anything else.</p>
+    <div class="dmx-inline-controls">
+      <button id="monitorToggleBtn" class="dmx-connect-btn" disabled aria-pressed="false">Start monitoring</button>
+      <button id="clearMonitorLogBtn" class="hud-btn">Clear events</button>
+      <button id="exportMonitorLogBtn" class="hud-btn">Export CSV</button>
+    </div>
+    <label class="hud-slider" title="How far above the recent baseline a reading must jump to log as an event -- higher (more sensitive) catches smaller vibrations, and more false positives from things like picking the phone up; lower only catches larger ones.">
+      Sensitivity:
+      <input id="monitorSensitivitySlider" type="range" min="1" max="100" value="50">
+    </label>
+    <div id="monitorMeterWrap">
+      <div id="monitorMeterBar"><div id="monitorMeterFill"></div><div id="monitorMeterThreshold"></div></div>
+      <p class="hint">Fill = current level, line = event threshold</p>
+    </div>
+    <p id="monitorStatus" class="status"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Events</h2>
+    <p id="monitorLogEmptyHint" class="dmx-empty-hint">No vibration events yet.</p>
+    <div id="monitorLogTableWrap" class="hide">
+      <table id="monitorLogTable" class="vs-log-table">
+        <thead>
+          <tr><th>#</th><th>Time</th><th>Peak</th></tr>
+        </thead>
+        <tbody id="monitorLogBody"></tbody>
       </table>
     </div>
   </section>

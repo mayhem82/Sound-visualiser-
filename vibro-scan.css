@@ -121,6 +121,46 @@ body { overflow: auto; }
   padding: 8px 0;
 }
 
+#vsLogEmptyHint.hide,
+#vsLogTableWrap.hide,
+#monitorLogEmptyHint.hide,
+#monitorLogTableWrap.hide {
+  display: none;
+}
+
+#monitorMeterWrap {
+  margin-top: 4px;
+}
+
+#monitorMeterBar {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(5, 5, 10, 0.5);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+#monitorMeterFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  background: linear-gradient(90deg, #7dd3fc, #a78bfa);
+  transition: width 0.1s linear;
+}
+
+#monitorMeterThreshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: rgba(250, 204, 21, 0.8);
+}
+
 .vs-log-table {
   width: 100%;
   border-collapse: collapse;

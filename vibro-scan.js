@@ -42,6 +42,16 @@
   const vsLogTableWrap = document.getElementById("vsLogTableWrap");
   const vsLogBody = document.getElementById("vsLogBody");
 
+  const monitorToggleBtn = document.getElementById("monitorToggleBtn");
+  const clearMonitorLogBtn = document.getElementById("clearMonitorLogBtn");
+  const exportMonitorLogBtn = document.getElementById("exportMonitorLogBtn");
+  const monitorSensitivitySlider = document.getElementById("monitorSensitivitySlider");
+  const monitorMeterFill = document.getElementById("monitorMeterFill");
+  const monitorStatus = document.getElementById("monitorStatus");
+  const monitorLogEmptyHint = document.getElementById("monitorLogEmptyHint");
+  const monitorLogTableWrap = document.getElementById("monitorLogTableWrap");
+  const monitorLogBody = document.getElementById("monitorLogBody");
+
   const hasMotion = typeof window.DeviceOrientationEvent !== "undefined" || typeof window.DeviceMotionEvent !== "undefined";
   const hasVibrate = typeof navigator.vibrate === "function";
 
@@ -61,6 +71,20 @@
   let sampleBuf = []; // { t, magnitude }
   let log = loadLog();
 
+  // Passive monitor state -- declared here (ahead of handleMotion/
+  // updateMotionPill above, which reference them) since those run
+  // synchronously during page init, before the monitor section further
+  // down would otherwise define them.
+  let monitorEnabled = false;
+  let monitorBaseline = null; // slow-moving rest level (EMA)
+  let monitorLevel = 0;       // smoothed deviation from baseline, drives the meter
+  let monitorArmed = true;    // hysteresis: only logs a new event after dropping back below threshold
+  let monitorLog = loadMonitorLog();
+  const MONITOR_BASELINE_ALPHA = 0.02; // per-sample EMA rate for the drifting rest baseline
+  const MONITOR_LEVEL_ALPHA = 0.3;     // per-sample EMA rate for the displayed live level
+  const MONITOR_MIN_THRESHOLD = 0.15;  // m/s^2 at Sensitivity 100 (most sensitive)
+  const MONITOR_MAX_THRESHOLD = 5;     // m/s^2 at Sensitivity 1 (least sensitive)
+
   function magnitudeOf(e) {
     const a = e.accelerationIncludingGravity || e.acceleration;
     if (!a || a.x === null || a.x === undefined) return null;
@@ -68,16 +92,18 @@
   }
 
   function handleMotion(e) {
-    if (!sampling) return;
     const m = magnitudeOf(e);
     if (m === null) return;
-    sampleBuf.push({ t: performance.now(), magnitude: m });
+    if (sampling) sampleBuf.push({ t: performance.now(), magnitude: m });
+    if (monitorEnabled) updateMonitor(m);
   }
 
   function updateMotionPill() {
     motionPill.className = motionEnabled ? "dmx-pill connected" : "dmx-pill";
     motionPillText.textContent = "Motion sensor: " + (motionEnabled ? "on" : "off");
     pulseBtn.disabled = !motionEnabled;
+    monitorToggleBtn.disabled = !motionEnabled;
+    if (!motionEnabled && monitorEnabled) setMonitorEnabled(false);
   }
 
   async function enableMotion() {
@@ -171,6 +197,7 @@
   pulseBtn.addEventListener("click", pulseAndMeasure);
 
   function renderLog() {
+    vsLogBody.innerHTML = "";
     if (!log.length) {
       vsLogEmptyHint.classList.remove("hide");
       vsLogTableWrap.classList.add("hide");
@@ -178,7 +205,6 @@
     }
     vsLogEmptyHint.classList.add("hide");
     vsLogTableWrap.classList.remove("hide");
-    vsLogBody.innerHTML = "";
     log.forEach((p) => {
       const tr = document.createElement("tr");
       if (p.flagged) tr.className = "flagged";
@@ -222,6 +248,104 @@
   });
 
   renderLog();
+
+  // ---- Passive monitor (no pulse) --------------------------------------
+  // Never calls navigator.vibrate() at all -- just watches the same
+  // devicemotion samples handleMotion already receives while the motion
+  // sensor is on, continuously rather than in a bounded pulse window.
+
+  function monitorThresholdFromSensitivity() {
+    const s = Math.max(1, Math.min(100, Number(monitorSensitivitySlider.value)));
+    return MONITOR_MAX_THRESHOLD - (s / 100) * (MONITOR_MAX_THRESHOLD - MONITOR_MIN_THRESHOLD);
+  }
+
+  function updateMonitor(magnitude) {
+    if (monitorBaseline === null) monitorBaseline = magnitude;
+    const deviation = Math.abs(magnitude - monitorBaseline);
+    const threshold = monitorThresholdFromSensitivity();
+    // The baseline only drifts while NOT actively spiking, so one real
+    // event doesn't get absorbed into "the new normal" mid-event.
+    if (deviation < threshold) monitorBaseline += (magnitude - monitorBaseline) * MONITOR_BASELINE_ALPHA;
+    monitorLevel += (deviation - monitorLevel) * MONITOR_LEVEL_ALPHA;
+
+    monitorMeterFill.style.width = `${Math.max(0, Math.min(100, (monitorLevel / (threshold * 2)) * 100))}%`;
+
+    if (monitorLevel >= threshold) {
+      if (monitorArmed) {
+        monitorArmed = false;
+        logMonitorEvent(monitorLevel);
+      }
+    } else {
+      monitorArmed = true;
+    }
+  }
+
+  function setMonitorEnabled(next) {
+    monitorEnabled = next;
+    monitorToggleBtn.textContent = monitorEnabled ? "Stop monitoring" : "Start monitoring";
+    monitorToggleBtn.classList.toggle("active", monitorEnabled);
+    monitorToggleBtn.setAttribute("aria-pressed", String(monitorEnabled));
+    if (monitorEnabled) {
+      monitorBaseline = null;
+      monitorLevel = 0;
+      monitorArmed = true;
+      monitorStatus.textContent = "Monitoring…";
+    } else {
+      monitorMeterFill.style.width = "0%";
+      monitorStatus.textContent = "";
+    }
+  }
+  monitorToggleBtn.addEventListener("click", () => setMonitorEnabled(!monitorEnabled));
+
+  function logMonitorEvent(peak) {
+    const time = new Date().toLocaleTimeString();
+    monitorLog.push({ n: monitorLog.length + 1, time, peak });
+    saveMonitorLog();
+    renderMonitorLog();
+    monitorStatus.textContent = `Event ${monitorLog.length} logged at ${time}.`;
+  }
+
+  function renderMonitorLog() {
+    monitorLogBody.innerHTML = "";
+    if (!monitorLog.length) {
+      monitorLogEmptyHint.classList.remove("hide");
+      monitorLogTableWrap.classList.add("hide");
+      return;
+    }
+    monitorLogEmptyHint.classList.add("hide");
+    monitorLogTableWrap.classList.remove("hide");
+    monitorLog.forEach((ev) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${ev.n}</td><td>${ev.time}</td><td>${ev.peak.toFixed(2)}</td>`;
+      monitorLogBody.appendChild(tr);
+    });
+  }
+
+  function loadMonitorLog() {
+    try {
+      const raw = localStorage.getItem("vibroMonitorLog_v1");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function saveMonitorLog() {
+    try { localStorage.setItem("vibroMonitorLog_v1", JSON.stringify(monitorLog)); } catch (e) { /* storage full/unavailable -- log still holds for this session */ }
+  }
+
+  clearMonitorLogBtn.addEventListener("click", () => {
+    monitorLog = [];
+    saveMonitorLog();
+    renderMonitorLog();
+    monitorStatus.textContent = "Events cleared.";
+  });
+
+  exportMonitorLogBtn.addEventListener("click", () => {
+    if (!monitorLog.length) { monitorStatus.textContent = "Nothing to export yet."; return; }
+    const rows = ["event,time,peak"];
+    monitorLog.forEach((ev) => rows.push([ev.n, ev.time, ev.peak.toFixed(3)].join(",")));
+    downloadBlob(new Blob([rows.join("\n")], { type: "text/csv" }), `vibro-monitor-${new Date().toISOString().slice(0, 10)}.csv`);
+  });
+
+  renderMonitorLog();
 
   startBtn.addEventListener("click", () => {
     overlay.classList.add("hide");
