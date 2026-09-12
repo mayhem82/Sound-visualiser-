@@ -187,6 +187,7 @@
     </div>
     <div class="tune-actions">
       <button id="cvCopyPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+      <button id="cvShowPointsQrBtn" class="hud-btn reticle-btn-secondary">Show as QR code</button>
     </div>
     <p class="hint hide" id="cvScanHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-colours QR (from "Copy as JSON" on another device) to import it here.</p>
     <div class="tune-actions hide" id="cvScanControls">
@@ -202,6 +203,8 @@
 <script src="hud-common.js"></script>
 <script src="camera-hardware.js"></script>
 <script src="camera-lifecycle.js"></script>
+<script src="qrcode-gen.js"></script>
+<script src="qr-display.js"></script>
 <script src="colorassist.js"></script>
 </body>
 </html>

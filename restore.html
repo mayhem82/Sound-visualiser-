@@ -330,6 +330,7 @@
     </div>
     <div class="tune-actions">
       <button id="pcCopyPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+      <button id="pcShowPointsQrBtn" class="hud-btn reticle-btn-secondary">Show as QR code</button>
     </div>
     <p class="hint hide" id="pcScanPointsHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-references QR (from "Copy as JSON" on another device) to import it here.</p>
     <div class="tune-actions hide" id="pcScanPointsControls">
@@ -355,6 +356,7 @@
       <p class="hint" title="Copies a small QR payload naming the selected template (not the template's actual data) -- turn it into a code with any free QR generator and print/tape it up at the property or room it belongs to, so anyone on site can load the right template just by scanning the tag.">Tag a property or room: copy a QR payload for the selected template above, print it, and scan it back in below to load that template instantly on site.</p>
       <div class="profiles-row">
         <button id="copyProfileQrBtn" class="hud-btn reticle-btn-secondary">Copy QR tag for selected</button>
+        <button id="showProfileQrBtn" class="hud-btn reticle-btn-secondary">Show tag as QR code</button>
       </div>
       <p class="hint hide" id="pcScanProfileHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a property tag's QR code to load its matching template.</p>
       <div class="profiles-row hide" id="pcScanProfileControls">
@@ -371,6 +373,8 @@
 <script src="hud-common.js"></script>
 <script src="camera-hardware.js"></script>
 <script src="camera-lifecycle.js"></script>
+<script src="qrcode-gen.js"></script>
+<script src="qr-display.js"></script>
 <script src="restore.js"></script>
 <script>
   if ("serviceWorker" in navigator) {

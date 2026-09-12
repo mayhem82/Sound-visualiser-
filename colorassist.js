@@ -1576,6 +1576,7 @@
   // browser's own native barcode reader, fed straight through the exact
   // same applyImportedPointsJson a file-based Import already uses.
   const cvCopyPointsJsonBtn = document.getElementById("cvCopyPointsJsonBtn");
+  const cvShowPointsQrBtn = document.getElementById("cvShowPointsQrBtn");
   const cvScanHint = document.getElementById("cvScanHint");
   const cvScanControls = document.getElementById("cvScanControls");
   const cvScanPointsBtn = document.getElementById("cvScanPointsBtn");
@@ -1646,10 +1647,18 @@
     }
     try {
       await navigator.clipboard.writeText(JSON.stringify(points));
-      importExportStatus.textContent = `Copied ${points.length} colour${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+      importExportStatus.textContent = `Copied ${points.length} colour${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator, or use "Show as QR code" instead.`;
     } catch (e) {
       importExportStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
+  });
+
+  cvShowPointsQrBtn.addEventListener("click", () => {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved colours to show a QR code for yet.";
+      return;
+    }
+    showQrPopup(JSON.stringify(points), { title: "Saved colours", caption: `${points.length} colour${points.length === 1 ? "" : "s"} -- scan with "Scan from QR" on any device to import.` });
   });
 
   // ---- Wiring ----

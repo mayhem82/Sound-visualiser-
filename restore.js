@@ -196,6 +196,7 @@
   const saveProfileBtn = document.getElementById("saveProfileBtn");
   const profileStatus = document.getElementById("profileStatus");
   const copyProfileQrBtn = document.getElementById("copyProfileQrBtn");
+  const showProfileQrBtn = document.getElementById("showProfileQrBtn");
   const pcScanProfileHint = document.getElementById("pcScanProfileHint");
   const pcScanProfileControls = document.getElementById("pcScanProfileControls");
   const pcScanProfileBtn = document.getElementById("pcScanProfileBtn");
@@ -3050,10 +3051,19 @@
     }
     try {
       await navigator.clipboard.writeText(JSON.stringify({ propertyColourProfile: prof.name }));
-      profileStatus.textContent = `Copied a QR tag for "${prof.name}" -- paste it into any QR generator.`;
+      profileStatus.textContent = `Copied a QR tag for "${prof.name}" -- paste it into any QR generator, or use "Show tag as QR code" instead.`;
     } catch (e) {
       profileStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
+  });
+
+  showProfileQrBtn.addEventListener("click", () => {
+    const prof = profiles.find((p) => p.id === profileSelect.value);
+    if (!prof) {
+      profileStatus.textContent = "Pick a template to show a QR tag for first.";
+      return;
+    }
+    showQrPopup(JSON.stringify({ propertyColourProfile: prof.name }), { title: "Property tag", caption: `Scan this to load "${prof.name}" by name on any device with it saved.` });
   });
 
   let profileBarcodeDetector = null;
@@ -3374,6 +3384,7 @@
   // straight through the exact same applyImportedPointsJson a file-based
   // Import already uses.
   const pcCopyPointsJsonBtn = document.getElementById("pcCopyPointsJsonBtn");
+  const pcShowPointsQrBtn = document.getElementById("pcShowPointsQrBtn");
   const pcScanPointsHint = document.getElementById("pcScanPointsHint");
   const pcScanPointsControls = document.getElementById("pcScanPointsControls");
   const pcScanPointsBtn = document.getElementById("pcScanPointsBtn");
@@ -3444,10 +3455,18 @@
     }
     try {
       await navigator.clipboard.writeText(JSON.stringify(points));
-      importExportStatus.textContent = `Copied ${points.length} reference${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+      importExportStatus.textContent = `Copied ${points.length} reference${points.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator, or use "Show as QR code" instead.`;
     } catch (e) {
       importExportStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
+  });
+
+  pcShowPointsQrBtn.addEventListener("click", () => {
+    if (points.length === 0) {
+      importExportStatus.textContent = "No saved references to show a QR code for yet.";
+      return;
+    }
+    showQrPopup(JSON.stringify(points), { title: "Saved references", caption: `${points.length} reference${points.length === 1 ? "" : "s"} -- scan with "Scan from QR" on any device to import.` });
   });
 
   // ---- Wiring ----

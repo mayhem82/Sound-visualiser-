@@ -1150,6 +1150,7 @@
     <p id="soundPointsQrStatus" class="hint" role="status" aria-live="polite"></p>
     <div class="points-actions">
       <button id="copySoundPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+      <button id="showSoundPointsQrBtn" class="hud-btn reticle-btn-secondary">Show as QR code</button>
     </div>
     <p class="hint hide" id="soundPointsScanHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-sounds QR (from "Copy as JSON" on another device) to import it here.</p>
     <div class="points-actions hide" id="soundPointsScanControls">
@@ -1216,6 +1217,8 @@
 <script src="colour-math.js"></script>
 <script src="hud-common.js"></script>
 <script src="camera-lifecycle.js"></script>
+<script src="qrcode-gen.js"></script>
+<script src="qr-display.js"></script>
 <script src="sound-colour.js"></script>
 </body>
 </html>

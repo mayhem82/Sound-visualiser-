@@ -91,6 +91,8 @@
   const scanRoomCodeStatus = document.getElementById("scanRoomCodeStatus");
   const shareRoomCode = document.getElementById("shareRoomCode");
   const shareLinkText = document.getElementById("shareLinkText");
+  const showRoomQrBtn = document.getElementById("showRoomQrBtn");
+  let currentShareLink = "";
   const callHud = document.getElementById("callHud");
   const zoomOutBtn = document.getElementById("zoomOutBtn");
   const zoomInBtn = document.getElementById("zoomInBtn");
@@ -502,6 +504,7 @@
     const link = new URL("call.html", location.href);
     link.searchParams.set("room", room);
     shareLinkText.textContent = link.toString();
+    currentShareLink = link.toString();
     shareCodeBlock.classList.remove("hide");
     setCallStatus("Waiting for the other device to join…");
   }
@@ -1001,6 +1004,14 @@
 
   scanRoomCodeBtn.addEventListener("click", () => {
     if (scanningForRoom) stopScanningForRoom(); else startScanningForRoom();
+  });
+
+  showRoomQrBtn.addEventListener("click", () => {
+    if (!currentShareLink) return;
+    showQrPopup(currentShareLink, {
+      title: "Room link",
+      caption: "The other device can scan this with \"Scan a room code\" below, or with any camera app -- opening the link joins automatically.",
+    });
   });
 
   // A room link from the host (?room=CODE) prefills and auto-joins, same

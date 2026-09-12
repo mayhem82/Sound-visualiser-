@@ -592,6 +592,7 @@
     <p class="hint" id="cvCopyQrHint" title="Copies every saved colour as plain JSON, the same shape Export/Import already use. Turn it into a QR code with any free generator to move a full calibration to another device instantly, without a file or network connection -- scan it back in below.">Or copy your saved colours as JSON and turn that into a QR code (any free generator) to move them to another device.</p>
     <div class="tune-actions">
       <button id="cvCopyPointsJsonBtn" class="hud-btn reticle-btn-secondary">Copy as JSON</button>
+      <button id="cvShowPointsQrBtn" class="hud-btn reticle-btn-secondary">Show as QR code</button>
     </div>
     <p class="hint hide" id="cvScanHint" title="A real native barcode/QR reader (the browser's own Shape Detection API, no library), pointed at the already-running camera feed. Hidden entirely on a browser that doesn't support it.">Scan a saved-colours QR (from "Copy as JSON" on another device) to import it here.</p>
     <div class="tune-actions hide" id="cvScanControls">
@@ -624,6 +625,8 @@
 <script src="hud-common.js"></script>
 <script src="camera-hardware.js"></script>
 <script src="camera-lifecycle.js"></script>
+<script src="qrcode-gen.js"></script>
+<script src="qr-display.js"></script>
 <script src="colorvision.js"></script>
 </body>
 </html>

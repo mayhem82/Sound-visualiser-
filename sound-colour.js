@@ -648,6 +648,7 @@
   const soundPointsGrid = document.getElementById("soundPointsGrid");
   const closeSoundPointsBtn = document.getElementById("closeSoundPointsBtn");
   const copySoundPointsJsonBtn = document.getElementById("copySoundPointsJsonBtn");
+  const showSoundPointsQrBtn = document.getElementById("showSoundPointsQrBtn");
   const soundPointsScanHint = document.getElementById("soundPointsScanHint");
   const soundPointsScanControls = document.getElementById("soundPointsScanControls");
   const scanSoundPointsBtn = document.getElementById("scanSoundPointsBtn");
@@ -6044,10 +6045,18 @@ const NATURAL_NOTE_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     }
     try {
       await navigator.clipboard.writeText(JSON.stringify(soundPoints));
-      soundPointsQrStatus.textContent = `Copied ${soundPoints.length} sound${soundPoints.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator.`;
+      soundPointsQrStatus.textContent = `Copied ${soundPoints.length} sound${soundPoints.length === 1 ? "" : "s"} as JSON -- paste it into any QR generator, or use "Show as QR code" instead.`;
     } catch (e) {
       soundPointsQrStatus.textContent = "Couldn't copy to clipboard: " + (e.message || "unknown error");
     }
+  });
+
+  showSoundPointsQrBtn.addEventListener("click", () => {
+    if (soundPoints.length === 0) {
+      soundPointsQrStatus.textContent = "No saved sounds to show a QR code for yet.";
+      return;
+    }
+    showQrPopup(JSON.stringify(soundPoints), { title: "Saved sounds", caption: `${soundPoints.length} sound${soundPoints.length === 1 ? "" : "s"} -- scan with "Scan from QR" on any device to import.` });
   });
 
   let soundPointsBarcodeDetector = null;
