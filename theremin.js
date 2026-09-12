@@ -83,6 +83,7 @@
   const thStopBtn = document.getElementById("thStopBtn");
   const thMeterFill = document.getElementById("thMeterFill");
   const thNoteReadout = document.getElementById("thNoteReadout");
+  const thEchoReadout = document.getElementById("thEchoReadout");
   const thProbeVolWrap = document.getElementById("thProbeVolWrap");
   const thProbeVolSlider = document.getElementById("thProbeVolSlider");
   const thSynthVolSlider = document.getElementById("thSynthVolSlider");
@@ -191,16 +192,20 @@
     return `${name}${octave}`;
   }
 
-  // Tilt only works one way for pitch: tilting right (positive gamma)
-  // raises pitch as before, but tilting left no longer lowers it further
-  // -- that whole other direction is repurposed as a real echo/delay
-  // effect instead (see the DelayNode feedback chain below), so the two
-  // directions do two genuinely different things rather than one
-  // symmetric pitch axis.
+  // Two genuinely independent, simultaneous axes of the same tilt sensor
+  // -- not one axis doing double duty by sign. Gamma (left/right) drives
+  // pitch, full symmetric range, same as Doppler's -1..1 convention. Beta
+  // (forward/back, either direction) independently drives the echo/delay
+  // effect -- tilting the phone away from flat either way adds echo, with
+  // no relation to which way gamma is currently tilted, so pitch and echo
+  // can both be active together (e.g. tilted right AND forward at once).
   function handleOrientation(e) {
-    if (typeof e.gamma !== "number") return;
-    rawTiltPos = Math.max(0, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
-    rawEchoAmount = Math.max(0, Math.min(1, -e.gamma / TILT_ECHO_RANGE_DEG));
+    if (typeof e.gamma === "number") {
+      rawTiltPos = Math.max(-1, Math.min(1, e.gamma / TILT_PITCH_RANGE_DEG));
+    }
+    if (typeof e.beta === "number") {
+      rawEchoAmount = Math.max(0, Math.min(1, Math.abs(e.beta) / TILT_ECHO_RANGE_DEG));
+    }
   }
 
   // Touch pad: silent (0) whenever no finger is on it, matching a real
@@ -282,11 +287,7 @@
       // oscillator silent and instead trigger one discrete note each time
       // the quantized position crosses into a new scale step.
       synthGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-      // Doppler's pos is -1..1 (symmetric); Tilt's is 0..1 (pitch only
-      // ever rises from the base note, since 0 and below is the echo
-      // zone instead) -- normalize both onto the same 0..1 scale-index
-      // fraction rather than assuming one fixed convention.
-      const posFrac = sensingMode === "doppler" ? (pos + 1) / 2 : pos;
+      const posFrac = (pos + 1) / 2; // both modes use the same -1..1 position convention
       const scaleIndex = Math.max(0, Math.min(SCALE_HZ.length - 1, Math.round(posFrac * (SCALE_HZ.length - 1))));
       if (scaleIndex !== lastScaleIndex && activityGain > 0.05) {
         lastScaleIndex = scaleIndex;
@@ -294,20 +295,14 @@
       }
     }
 
-    if (echoAmount > 0.02) {
-      // Echo zone (tilt mode, tilted left) -- pitch is pinned at the base
-      // note while this is active, so the meter and readout show echo
-      // intensity instead of a pitch that isn't actually changing.
-      thMeterFill.classList.add("echo");
-      thMeterFill.style.left = `${50 - echoAmount * 50}%`;
-      thMeterFill.style.width = `${echoAmount * 50}%`;
-      thNoteReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
-    } else {
-      thMeterFill.classList.remove("echo");
-      thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
-      thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
-      thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
-    }
+    // Pitch meter is the same in both modes now (gamma and Doppler's
+    // position both use -1..1). Echo is a separate, simultaneous readout
+    // in Tilt mode -- it's an independent axis (beta), not an alternate
+    // state the pitch meter switches into.
+    thMeterFill.style.left = pos >= 0 ? "50%" : `${50 + pos * 50}%`;
+    thMeterFill.style.width = `${Math.abs(pos) * 50}%`;
+    thNoteReadout.textContent = `${noteNameForFrequency(freq)} · ${Math.round(freq)}Hz`;
+    if (sensingMode === "tilt") thEchoReadout.textContent = `Echo: ${Math.round(echoAmount * 100)}%`;
 
     rafId = requestAnimationFrame(tick);
   }
@@ -417,6 +412,8 @@
     thCaveatTilt.classList.toggle("hide", isDoppler);
     thMeterHintDoppler.classList.toggle("hide", !isDoppler);
     thMeterHintTilt.classList.toggle("hide", isDoppler);
+    thEchoReadout.classList.toggle("hide", isDoppler);
+    if (isDoppler) thEchoReadout.textContent = "";
   }
   applySensingModeUI();
 
@@ -508,9 +505,9 @@
     echoInputBus = null; echoDelay = null; echoFeedback = null; echoWet = null;
     thStartBtn.classList.remove("hide");
     thStopBtn.classList.add("hide");
-    thMeterFill.classList.remove("echo");
     thMeterFill.style.width = "0%";
     thNoteReadout.textContent = "--";
+    thEchoReadout.textContent = "";
     if (window.WakeLockHelper) window.WakeLockHelper.disable();
   }
 
