@@ -53,19 +53,33 @@
   <section class="dmx-section">
     <h2>Sound</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="Built-in: a synthesized wailing siren, always available. Custom file: pick any audio file from this device to loop instead.">
+      <label class="hud-slider" title="Built-in: a synthesized wailing siren, always available. Custom file: pick any audio file from this device instead.">
         Source:
         <select id="vaSoundSelect">
           <option value="siren">Built-in siren</option>
           <option value="custom">Custom sound file</option>
         </select>
       </label>
-      <label id="vaFileWrap" class="hud-slider hide" title="Pick a local audio file (mp3, wav, etc.) to loop when the alarm triggers. Stays on this device -- nothing is uploaded anywhere.">
+      <label id="vaFileWrap" class="hud-slider hide" title="Pick a local audio file (mp3, wav, etc.) to play when the alarm triggers. Stays on this device -- nothing is uploaded anywhere.">
         File:
         <input id="vaFileInput" type="file" accept="audio/*">
       </label>
     </div>
     <p class="hint" id="vaFileStatus"></p>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Loop continuously: plays without any gap, same as before. Play once: sounds a single time then stops on its own (the alarm stays latched until you press Silence, it just goes quiet). Repeat with a gap: plays, stops, waits, plays again -- for as long as the alarm is active.">
+        Repeat:
+        <select id="vaRepeatSelect">
+          <option value="loop">Loop continuously</option>
+          <option value="once">Play once</option>
+          <option value="gap">Repeat with a gap</option>
+        </select>
+      </label>
+      <label id="vaGapWrap" class="hud-slider hide" title="How long to wait, in seconds, between the end of one play-through and the start of the next.">
+        Gap (s):
+        <input id="vaGapSlider" type="range" min="1" max="30" step="1" value="3">
+      </label>
+    </div>
   </section>
 
   <section class="dmx-section">

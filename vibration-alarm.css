@@ -118,6 +118,7 @@ body { overflow: auto; }
 }
 
 #vaFileWrap.hide { display: none; }
+#vaGapWrap.hide { display: none; }
 
 #vaFileInput {
   max-width: 200px;

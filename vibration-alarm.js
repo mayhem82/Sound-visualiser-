@@ -43,6 +43,9 @@
   const vaFileWrap = document.getElementById("vaFileWrap");
   const vaFileInput = document.getElementById("vaFileInput");
   const vaFileStatus = document.getElementById("vaFileStatus");
+  const vaRepeatSelect = document.getElementById("vaRepeatSelect");
+  const vaGapWrap = document.getElementById("vaGapWrap");
+  const vaGapSlider = document.getElementById("vaGapSlider");
 
   const vaSensitivitySlider = document.getElementById("vaSensitivitySlider");
   const vaVolumeSlider = document.getElementById("vaVolumeSlider");
@@ -74,6 +77,8 @@
   let soundSource = "siren"; // "siren" | "custom"
   let customBuffer = null;
   let customFileName = "";
+  let repeatMode = "loop"; // "loop" | "once" | "gap"
+  let repeatTimerId = null;
 
   // ---- Siren (Web Audio) -- same "modulate an oscillator's frequency
   // with an LFO" wail technique Colour Alarm's siren uses, adapted here
@@ -111,27 +116,38 @@
     }
   }
 
-  function startCustomPlayback() {
-    if (!customBuffer) return;
-    stopCustomPlayback();
-    customSourceNode = audioCtx.createBufferSource();
-    customSourceNode.buffer = customBuffer;
-    customSourceNode.loop = true;
-    customGain = audioCtx.createGain();
-    customGain.gain.value = Number(vaVolumeSlider.value) / 100;
-    customSourceNode.connect(customGain).connect(audioCtx.destination);
-    customSourceNode.start();
-  }
-
   function ensureAudio() {
     if (!audioCtx) audioCtx = new AudioContextCtor();
     if (audioCtx.state === "suspended") audioCtx.resume();
   }
 
-  function startSound() {
-    ensureAudio();
+  // ---- Repeat scheduling -- "Once" and "Repeat with a gap" both need a
+  // real, silent gap between blasts, not just a gain envelope: a custom
+  // file needs a fresh BufferSourceNode per play (one can only ever be
+  // started once), and the siren just needs its gain actually pulled to
+  // 0 for the gap instead of staying continuously on. "Loop" bypasses all
+  // of this and relies on native looping (the file's own loop=true, or
+  // the siren simply staying on) -- no timer needed there at all.
+
+  function clearRepeatTimer() {
+    if (repeatTimerId) { clearTimeout(repeatTimerId); repeatTimerId = null; }
+  }
+
+  function currentBlastDurationMs() {
+    if (soundSource === "custom" && customBuffer) return customBuffer.duration * 1000;
+    return 1250; // one siren wail cycle (matches sirenLfo's 0.8Hz)
+  }
+
+  function playBlast() {
     if (soundSource === "custom" && customBuffer) {
-      startCustomPlayback();
+      stopCustomPlayback();
+      customSourceNode = audioCtx.createBufferSource();
+      customSourceNode.buffer = customBuffer;
+      customSourceNode.loop = repeatMode === "loop";
+      customGain = audioCtx.createGain();
+      customGain.gain.value = Number(vaVolumeSlider.value) / 100;
+      customSourceNode.connect(customGain).connect(audioCtx.destination);
+      customSourceNode.start();
     } else {
       ensureSiren();
       if (audioCtx.state === "suspended") audioCtx.resume();
@@ -139,9 +155,40 @@
     }
   }
 
-  function stopSound() {
+  function stopBlast() {
     if (sirenGain) sirenGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.15);
     stopCustomPlayback();
+  }
+
+  function scheduleRepeat() {
+    clearRepeatTimer();
+    if (repeatMode === "loop") return;
+    const blastMs = currentBlastDurationMs();
+    if (repeatMode === "once") {
+      repeatTimerId = setTimeout(stopBlast, blastMs);
+      return;
+    }
+    // "gap": play, stop, wait the gap, then do it all again -- for as
+    // long as the alarm (or a test) stays active.
+    repeatTimerId = setTimeout(() => {
+      stopBlast();
+      const gapMs = Number(vaGapSlider.value) * 1000;
+      repeatTimerId = setTimeout(() => {
+        playBlast();
+        scheduleRepeat();
+      }, gapMs);
+    }, blastMs);
+  }
+
+  function startSound() {
+    ensureAudio();
+    playBlast();
+    scheduleRepeat();
+  }
+
+  function stopSound() {
+    clearRepeatTimer();
+    stopBlast();
   }
 
   vaVolumeSlider.addEventListener("input", () => {
@@ -157,6 +204,11 @@
     }
   });
 
+  vaRepeatSelect.addEventListener("change", () => {
+    repeatMode = vaRepeatSelect.value;
+    vaGapWrap.classList.toggle("hide", repeatMode !== "gap");
+  });
+
   vaFileInput.addEventListener("change", async () => {
     const file = vaFileInput.files[0];
     if (!file) return;
@@ -166,7 +218,7 @@
       const arrayBuffer = await file.arrayBuffer();
       customBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       customFileName = file.name;
-      vaFileStatus.textContent = `Ready: ${customFileName} (${customBuffer.duration.toFixed(1)}s, loops).`;
+      vaFileStatus.textContent = `Ready: ${customFileName} (${customBuffer.duration.toFixed(1)}s).`;
     } catch (e) {
       customBuffer = null;
       vaFileStatus.textContent = `Couldn't decode "${file.name}" -- try a different file.`;
@@ -206,17 +258,21 @@
   armBtn.addEventListener("click", () => setArmed(!armed));
   silenceBtn.addEventListener("click", () => setAlarmActive(false));
 
-  let testTimeoutId = null;
+  // Runs through the same blast/repeat scheduling the real alarm uses,
+  // so testing "Once" or "Repeat with a gap" actually previews that
+  // pattern rather than a fixed clip -- capped at 8s so "Loop" doesn't
+  // just run forever from a test press.
+  let testCapTimeoutId = null;
   testBtn.addEventListener("click", () => {
     ensureAudio();
     startSound();
     vaStatus.textContent = "Testing sound...";
-    if (testTimeoutId) clearTimeout(testTimeoutId);
-    testTimeoutId = setTimeout(() => {
+    if (testCapTimeoutId) clearTimeout(testCapTimeoutId);
+    testCapTimeoutId = setTimeout(() => {
       if (!alarmActive) stopSound();
       vaStatus.textContent = "";
-      testTimeoutId = null;
-    }, 3000);
+      testCapTimeoutId = null;
+    }, 8000);
   });
 
   function sensitivityThreshold() {
