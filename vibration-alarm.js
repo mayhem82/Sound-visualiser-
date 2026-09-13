@@ -38,6 +38,7 @@
   const armBtn = document.getElementById("armBtn");
   const silenceBtn = document.getElementById("silenceBtn");
   const testBtn = document.getElementById("testBtn");
+  const vaArmDelaySelect = document.getElementById("vaArmDelaySelect");
 
   const vaSoundSelect = document.getElementById("vaSoundSelect");
   const vaFileWrap = document.getElementById("vaFileWrap");
@@ -255,7 +256,49 @@
     }
   }
 
-  armBtn.addEventListener("click", () => setArmed(!armed));
+  // ---- Arm delay -- a countdown after pressing Arm, same idea as a
+  // real security system's exit delay, giving time to step back/walk
+  // away before detection actually starts. Only arming waits; disarming
+  // (from either the countdown or a fully armed state) is instant.
+  let armDelayTimerId = null;
+  let armCountdownRemaining = null; // null when no countdown is running
+
+  function beginArmCountdown() {
+    const delay = Number(vaArmDelaySelect.value);
+    armCountdownRemaining = delay;
+    armBtn.textContent = "Cancel";
+    armPill.className = "dmx-pill";
+    armPillText.textContent = `Arming in ${armCountdownRemaining}s...`;
+    armDelayTimerId = setInterval(() => {
+      armCountdownRemaining--;
+      if (armCountdownRemaining <= 0) {
+        clearInterval(armDelayTimerId);
+        armDelayTimerId = null;
+        armCountdownRemaining = null;
+        setArmed(true);
+      } else {
+        armPillText.textContent = `Arming in ${armCountdownRemaining}s...`;
+      }
+    }, 1000);
+  }
+
+  function cancelArmCountdown() {
+    if (armDelayTimerId) { clearInterval(armDelayTimerId); armDelayTimerId = null; }
+    armCountdownRemaining = null;
+    armBtn.textContent = "Arm";
+    armPill.className = "dmx-pill";
+    armPillText.textContent = "Disarmed";
+  }
+
+  armBtn.addEventListener("click", () => {
+    if (armed) {
+      setArmed(false); // disarm is always instant
+    } else if (armCountdownRemaining !== null) {
+      cancelArmCountdown();
+    } else {
+      beginArmCountdown();
+    }
+  });
   silenceBtn.addEventListener("click", () => setAlarmActive(false));
 
   // Runs through the same blast/repeat scheduling the real alarm uses,

@@ -43,6 +43,17 @@
   <section class="dmx-section">
     <h2>Arm</h2>
     <div class="dmx-inline-controls">
+      <label class="hud-slider" title="How long to wait after pressing Arm before detection actually starts -- time to step back, close the drawer, or walk away without setting it off yourself. Disarming is always instant, no delay.">
+        Arm delay:
+        <select id="vaArmDelaySelect">
+          <option value="3">3 seconds</option>
+          <option value="5">5 seconds</option>
+          <option value="10">10 seconds</option>
+          <option value="120">2 minutes</option>
+        </select>
+      </label>
+    </div>
+    <div class="dmx-inline-controls">
       <button id="armBtn" class="dmx-connect-btn">Arm</button>
       <button id="silenceBtn" class="hud-btn hide">Silence</button>
       <button id="testBtn" class="hud-btn">Test sound</button>
