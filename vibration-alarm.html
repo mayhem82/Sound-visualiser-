@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vibration Alarm</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚨</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="vibration-alarm.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Vibration Alarm</h1>
+    <p>Arm it, set the phone down (on a door, a bag, a drawer, whatever you want to know was disturbed), and the accelerometer watches for a knock or a bump. The first one that crosses the threshold sets off a real, looping alarm sound -- a built-in siren, or any audio file you pick yourself -- and it keeps sounding until you silence it.</p>
+    <p class="hint"><strong>Not a security system.</strong> This only works while this tab stays open, the screen stays on (or a wake lock holds it), and the phone isn't locked or backgrounded -- mobile browsers throttle or fully suspend background tabs, which would silently stop detection. Don't rely on this for anything that actually matters.</p>
+    <p class="hint" id="vaSupportHint"></p>
+    <button id="startBtn">Open vibration alarm</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="vibro-scan.html">Vibration Scan &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="vaMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="motionPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="motionPillText">Motion sensor: off</span></span>
+    <span id="armPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="armPillText">Disarmed</span></span>
+    <p id="vaStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section hide" id="vaAlarmBanner">
+    <p><strong id="vaAlarmText">ALARM -- vibration detected</strong></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Arm</h2>
+    <div class="dmx-inline-controls">
+      <button id="armBtn" class="dmx-connect-btn">Arm</button>
+      <button id="silenceBtn" class="hud-btn hide">Silence</button>
+      <button id="testBtn" class="hud-btn">Test sound</button>
+    </div>
+    <p class="hint">Once armed, the first vibration past the sensitivity threshold latches the alarm on -- it keeps looping until you press Silence, even if the vibration itself stops.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Sound</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Built-in: a synthesized wailing siren, always available. Custom file: pick any audio file from this device to loop instead.">
+        Source:
+        <select id="vaSoundSelect">
+          <option value="siren">Built-in siren</option>
+          <option value="custom">Custom sound file</option>
+        </select>
+      </label>
+      <label id="vaFileWrap" class="hud-slider hide" title="Pick a local audio file (mp3, wav, etc.) to loop when the alarm triggers. Stays on this device -- nothing is uploaded anywhere.">
+        File:
+        <input id="vaFileInput" type="file" accept="audio/*">
+      </label>
+    </div>
+    <p class="hint" id="vaFileStatus"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Settings</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="How hard a vibration needs to be to trigger the alarm -- lower means more sensitive. Retune per surface: a phone taped to a door needs different sensitivity than one sitting loose on a shelf.">
+        Sensitivity:
+        <input id="vaSensitivitySlider" type="range" min="1" max="100" value="55">
+      </label>
+      <label class="hud-slider" title="How loud the alarm sound plays.">
+        Volume:
+        <input id="vaVolumeSlider" type="range" min="0" max="100" value="80">
+      </label>
+    </div>
+    <p class="hint" id="vaMotionUnsupportedHint"></p>
+  </section>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<script src="wake-lock.js"></script>
+<script src="vibration-alarm.js"></script>
+</body>
+</html>

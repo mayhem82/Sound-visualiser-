@@ -1,0 +1,135 @@
+/* Vibration Alarm — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider,
+   .status) comes from style.css; .dmx-section/.dmx-pill/.dmx-connect-btn/
+   .dmx-top-status/.back-link mirror the same small set of "plain panel"
+   classes dmx.css defines (duplicated here, same as theremin.css/
+   vibro-scan.css/drum-machine.css). */
+
+body { overflow: auto; }
+
+#vaMain {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#vaMain.hide { display: none; }
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section.hide { display: none; }
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.dmx-section p.hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(242, 242, 247, 0.6);
+  margin: 0 0 12px;
+}
+
+.dmx-section p.hint:last-child { margin-bottom: 0; }
+
+#vaAlarmBanner {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+#vaAlarmBanner p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #fecaca;
+  text-align: center;
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.dmx-connect-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #05050a;
+  background: linear-gradient(135deg, #7dd3fc, #a78bfa);
+  cursor: pointer;
+}
+
+.dmx-connect-btn:hover { filter: brightness(1.08); }
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#vaFileWrap.hide { display: none; }
+
+#vaFileInput {
+  max-width: 200px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }
