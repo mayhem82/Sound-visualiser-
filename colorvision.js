@@ -402,6 +402,7 @@
   const floatingCalibrateBtn = document.getElementById("floatingCalibrateBtn");
   const floatingPhotoBtn = document.getElementById("floatingPhotoBtn");
   const floatingRecordBtn = document.getElementById("floatingRecordBtn");
+  const floatingTimelapseBtn = document.getElementById("floatingTimelapseBtn");
   const floatingPointsBtn = document.getElementById("floatingPointsBtn");
 
   const connectTabletBtn = document.getElementById("connectTabletBtn");
@@ -3409,6 +3410,9 @@
     timelapseBtn.textContent = "⏹ Stop Time-lapse";
     timelapseBtn.classList.add("recording");
     timelapseBtn.setAttribute("aria-pressed", "true");
+    floatingTimelapseBtn.textContent = "⏹ Stop";
+    floatingTimelapseBtn.classList.add("recording");
+    floatingTimelapseBtn.setAttribute("aria-pressed", "true");
     timelapseIntervalSelect.disabled = true;
     timelapseFpsSelect.disabled = true;
     recordBtn.disabled = true;
@@ -3433,6 +3437,9 @@
     timelapseBtn.textContent = "⏱ Start Time-lapse";
     timelapseBtn.classList.remove("recording");
     timelapseBtn.setAttribute("aria-pressed", "false");
+    floatingTimelapseBtn.textContent = "⏱ Time-lapse";
+    floatingTimelapseBtn.classList.remove("recording");
+    floatingTimelapseBtn.setAttribute("aria-pressed", "false");
     renderTimelapseVideo();
   }
 
@@ -3456,6 +3463,7 @@
 
     timelapseRendering = true;
     timelapseBtn.disabled = true;
+    floatingTimelapseBtn.disabled = true;
     const outputFps = timelapseFps;
     const total = shots.length;
 
@@ -3489,6 +3497,7 @@
     const blob = new Blob(chunks, { type: mimeType });
     timelapseRendering = false;
     timelapseBtn.disabled = false;
+    floatingTimelapseBtn.disabled = false;
     if (blob.size > 0) {
       const filename = `colour-vision-timelapse-${timestampForFilename()}.${ext}`;
       downloadBlob(blob, filename);
@@ -5925,6 +5934,7 @@
     try { localStorage.setItem(TIMELAPSE_FPS_KEY, String(timelapseFps)); } catch (e) {}
   });
   timelapseBtn.addEventListener("click", toggleTimelapseCapture);
+  floatingTimelapseBtn.addEventListener("click", toggleTimelapseCapture);
   updateHistogramUi();
   histogramBtn.addEventListener("click", toggleHistogram);
   floatingPhotoBtn.addEventListener("click", takePhoto);
