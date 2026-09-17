@@ -5444,24 +5444,157 @@
     return { patch, changes, understood: true };
   }
 
+  // ---- Phase 2: frame-aware adjustment ("help me adjust this") ----
+  // Extends Phase 1 rather than creating a second control path: this
+  // still only ever produces a {patch, changes, understood} proposal
+  // through the exact same AI_WHITELIST/aiApplySettings adapter, and
+  // still runs entirely locally -- real pixel statistics sampled from the
+  // actual camera/processed frames, not a hosted vision model (none is
+  // wired; same honest-fallback reasoning as Phase 1's local
+  // interpreter). "Frame analysis occurs only when requested": this
+  // sampling only ever runs inside a click on Interpret / Set Look, never
+  // on a timer or per-rendered-frame.
+  const FRAME_ANALYSIS_SAMPLE = 48; // px/side -- coarse on purpose, only rough luminance/contrast is needed
+  const FRAME_AWARE_RE = /help me adjust|make (the subject|this) clearer|easier to see|help me see this better|make this easier to see/;
+
+  function rgb01ToHex([r, g, b]) {
+    const c = (v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0");
+    return `#${c(r)}${c(g)}${c(b)}`;
+  }
+
+  // Nudges a hex colour's HSL lightness by deltaPercent (-100..100),
+  // keeping its hue/saturation -- used to widen (or narrow) the duotone
+  // shadow/highlight gap for more (or less) perceived contrast without
+  // abandoning the current palette.
+  function adjustHexLightness(hex, deltaPercent) {
+    const [h, s, l] = rgb2hsl(...hexToRgb01(hex));
+    const l2 = Math.max(0, Math.min(1, l + deltaPercent / 100));
+    return rgb01ToHex(hsl2rgb(h, s, l2));
+  }
+
+  // Draws the given source (the live <video> for the original frame, or
+  // the WebGL `stage` canvas -- preserveDrawingBuffer:true, same as photo
+  // capture already relies on -- for the processed one) down to a small
+  // offscreen canvas and computes real luminance mean/contrast, plus a
+  // coarse neighbour-delta "edge energy" proxy for how much structure is
+  // visible. Not a real edge detector or anything claiming to be vision
+  // understanding -- just honest, cheap pixel statistics.
+  function sampleFrameStats(sourceEl, srcWidth, srcHeight) {
+    if (!srcWidth || !srcHeight) return null;
+    const c = document.createElement("canvas");
+    c.width = FRAME_ANALYSIS_SAMPLE;
+    c.height = FRAME_ANALYSIS_SAMPLE;
+    const ctx = c.getContext("2d");
+    try { ctx.drawImage(sourceEl, 0, 0, srcWidth, srcHeight, 0, 0, FRAME_ANALYSIS_SAMPLE, FRAME_ANALYSIS_SAMPLE); }
+    catch (e) { return null; }
+    let data;
+    try { data = ctx.getImageData(0, 0, FRAME_ANALYSIS_SAMPLE, FRAME_ANALYSIS_SAMPLE).data; }
+    catch (e) { return null; }
+    const n = FRAME_ANALYSIS_SAMPLE * FRAME_ANALYSIS_SAMPLE;
+    const lum = new Float32Array(n);
+    let sum = 0, sumSq = 0;
+    for (let i = 0, p = 0; p < n; i += 4, p++) {
+      const l = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      lum[p] = l;
+      sum += l;
+      sumSq += l * l;
+    }
+    const mean = sum / n;
+    const variance = Math.max(0, sumSq / n - mean * mean);
+    const contrast = Math.sqrt(variance);
+    let edgeEnergy = 0;
+    for (let y = 0; y < FRAME_ANALYSIS_SAMPLE; y++) {
+      for (let x = 0; x < FRAME_ANALYSIS_SAMPLE; x++) {
+        const idx = y * FRAME_ANALYSIS_SAMPLE + x;
+        if (x > 0) edgeEnergy += Math.abs(lum[idx] - lum[idx - 1]);
+        if (y > 0) edgeEnergy += Math.abs(lum[idx] - lum[idx - FRAME_ANALYSIS_SAMPLE]);
+      }
+    }
+    edgeEnergy /= (n * 2);
+    return { mean, contrast, edgeEnergy };
+  }
+
+  function captureFrameAnalysis() {
+    const processed = (gl && stage.width && stage.height) ? sampleFrameStats(stage, stage.width, stage.height) : null;
+    const original = (video.videoWidth && video.videoHeight) ? sampleFrameStats(video, video.videoWidth, video.videoHeight) : null;
+    return { original, processed };
+  }
+
+  function frameAnalysisSummary(frames) {
+    if (!frames.processed) return "No live frame available to analyse yet.";
+    const { contrast, edgeEnergy } = frames.processed;
+    return `Frame analysis: contrast ${contrast.toFixed(0)}/128, edge definition ${edgeEnergy.toFixed(1)} (processed frame, ${FRAME_ANALYSIS_SAMPLE}×${FRAME_ANALYSIS_SAMPLE} sample).`;
+  }
+
+  // Decides a settings proposal from real frame statistics plus whatever
+  // the current whitelisted look already is -- "keep the cartoon look"
+  // is honoured literally: it's only ever a Phase-1-style keyword check
+  // against the same instruction text, same as any other phrase.
+  function aiInterpretWithFrameAnalysis(command, state, frames) {
+    const patch = {};
+    const processed = frames.processed;
+    const keepCartoonLook = /keep the cartoon look|keep this cartoon/i.test(command);
+    const lowContrast = !!processed && processed.contrast < 30;
+    const lowEdgeEnergy = !!processed && processed.edgeEnergy < 6;
+
+    if (processed && (lowContrast || lowEdgeEnergy)) {
+      if (state.outlinesEnabled) {
+        if (lowEdgeEnergy) patch.outlineOpacity = Math.min(1, state.outlineOpacity + 0.25);
+        if (lowContrast) patch.outlineBlend = Math.min(1, state.outlineBlend + 0.15);
+      } else if (state.cartoonEnabled) {
+        if (lowEdgeEnergy) patch.cartoonEdgeStrength = Math.min(1, state.cartoonEdgeStrength + 0.2);
+        if (lowContrast && state.cartoonThemeEnabled) {
+          patch.cartoonThemeLo = adjustHexLightness(state.cartoonThemeLo, -20);
+          patch.cartoonThemeHi = adjustHexLightness(state.cartoonThemeHi, 20);
+        } else if (lowContrast && !keepCartoonLook) {
+          patch.cartoonSaturation = Math.min(3, state.cartoonSaturation + 0.3);
+        }
+      } else {
+        // Neither line-drawing feature is on -- the only whitelisted way
+        // to add definition at all is to turn outlines on.
+        patch.outlinesEnabled = true;
+      }
+    }
+
+    const changes = Object.keys(patch)
+      .filter((key) => patch[key] !== state[key])
+      .map((key) => ({ key, from: state[key], to: patch[key] }));
+    return { patch, changes, understood: true, analysisNote: frameAnalysisSummary(frames) };
+  }
+
+  // Exposed for the same kind of outside-the-app sanity check this repo's
+  // other pure/near-pure logic gets (see colour-alarm.js's own
+  // __colourAlarmTestables) -- there's no way to force the fake-camera
+  // test pattern into a specific contrast/edge reading from outside, so
+  // the decision logic is exercised directly against synthetic stats
+  // instead. Read-only/pure functions only -- nothing here can mutate
+  // settings beyond what the real UI already exposes.
+  window.__cvAiTestables = {
+    aiInterpretLocally,
+    aiInterpretWithFrameAnalysis,
+    captureFrameAnalysis,
+    sampleFrameStats
+  };
+
   let aiPendingPatch = null;
   let aiUndoSnapshot = null;
 
   function renderAiProposal(result, command) {
     if (!result.understood) {
-      aiProposalStatus.textContent = `Didn't recognise an instruction in "${command}" -- try phrases like "make it a bold monochrome cartoon", "thinner lines", or "bring back some colour".`;
+      aiProposalStatus.textContent = `Didn't recognise an instruction in "${command}" -- try phrases like "make it a bold monochrome cartoon", "thinner lines", "bring back some colour", or "help me adjust this".`;
       aiPreviewBtn.disabled = true;
       aiPendingPatch = null;
       return;
     }
+    const notePrefix = result.analysisNote ? `${result.analysisNote}\n` : "";
     if (!result.changes.length) {
-      aiProposalStatus.textContent = "Understood, but that's already the current look -- nothing to change.";
+      aiProposalStatus.textContent = `${notePrefix}Understood, but that's already the current look -- nothing to change.`;
       aiPreviewBtn.disabled = true;
       aiPendingPatch = null;
       return;
     }
     const lines = result.changes.map((c) => `${AI_FIELD_LABELS[c.key]}: ${formatAiValue(c.key, c.from)} → ${formatAiValue(c.key, c.to)}`);
-    aiProposalStatus.textContent = `Proposal for "${command}":\n${lines.join("\n")}`;
+    aiProposalStatus.textContent = `${notePrefix}Proposal for "${command}":\n${lines.join("\n")}`;
     aiPendingPatch = result.patch;
     aiPreviewBtn.disabled = false;
   }
@@ -5530,7 +5663,13 @@
     const command = aiCommandInput.value.trim();
     if (!command) { aiProposalStatus.textContent = "Type an instruction first."; return; }
     const state = aiCaptureState();
-    const result = aiInterpretLocally(command, state);
+    // Frame-aware phrases ("help me adjust this"...) route to Phase 2's
+    // pixel-analysis proposal; everything else stays on Phase 1's plain
+    // keyword interpreter. Same click handler, same downstream preview/
+    // undo/save-template pipeline either way.
+    const result = FRAME_AWARE_RE.test(command.toLowerCase())
+      ? aiInterpretWithFrameAnalysis(command, state, captureFrameAnalysis())
+      : aiInterpretLocally(command, state);
     renderAiProposal(result, command);
     if (result.understood && result.changes.length) aiPreview();
   });
