@@ -205,6 +205,21 @@
   // of those at all. Each model is independent: only the one the current
   // region actually needs gets fetched and ticked.
 
+  // Which model "family" a region belongs to -- used below to reject a
+  // stale result. Each model's request is fire-and-forget against
+  // whatever region was active when it was sent; if you switch to a
+  // different family before it resolves (e.g. Person -> Sky, or even
+  // Person -> Everyone -> Sky), the late result must not get applied
+  // just because it happens to land while some other region is active.
+  // Without this, a late arrival could silently paint the wrong model's
+  // mask into the current region's compositing -- most confusingly when
+  // it crosses model families, since DeepLab's ADE20K classes include
+  // "person" too, so a late scene-model result could pass a person-shaped
+  // mask into what looks like the dedicated person-model's job.
+  function isPersonFamily(r) { return r === "person" || r === "background"; }
+  function isSceneFamily(r) { return r === "sky" || r === "wall"; }
+  function isObjectFamily(r) { return r === "ai-object"; }
+
   function loadScriptOnce(src) {
     return new Promise((resolve, reject) => {
       if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -229,6 +244,12 @@
       segmentation.setOptions({ modelSelection: 0 });
       segmentation.onResults((results) => {
         if (!results || !results.segmentationMask || !maskCtx) return;
+        // The request that produced this result may have been fired
+        // while a person-family region was active, but the region can
+        // have moved on to something else entirely by the time it
+        // resolves -- discard it rather than paint a person mask into
+        // whatever's current now.
+        if (!isPersonFamily(region)) return;
         maskCtx.drawImage(results.segmentationMask, 0, 0, renderW, renderH);
         latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
         personSegResults++;
@@ -358,7 +379,17 @@
     sceneSegmentationBusySince = Date.now();
     sceneSegRequests++;
     sceneSegmentation.segment(video)
-      .then((result) => { sceneSegResults++; applyClassMaskToLatest(classMaskFromResult(result, region)); })
+      .then((result) => {
+        // Same stale-result guard as the person model -- by the time
+        // this resolves, region may no longer even be a scene-family
+        // one (Sky/Wall), and classMaskFromResult(result, region) would
+        // otherwise happily look up whatever region's now current as an
+        // ADE20K class name (it does include "person"), cross-
+        // contaminating an unrelated model's mask into the wrong region.
+        if (!isSceneFamily(region)) return;
+        sceneSegResults++;
+        applyClassMaskToLatest(classMaskFromResult(result, region));
+      })
       .catch(() => {})
       .finally(() => { sceneSegmentationBusy = false; });
   }
@@ -453,6 +484,12 @@
     const query = aiObjectQuery;
     objectDetector(dataUrl, [query], { threshold: 0.1, topk: 1 })
       .then((detections) => {
+        // Same stale-result guard as the other two models -- if region
+        // has moved on by the time this resolves (including a "not
+        // found" result, which would otherwise null out whatever mask
+        // the NEW region has already set), don't touch the mask or
+        // status text for a mode that isn't even showing right now.
+        if (region !== "ai-object") return;
         objectSegResults++;
         const best = pickBestDetection(detections);
         if (best) {
