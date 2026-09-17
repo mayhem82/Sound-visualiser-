@@ -431,7 +431,14 @@
       segmentation = new window.SelfieSegmentation({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
       });
-      segmentation.setOptions({ modelSelection: 0 });
+      // modelSelection 1 ("landscape") is tuned for wider/half-body
+      // framing rather than 0's centred close-up "general" model --
+      // an experiment for scenes the general model gets badly wrong
+      // (e.g. a wide-angle/fisheye selfie with a big blown-out bright
+      // surface in frame), not a guaranteed fix for every framing/
+      // lighting condition; both are the same lightweight real-time
+      // model family, not a fundamentally more accurate one.
+      segmentation.setOptions({ modelSelection: 1 });
       segmentation.onResults((results) => {
         if (!results || !results.segmentationMask || !maskCtx) return;
         // The request that produced this result may have been fired
