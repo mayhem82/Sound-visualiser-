@@ -124,3 +124,8 @@ body { overflow: auto; }
 }
 
 .back-link a { color: var(--accent); }
+
+/* The raw camera feed is only ever an offscreen source drawn onto the
+   canvases below -- it should never actually be visible. Unconditional,
+   not tied to a toggled "hide" class (nothing ever removes it). */
+#seVideo { display: none; }
