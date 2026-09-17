@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Selective Effects</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#06202b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="selective-effects.css">
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1>Selective Effects</h1>
+    <p>Applies a real effect (cartoon posterize, or a duotone monochrome) to only the person in frame or only the background, using a real local person-segmentation model to decide where -- not a hand-drawn region, an actual pixel-by-pixel mask recomputed continuously from the live camera.</p>
+    <p class="hint"><strong>Standalone experiment, not part of Colour Vision Extreme.</strong> This explores the same "apply an effect only inside/outside a mask" idea as a self-contained page with its own much simpler effect engine, instead of risking changes to that page's own long-tuned correction pipeline.</p>
+    <p class="hint" id="seSupportHint"></p>
+    <button id="startBtn">Enable camera &amp; start</button>
+    <p id="status" class="status"></p>
+    <p class="hint"><a href="index.html">&larr; All features</a></p>
+    <p class="hint"><a href="colorvision.html">Colour Vision Extreme &rarr;</a></p>
+    <p class="hint"><a href="privacy-policy.html">Privacy Policy</a></p>
+  </div>
+</div>
+
+<main id="seMain" class="hide">
+  <div class="dmx-top-status">
+    <span id="modelPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="modelPillText">Segmentation model: not loaded</span></span>
+    <p id="seStatus" class="status"></p>
+  </div>
+
+  <section class="dmx-section" id="seCaveatBanner">
+    <p><strong>The only feature in this whole suite with an external dependency.</strong> Every other page here is dependency-free; this one loads a real pretrained person-segmentation model (MediaPipe Selfie Segmentation, a few MB) from a public CDN the first time you start it each session -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: the model runs entirely locally (WebAssembly), the same as every other feature's local-only promise. The mask is a real but approximate person-detector, not a guaranteed cutout -- poor lighting, unusual poses, more than one person, or being partly out of frame can all confuse it. It only tells "person-shaped foreground" from "everything else"; it can't yet target one specific tapped/selected object, and it re-detects fresh every cycle rather than tracking a specific person's identity across frames -- both are real future work, not this page's job yet. Segmentation also runs on a throttled interval, not every rendered frame, to stay affordable, so the mask edge can lag slightly behind fast motion.</p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Effect</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Cartoon: posterizes colour into flat bands with dark ink lines on strong edges. Monochrome: maps brightness onto a two-colour gradient (a duotone), same idea as Colour Vision Extreme's own duotone.">
+        Look:
+        <select id="seEffectSelect">
+          <option value="cartoon">Cartoon (posterize + edges)</option>
+          <option value="duotone">Monochrome (duotone)</option>
+        </select>
+      </label>
+      <label id="sePosterizeWrap" class="hud-slider" title="How many flat colour levels per channel -- fewer is bolder/more graphic.">
+        Levels: <span id="sePosterizeLabel">5</span>
+        <input id="sePosterizeSlider" type="range" min="2" max="10" step="1" value="5">
+      </label>
+      <label id="seDuotoneLoWrap" class="hud-btn choose-picker-btn hide" title="Shadow colour for the monochrome duotone.">
+        Shadow
+        <input id="seDuotoneLoInput" type="color" value="#0d0d0d">
+      </label>
+      <label id="seDuotoneHiWrap" class="hud-btn choose-picker-btn hide" title="Highlight colour for the monochrome duotone.">
+        Highlight
+        <input id="seDuotoneHiInput" type="color" value="#f2f2f2">
+      </label>
+    </div>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Where</h2>
+    <div class="dmx-inline-controls">
+      <label class="hud-slider" title="Everyone: the effect applies across the whole frame, same as if there were no mask at all -- a useful baseline to compare against. Background only: the person stays a natural, corrected-free view while everything behind them gets the effect. Person only: the reverse.">
+        Apply to:
+        <select id="seRegionSelect">
+          <option value="everyone">Everyone (no mask)</option>
+          <option value="background">Background only (keep person natural)</option>
+          <option value="person">Person only (keep background natural)</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint" id="seMaskUnsupportedHint"></p>
+  </section>
+
+  <canvas id="seOutputCanvas"></canvas>
+
+  <p class="back-link"><a href="index.html">&larr; All features</a> &middot; <a href="colorvision.html">Colour Vision Extreme</a> &middot; <a href="privacy-policy.html">Privacy Policy</a></p>
+</main>
+
+<video id="seVideo" playsinline muted class="hide"></video>
+<script src="selective-effects.js"></script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+/* Selective Effects — page-specific styles only.
+   Shared look (vars, #overlay, #panel, #startBtn, .hud-btn, .hud-slider,
+   .status) comes from style.css; .dmx-section/.dmx-pill/.dmx-top-status/
+   .back-link mirror the same small set of "plain panel" classes dmx.css
+   defines (duplicated here, same as every other page in this suite). */
+
+body { overflow: auto; }
+
+#seMain {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+#seMain.hide { display: none; }
+
+.dmx-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.dmx-top-status .status {
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.dmx-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.dmx-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+#seCaveatBanner {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+#seCaveatBanner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(254, 240, 138, 0.9);
+}
+
+.dmx-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.dmx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 247, 0.1);
+  color: rgba(242, 242, 247, 0.7);
+}
+
+.dmx-pill.connected {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.dmx-pill.error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dmx-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#sePosterizeWrap.hide,
+#seDuotoneLoWrap.hide,
+#seDuotoneHiWrap.hide {
+  display: none;
+}
+
+.choose-picker-btn input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+#seOutputCanvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(242, 242, 247, 0.15);
+  background: #05050a;
+}
+
+.back-link {
+  display: block;
+  margin-top: 24px;
+  font-size: 13px;
+  color: rgba(242, 242, 247, 0.55);
+}
+
+.back-link a { color: var(--accent); }
