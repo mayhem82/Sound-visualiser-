@@ -33,11 +33,12 @@
   <div class="dmx-top-status">
     <span id="modelPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="modelPillText">Person model: not loaded</span></span>
     <span id="scenePill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="scenePillText">Scene model: not loaded</span></span>
+    <span id="objectPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="objectPillText">Object model: not loaded</span></span>
     <p id="seStatus" class="status"></p>
   </div>
 
   <section class="dmx-section" id="seCaveatBanner">
-    <p><strong>The only feature in this whole suite with external dependencies.</strong> Every other page here is dependency-free; this one loads real pretrained segmentation models from a public CDN the first time each is needed -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: both models run entirely locally (WebAssembly/WebGL), the same as every other feature's local-only promise. "Person only"/"Background only" use a person-detector (MediaPipe Selfie Segmentation) -- a real but approximate mask, not a guaranteed cutout; poor lighting, unusual poses, more than one person, or being partly out of frame can all confuse it. "Sky only"/"Wall only" use a second, heavier general scene model (DeepLab, trained on ADE20K) that labels a frame into everyday classes like sky/wall/floor/tree -- it's a real semantic segmenter, not a lookup table, but its class boundaries are coarser than the person model's and it runs on a slower interval to stay affordable, so it lags further behind motion. Neither model can yet target one specific tapped/selected object, and both re-detect fresh every cycle rather than tracking identity across frames -- real future work, not this page's job yet.</p>
+    <p><strong>The only feature in this whole suite with external dependencies.</strong> Every other page here is dependency-free; this one loads real pretrained models from a public CDN the first time each is needed -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: all three models run entirely locally (WebAssembly/WebGL), the same as every other feature's local-only promise. "Person only"/"Background only" use a person-detector (MediaPipe Selfie Segmentation) -- a real but approximate mask, not a guaranteed cutout; poor lighting, unusual poses, more than one person, or being partly out of frame can all confuse it. "Sky only"/"Wall only" use a second, heavier general scene model (DeepLab, trained on ADE20K) that labels a frame into everyday classes like sky/wall/floor/tree -- a real semantic segmenter, not a lookup table, but coarser and slower than the person model. "AI: isolate a described object" and "Describe what the camera sees" use a third, heavier still model (OWL-ViT) that can locate open-ended short phrases you type rather than being limited to a fixed class list -- but it draws a rectangle around its best match, not a tight silhouette, and "Describe" only ever checks a fixed list of common object words against the frame, it doesn't freely caption a scene in its own words. All three re-detect fresh every cycle rather than tracking identity across frames -- real future work, not this page's job yet.</p>
   </section>
 
   <section class="dmx-section">
@@ -89,11 +90,25 @@
           <option value="person">Person only (keep background natural)</option>
           <option value="sky">Sky only (isolate sky)</option>
           <option value="wall">Wall only (isolate wall)</option>
+          <option value="ai-object">AI: isolate a described object</option>
         </select>
       </label>
+      <label id="seAiObjectWrap" class="hud-slider hide" title="Runs a real local open-vocabulary object detector (OWL-ViT) against a short phrase you type -- e.g. 'red mug', 'laptop', 'blue chair' -- and isolates the best-matching box it finds, re-scanning every few seconds. It draws a box around what it finds, not a tight pixel cutout like the person/sky/wall masks, and it can only recognise things within its own training, so unusual phrasing or objects may be missed.">
+        Isolate: <input id="seAiObjectInput" type="text" placeholder="e.g. red mug, laptop" maxlength="60">
+        <button id="seAiObjectApplyBtn" class="hud-btn" type="button">Find</button>
+      </label>
     </div>
+    <p class="hint" id="seAiObjectStatus"></p>
     <p class="hint" id="seMaskUnsupportedHint"></p>
     <p class="hint" id="seMaskDebug" title="How this page can tell whether the mask is actually being refreshed: how long ago it last landed, and how many of the segmentation calls made actually produced one. If this stays stuck at a growing 'ago' figure while requests keep climbing, the model itself isn't returning usable results, not just running slowly."></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Scene</h2>
+    <div class="dmx-inline-controls">
+      <button id="seDescribeBtn" class="hud-btn" type="button" title="Runs the same local object detector against a fixed list of common everyday object/scene words and reports which ones it found -- a real result from a real model, not a made-up description, but a list of matched labels, not a flowing sentence.">Describe what the camera sees</button>
+    </div>
+    <p class="hint" id="seDescribeResult"></p>
   </section>
 
   <section class="dmx-section">
@@ -110,6 +125,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=7"></script>
+<script src="selective-effects.js?v=9"></script>
 </body>
 </html>

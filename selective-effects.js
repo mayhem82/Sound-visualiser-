@@ -33,7 +33,15 @@
   const modelPillText = document.getElementById("modelPillText");
   const scenePill = document.getElementById("scenePill");
   const scenePillText = document.getElementById("scenePillText");
+  const objectPill = document.getElementById("objectPill");
+  const objectPillText = document.getElementById("objectPillText");
   const sePhotoBtn = document.getElementById("sePhotoBtn");
+  const seAiObjectWrap = document.getElementById("seAiObjectWrap");
+  const seAiObjectInput = document.getElementById("seAiObjectInput");
+  const seAiObjectApplyBtn = document.getElementById("seAiObjectApplyBtn");
+  const seAiObjectStatus = document.getElementById("seAiObjectStatus");
+  const seDescribeBtn = document.getElementById("seDescribeBtn");
+  const seDescribeResult = document.getElementById("seDescribeResult");
 
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
@@ -70,6 +78,8 @@
   let latestMaskData = null; // Uint8ClampedArray at render resolution -- red channel is the current region's class probability, 0..255
   let segmentation = null;      // MediaPipe Selfie Segmentation -- powers "Person only"/"Background only"
   let sceneSegmentation = null; // DeepLab (ADE20K) -- powers "Sky only"/"Wall only"
+  let objectDetector = null;    // OWL-ViT (zero-shot object detection) -- powers "AI: isolate a described object" and "Describe what the camera sees"
+  let objectSnapshotCanvas = null;
   let segmentationTimer = null;
   let renderTimer = null;
 
@@ -83,6 +93,7 @@
   // that can be root-caused from a screenshot instead of guessed at again.
   let personSegRequests = 0, personSegResults = 0, personSegLastResultAt = 0;
   let sceneSegRequests = 0, sceneSegResults = 0, sceneSegLastResultAt = 0;
+  let objectSegRequests = 0, objectSegResults = 0, objectSegLastResultAt = 0;
 
   let effect = "cartoon";
   let posterizeLevels = 5;
@@ -90,6 +101,21 @@
   let duotoneLo = hexToRgb(seDuotoneLoInput.value);
   let duotoneHi = hexToRgb(seDuotoneHiInput.value);
   let region = "everyone";
+  let aiObjectQuery = ""; // the phrase last submitted via "AI: isolate a described object"
+
+  // A fixed vocabulary "Describe what the camera sees" checks the frame
+  // against -- OWL-ViT is a zero-shot DETECTOR, not a caption generator:
+  // it can only score/locate labels it's actually given, it can't freely
+  // describe a scene in its own words. This list is deliberately broad
+  // (common household/everyday objects) so a real result is likely, but
+  // it's still a checklist, not understanding -- the result text says so.
+  const DEFAULT_SCENE_VOCAB = [
+    "person", "face", "hand", "chair", "table", "sofa", "bed", "door", "window",
+    "wall", "floor", "ceiling", "sky", "tree", "plant", "car", "bicycle",
+    "laptop", "computer", "phone", "television", "book", "cup", "bottle",
+    "bag", "shoe", "lamp", "clock", "mirror", "picture frame", "plate",
+    "keyboard", "mouse", "remote control", "pillow", "curtain", "rug", "dog", "cat"
+  ];
 
   let currentStream = null;
   let videoDevices = [];
@@ -337,9 +363,114 @@
       .finally(() => { sceneSegmentationBusy = false; });
   }
 
+  // ---- Object detector (OWL-ViT, loaded lazily) -- open-vocabulary --
+  // unlike the person/scene models above, this one isn't limited to a
+  // fixed class list: it scores/locates whatever short phrase you type
+  // against the frame. That flexibility comes from a real (if heavier)
+  // vision-language model rather than a plain classifier, loaded via
+  // transformers.js (an ES module, hence the dynamic import() below
+  // rather than loadScriptOnce's classic <script> tag) running entirely
+  // in-browser (WebAssembly) -- same "never uploads your camera feed"
+  // promise as the other two models, just a bigger one-time download.
+  async function ensureObjectDetector() {
+    if (objectDetector) return;
+    objectPillText.textContent = "Object model: loading…";
+    try {
+      const mod = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+      if (typeof mod.pipeline !== "function") throw new Error("transformers.js pipeline unavailable after import");
+      if (mod.env) mod.env.allowLocalModels = false;
+      objectDetector = await mod.pipeline("zero-shot-object-detection", "Xenova/owlvit-base-patch32");
+      objectPill.className = "dmx-pill connected";
+      objectPillText.textContent = "Object model: ready";
+    } catch (e) {
+      objectPill.className = "dmx-pill error";
+      objectPillText.textContent = "Object model: failed to load";
+      seMaskUnsupportedHint.textContent = "Couldn't load the object model (needs an internet connection the first time) -- \"AI: isolate\" and \"Describe what the camera sees\" have nothing to work with until it loads.";
+    }
+  }
+
+  function captureObjectSnapshotDataUrl() {
+    if (!objectSnapshotCanvas) objectSnapshotCanvas = document.createElement("canvas");
+    objectSnapshotCanvas.width = renderW;
+    objectSnapshotCanvas.height = renderH;
+    objectSnapshotCanvas.getContext("2d").drawImage(video, 0, 0, renderW, renderH);
+    return objectSnapshotCanvas.toDataURL("image/png");
+  }
+
+  // OWL-ViT returns a list of {score, label, box} candidates for however
+  // many labels you gave it -- for "isolate this one thing" only the
+  // single strongest match matters.
+  function pickBestDetection(detections) {
+    if (!Array.isArray(detections) || detections.length === 0) return null;
+    return detections.reduce((best, d) => (!best || d.score > best.score) ? d : best, null);
+  }
+
+  // A bounding box, not a silhouette -- OWL-ViT localises with a
+  // rectangle, it doesn't produce a per-pixel cutout the way the person/
+  // scene models above do. The mask is plain 0/255 inside/outside that
+  // box at the page's own working resolution (the box coordinates are
+  // already in that space, since the snapshot fed to the detector was
+  // captured at exactly renderW x renderH -- no rescaling needed).
+  function boxToMask(box, w, h) {
+    if (!box) return null;
+    const out = new Uint8ClampedArray(w * h * 4);
+    const xmin = Math.max(0, Math.round(box.xmin));
+    const xmax = Math.min(w, Math.round(box.xmax));
+    const ymin = Math.max(0, Math.round(box.ymin));
+    const ymax = Math.min(h, Math.round(box.ymax));
+    for (let y = ymin; y < ymax; y++) {
+      for (let x = xmin; x < xmax; x++) {
+        const i = (y * w + x) * 4;
+        out[i] = 255; out[i + 1] = 255; out[i + 2] = 255; out[i + 3] = 255;
+      }
+    }
+    return { data: out, width: w, height: h };
+  }
+
+  function applyBoxMaskToLatest(boxMask) {
+    if (!boxMask) return;
+    latestMaskData = boxMask.data;
+    objectSegLastResultAt = Date.now();
+  }
+
+  // Same busy+watchdog shape as the other two models. This is by far the
+  // heaviest of the three (a full vision-language model, not a small
+  // real-time segmenter), so ticks naturally space themselves out to
+  // however long a real detection call actually takes.
+  let objectSegmentationBusy = false;
+  let objectSegmentationBusySince = 0;
+  function objectSegmentationTick() {
+    if (objectSegmentationBusy && Date.now() - objectSegmentationBusySince > SEGMENTATION_WATCHDOG_MS) {
+      objectSegmentationBusy = false;
+    }
+    if (!objectDetector || !aiObjectQuery || objectSegmentationBusy) return;
+    if (video.readyState < video.HAVE_CURRENT_DATA) return;
+    objectSegmentationBusy = true;
+    objectSegmentationBusySince = Date.now();
+    objectSegRequests++;
+    const dataUrl = captureObjectSnapshotDataUrl();
+    const w = renderW, h = renderH;
+    const query = aiObjectQuery;
+    objectDetector(dataUrl, [query], { threshold: 0.1, topk: 1 })
+      .then((detections) => {
+        objectSegResults++;
+        const best = pickBestDetection(detections);
+        if (best) {
+          applyBoxMaskToLatest(boxToMask(best.box, w, h));
+          seAiObjectStatus.textContent = `Found "${query}" (${Math.round(best.score * 100)}% confidence).`;
+        } else {
+          latestMaskData = null;
+          seAiObjectStatus.textContent = `Couldn't find "${query}" in this frame -- try different wording, lighting, or make sure it's in view.`;
+        }
+      })
+      .catch(() => {})
+      .finally(() => { objectSegmentationBusy = false; });
+  }
+
   function segmentationTick() {
     if (region === "person" || region === "background") personSegmentationTick();
     else if (region === "sky" || region === "wall") sceneSegmentationTick();
+    else if (region === "ai-object") objectSegmentationTick();
   }
 
   // The segmentation model's own mask is typically produced at a lower
@@ -368,13 +499,14 @@
   function updateMaskDebugDisplay() {
     const isPersonFamily = region === "person" || region === "background";
     const isSceneFamily = region === "sky" || region === "wall";
-    if (!isPersonFamily && !isSceneFamily) {
+    const isObjectFamily = region === "ai-object";
+    if (!isPersonFamily && !isSceneFamily && !isObjectFamily) {
       seMaskDebug.textContent = "";
       return;
     }
-    const requests = isPersonFamily ? personSegRequests : sceneSegRequests;
-    const results = isPersonFamily ? personSegResults : sceneSegResults;
-    const lastAt = isPersonFamily ? personSegLastResultAt : sceneSegLastResultAt;
+    const requests = isPersonFamily ? personSegRequests : isSceneFamily ? sceneSegRequests : objectSegRequests;
+    const results = isPersonFamily ? personSegResults : isSceneFamily ? sceneSegResults : objectSegResults;
+    const lastAt = isPersonFamily ? personSegLastResultAt : isSceneFamily ? sceneSegLastResultAt : objectSegLastResultAt;
     const ageText = lastAt ? `${((Date.now() - lastAt) / 1000).toFixed(1)}s ago` : "never yet";
     seMaskDebug.textContent = `Mask debug: last updated ${ageText} · ${results}/${requests} requests produced a usable mask`;
   }
@@ -436,8 +568,51 @@
     // "sky") -- drop it rather than briefly compositing with the wrong
     // region's mask until the newly-selected model's first result lands.
     latestMaskData = null;
+    seAiObjectWrap.classList.toggle("hide", region !== "ai-object");
     if (region === "person" || region === "background") ensurePersonSegmentation();
     else if (region === "sky" || region === "wall") ensureSceneSegmentation();
+    else if (region === "ai-object") ensureObjectDetector();
+  });
+
+  seAiObjectApplyBtn.addEventListener("click", async () => {
+    const q = seAiObjectInput.value.trim();
+    if (!q) {
+      seAiObjectStatus.textContent = "Type something to isolate first.";
+      return;
+    }
+    aiObjectQuery = q;
+    latestMaskData = null;
+    seAiObjectStatus.textContent = `Looking for "${q}"…`;
+    await ensureObjectDetector();
+    if (!objectDetector) {
+      seAiObjectStatus.textContent = "Object model isn't loaded -- see the pill above.";
+    }
+  });
+
+  seDescribeBtn.addEventListener("click", async () => {
+    seDescribeResult.textContent = "Looking…";
+    await ensureObjectDetector();
+    if (!objectDetector) {
+      seDescribeResult.textContent = "Object model isn't loaded -- see the pill above.";
+      return;
+    }
+    if (video.readyState < video.HAVE_CURRENT_DATA) {
+      seDescribeResult.textContent = "Camera isn't ready yet.";
+      return;
+    }
+    try {
+      const dataUrl = captureObjectSnapshotDataUrl();
+      const detections = await objectDetector(dataUrl, DEFAULT_SCENE_VOCAB, { threshold: 0.15, topk: 8 });
+      if (!detections || detections.length === 0) {
+        seDescribeResult.textContent = "Nothing from the checked word list was recognised confidently in this frame.";
+        return;
+      }
+      const sorted = detections.slice().sort((a, b) => b.score - a.score);
+      const list = sorted.map((d) => `${d.label} (${Math.round(d.score * 100)}%)`).join(", ");
+      seDescribeResult.textContent = `Detected: ${list}. (Matched against a fixed list of common object words, not a free-form description.)`;
+    } catch (e) {
+      seDescribeResult.textContent = "Couldn't run the scene check: " + (e.message || e.name || "unknown error");
+    }
   });
 
   // Only cartoon's controls are relevant at load (cartoon is the default).
@@ -570,13 +745,20 @@
     segmentationTick,
     setSegmentation: (obj) => { segmentation = obj; },
     setSceneSegmentation: (obj) => { sceneSegmentation = obj; },
+    setObjectDetector: (obj) => { objectDetector = obj; },
     setRegion: (r) => { region = r; },
     getRegion: () => region,
+    setAiObjectQuery: (q) => { aiObjectQuery = q; },
+    getAiObjectQuery: () => aiObjectQuery,
     takeSelectivePhoto,
+    boxToMask,
+    pickBestDetection,
     getSegmentationDebugCounters: () => ({
       personSegRequests, personSegResults, personSegLastResultAt,
-      sceneSegRequests, sceneSegResults, sceneSegLastResultAt
+      sceneSegRequests, sceneSegResults, sceneSegLastResultAt,
+      objectSegRequests, objectSegResults, objectSegLastResultAt
     }),
-    updateMaskDebugDisplay
+    updateMaskDebugDisplay,
+    getDefaultSceneVocab: () => DEFAULT_SCENE_VOCAB.slice()
   };
 })();
