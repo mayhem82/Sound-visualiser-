@@ -213,6 +213,23 @@
       .finally(() => { segmentationBusy = false; });
   }
 
+  // The segmentation model's own mask is typically produced at a lower
+  // internal resolution than this page's 480px working canvas, so
+  // drawImage()'s upscale smooths a naturally crisp silhouette into a
+  // wide, soft gradient at the boundary -- especially around hair or,
+  // here, a headset, where the model itself is already less certain.
+  // That soft band is exactly what shows up as a pale "halo" or "ghost"
+  // hanging around the real edge instead of a tight cutout. Steepening
+  // the 0..1 probability around its midpoint narrows that transition
+  // back down to a thin antialiased edge without going fully
+  // hard-thresholded/jagged: anything already fairly confident (roughly
+  // outside the middle third) snaps all the way to 0 or 1, only genuinely
+  // ambiguous pixels near dead centre still blend.
+  const MASK_SHARPNESS = 3;
+  function sharpenMaskValue(p) {
+    return Math.max(0, Math.min(1, 0.5 + (p - 0.5) * MASK_SHARPNESS));
+  }
+
   // ---- Main render loop ----
 
   function renderTick() {
@@ -238,7 +255,7 @@
     const eff = effectData.data;
     const mask = latestMaskData;
     for (let i = 0; i < outD.length; i += 4) {
-      const personProb = mask[i] / 255;
+      const personProb = sharpenMaskValue(mask[i] / 255);
       const useEffect = region === "background" ? 1 - personProb : personProb;
       outD[i] = nat[i] * (1 - useEffect) + eff[i] * useEffect;
       outD[i + 1] = nat[i + 1] * (1 - useEffect) + eff[i + 1] * useEffect;
@@ -354,6 +371,7 @@
   window.__selectiveEffectsTestables = {
     computeCartoonEffect,
     computeDuotoneEffect,
+    sharpenMaskValue,
     setLatestMaskData: (data) => { latestMaskData = data; },
     getRenderSize: () => ({ w: renderW, h: renderH }),
     renderTick,
