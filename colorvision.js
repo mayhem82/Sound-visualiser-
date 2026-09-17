@@ -468,6 +468,15 @@
   const saveProfileBtn = document.getElementById("saveProfileBtn");
   const profileStatus = document.getElementById("profileStatus");
 
+  const aiCommandInput = document.getElementById("aiCommandInput");
+  const aiInterpretBtn = document.getElementById("aiInterpretBtn");
+  const aiProposalStatus = document.getElementById("aiProposalStatus");
+  const aiPreviewBtn = document.getElementById("aiPreviewBtn");
+  const aiUndoBtn = document.getElementById("aiUndoBtn");
+  const aiTemplateNameInput = document.getElementById("aiTemplateNameInput");
+  const aiSaveTemplateBtn = document.getElementById("aiSaveTemplateBtn");
+  const aiActionStatus = document.getElementById("aiActionStatus");
+
   const choosePanel = document.getElementById("choosePanel");
   const chooseAimBtn = document.getElementById("chooseAimBtn");
   const colourPickerInput = document.getElementById("colourPickerInput");
@@ -5215,6 +5224,319 @@
     renderProfileSelect();
     profileStatus.textContent = `Deleted template "${prof.name}".`;
   }
+
+  // ---- AI Control (natural-language -> existing Cartoon/Outline/Duotone
+  // controls) ----
+  //
+  // This is a control and interpretation layer only. It never renders
+  // anything itself -- every visual change still goes through the exact
+  // same currentSettingsSnapshot()/applySettingsSnapshot() pair the manual
+  // Templates feature above already uses, so there is exactly one
+  // rendering path regardless of whether a setting was changed by hand or
+  // by a typed command.
+  //
+  // CALIBRATION PROTECTION: personal colour calibration (saved colour
+  // points, cvdType/cvdStrength, blend, spread) is never in scope here.
+  // AI_WHITELIST below is the complete, hardcoded set of keys this layer
+  // is permitted to read or write -- anything else is rejected before it
+  // can reach applySettingsSnapshot(), even if a future provider's output
+  // tried to include it. This is deliberately a whitelist (permit-listed
+  // keys only), not a blocklist of calibration keys to exclude, so a new
+  // unrelated setting added to the app later is safe-by-default (excluded
+  // until someone deliberately adds it here) rather than silently exposed.
+  const AI_WHITELIST = {
+    cartoonEnabled: { type: "boolean" },
+    cartoonLevels: { type: "number", min: 2, max: 24 },
+    cartoonEdgeThickness: { type: "number", min: 1, max: 10 },
+    cartoonEdgeStrength: { type: "number", min: 0, max: 1 },
+    cartoonSaturation: { type: "number", min: 1, max: 3 },
+    cartoonTheme: { type: "enum", values: CARTOON_THEME_NAMES },
+    cartoonThemeEnabled: { type: "boolean" },
+    cartoonThemeLo: { type: "color" },
+    cartoonThemeHi: { type: "color" },
+    outlinesEnabled: { type: "boolean" },
+    outlineThickness: { type: "number", min: 1, max: 10 },
+    outlineBlend: { type: "number", min: 0, max: 1 },
+    outlineOpacity: { type: "number", min: 0, max: 1 },
+    outlineColor: { type: "color" }
+  };
+  const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+  // Human-readable label + value formatter per key, for the proposal diff
+  // and status text -- "the user should be able to see what is changing."
+  const AI_FIELD_LABELS = {
+    cartoonEnabled: "Cartoon",
+    cartoonLevels: "Levels",
+    cartoonEdgeThickness: "Edge thickness",
+    cartoonEdgeStrength: "Edge strength",
+    cartoonSaturation: "Saturation",
+    cartoonTheme: "Theme",
+    cartoonThemeEnabled: "Duotone",
+    cartoonThemeLo: "Duotone shadow",
+    cartoonThemeHi: "Duotone highlight",
+    outlinesEnabled: "Outlines",
+    outlineThickness: "Outline thickness",
+    outlineBlend: "Outline blend",
+    outlineOpacity: "Outline opacity",
+    outlineColor: "Outline colour"
+  };
+  function formatAiValue(key, value) {
+    const schema = AI_WHITELIST[key];
+    if (schema.type === "boolean") return value ? "On" : "Off";
+    if (schema.type === "color") return value;
+    if (key === "cartoonTheme") return value === "none" ? "Original" : value[0].toUpperCase() + value.slice(1);
+    if (["cartoonEdgeStrength", "outlineBlend", "outlineOpacity"].includes(key)) return `${Math.round(value * 100)}%`;
+    if (key === "cartoonSaturation") return `${Math.round(value * 100)}%`;
+    if (["cartoonEdgeThickness", "outlineThickness"].includes(key)) return `${value}px`;
+    return String(value);
+  }
+
+  // ---- Settings adapter: captureState() / applySettings() ----
+  // Every value this layer ever reads or writes passes through here --
+  // the only two functions with a route to the live renderer's settings.
+
+  function aiCaptureState() {
+    const full = currentSettingsSnapshot();
+    const state = {};
+    Object.keys(AI_WHITELIST).forEach((key) => { state[key] = full[key]; });
+    return state;
+  }
+
+  // Validates a proposed partial-settings object against AI_WHITELIST,
+  // silently dropping (never applying) anything unrecognised or
+  // out-of-range -- "If an AI proposal contains an unsupported setting:
+  // Reject that setting. Never apply arbitrary provider output directly
+  // to application state." Returns the cleaned patch actually applied.
+  function aiApplySettings(patch) {
+    if (!patch || typeof patch !== "object") return {};
+    const clean = {};
+    Object.keys(patch).forEach((key) => {
+      const schema = AI_WHITELIST[key];
+      if (!schema) return; // not on the whitelist at all -- reject
+      const value = patch[key];
+      if (schema.type === "boolean" && typeof value === "boolean") clean[key] = value;
+      else if (schema.type === "number" && Number.isFinite(value)) clean[key] = Math.max(schema.min, Math.min(schema.max, value));
+      else if (schema.type === "enum" && schema.values.includes(value)) clean[key] = value;
+      else if (schema.type === "color" && typeof value === "string" && HEX_COLOR_RE.test(value)) clean[key] = value;
+      // anything else (wrong type, out of enum, malformed colour) is
+      // silently dropped rather than applied or thrown as an error.
+    });
+    applySettingsSnapshot(clean);
+    return clean;
+  }
+
+  // ---- Local command interpreter (Phase 1's deterministic fallback) ----
+  // This is NOT a language model -- it is a small fixed set of keyword
+  // rules, deliberately presented as such rather than dressed up as AI
+  // understanding. It exists so natural-language control works before (or
+  // without) any hosted provider, and so the settings-adapter boundary
+  // above can be exercised and shipped on its own. A genuine language-model
+  // provider can later replace or wrap this function's role entirely --
+  // interpret() always returns the same {patch, changes, understood}
+  // shape either way, so nothing downstream (aiApplySettings, Preview,
+  // Undo, Save as Template) would need to change.
+  function aiInterpretLocally(command, state) {
+    const text = " " + command.toLowerCase().trim() + " ";
+    const patch = {};
+    const notes = [];
+    let understood = false;
+
+    const has = (re) => re.test(text);
+
+    // Cartoon on/off -- explicit negation checked first so "turn the
+    // cartoon effect off" doesn't also match the bare-mention rule below.
+    const cartoonOff = has(/\bcartoon\b[^.]*\boff\b|\boff\b[^.]*\bcartoon\b|\b(disable|turn off|stop)\b[^.]*\bcartoon\b/);
+    const cartoonOn = has(/\bcartoon\b/) && !cartoonOff;
+    if (cartoonOff) { patch.cartoonEnabled = false; understood = true; }
+    else if (cartoonOn) { patch.cartoonEnabled = true; understood = true; }
+
+    // Monochrome / greyscale / black & white -- only has a visible effect
+    // with cartoon mode on, so this implies enabling it too, same as the
+    // spec's own "bold monochrome cartoon" example.
+    if (has(/\bmonochrome\b|\bgreyscale\b|\bgrayscale\b|black\s*(and|&)\s*white/)) {
+      patch.cartoonEnabled = true;
+      patch.cartoonThemeEnabled = true;
+      patch.cartoonTheme = "greyscale";
+      patch.cartoonThemeLo = CARTOON_THEME_PRESETS.greyscale.lo;
+      patch.cartoonThemeHi = CARTOON_THEME_PRESETS.greyscale.hi;
+      understood = true;
+    }
+
+    // Bring back colour -- relaxes the monochrome/duotone treatment
+    // specifically, per the spec's own follow-up example, without
+    // touching edge/level settings.
+    if (has(/bring back (some |the )?colou?r|remove the monochrome|un-?monochrome/)) {
+      patch.cartoonThemeEnabled = false;
+      understood = true;
+    }
+
+    // Bold -- the spec's own example values (fewer levels, thicker/
+    // stronger ink lines).
+    if (has(/\bbold\b/)) {
+      patch.cartoonLevels = 4;
+      patch.cartoonEdgeThickness = 3;
+      patch.cartoonEdgeStrength = 0.85;
+      understood = true;
+    }
+
+    // Graphic -- same direction as bold, smaller/relative nudge instead
+    // of a fixed target.
+    if (has(/\bgraphic\b/)) {
+      patch.cartoonLevels = Math.max(2, (patch.cartoonLevels ?? state.cartoonLevels) - 2);
+      patch.cartoonEdgeStrength = Math.min(1, (patch.cartoonEdgeStrength ?? state.cartoonEdgeStrength) + 0.2);
+      understood = true;
+    }
+
+    // Fewer / more colour bands (relative to current levels).
+    if (has(/fewer colou?rs|flatter colou?rs/)) {
+      patch.cartoonLevels = Math.max(2, state.cartoonLevels - 4);
+      understood = true;
+    } else if (has(/more colou?rs/)) {
+      patch.cartoonLevels = Math.min(24, state.cartoonLevels + 4);
+      understood = true;
+    }
+
+    // Vividness / saturation, distinct from bring-back-colour above.
+    if (has(/more vivid/)) {
+      patch.cartoonSaturation = Math.min(3, state.cartoonSaturation + 0.3);
+      understood = true;
+    } else if (has(/less colou?r\b|less colourful/)) {
+      patch.cartoonSaturation = Math.max(1, state.cartoonSaturation - 0.3);
+      understood = true;
+    }
+
+    // Edge strength.
+    if (has(/stronger edges|bolder edges/)) {
+      patch.cartoonEdgeStrength = Math.min(1, (patch.cartoonEdgeStrength ?? state.cartoonEdgeStrength) + 0.2);
+      understood = true;
+    } else if (has(/softer edges|weaker edges/)) {
+      patch.cartoonEdgeStrength = Math.max(0, state.cartoonEdgeStrength - 0.2);
+      understood = true;
+    }
+
+    // Line thickness -- adjusts whichever line-drawing feature(s) are
+    // currently enabled (cartoon ink, outline overlay, or both); if
+    // neither is on yet, defaults to cartoon's since that's this
+    // command's most common context.
+    if (has(/thinner lines?|lines? (is|are) too thick|make the lines thinner/)) {
+      const cartoonOn2 = patch.cartoonEnabled ?? state.cartoonEnabled;
+      const outlinesOn2 = patch.outlinesEnabled ?? state.outlinesEnabled;
+      if (cartoonOn2 || !outlinesOn2) patch.cartoonEdgeThickness = Math.max(1, state.cartoonEdgeThickness - 1);
+      if (outlinesOn2) patch.outlineThickness = Math.max(1, state.outlineThickness - 1);
+      understood = true;
+    } else if (has(/thicker lines?|bolder lines?|make the lines thicker/)) {
+      const cartoonOn2 = patch.cartoonEnabled ?? state.cartoonEnabled;
+      const outlinesOn2 = patch.outlinesEnabled ?? state.outlinesEnabled;
+      if (cartoonOn2 || !outlinesOn2) patch.cartoonEdgeThickness = Math.min(10, state.cartoonEdgeThickness + 1);
+      if (outlinesOn2) patch.outlineThickness = Math.min(10, state.outlineThickness + 1);
+      understood = true;
+    }
+
+    // Outlines on/off -- explicit, unambiguous phrasing only.
+    if (has(/outlines? on|enable outlines?|turn on outlines?/)) { patch.outlinesEnabled = true; understood = true; }
+    else if (has(/outlines? off|disable outlines?|turn off outlines?/)) { patch.outlinesEnabled = false; understood = true; }
+
+    if (!understood) return { patch: {}, changes: [], understood: false };
+
+    const changes = Object.keys(patch)
+      .filter((key) => patch[key] !== state[key])
+      .map((key) => ({ key, from: state[key], to: patch[key] }));
+    return { patch, changes, understood: true };
+  }
+
+  let aiPendingPatch = null;
+  let aiUndoSnapshot = null;
+
+  function renderAiProposal(result, command) {
+    if (!result.understood) {
+      aiProposalStatus.textContent = `Didn't recognise an instruction in "${command}" -- try phrases like "make it a bold monochrome cartoon", "thinner lines", or "bring back some colour".`;
+      aiPreviewBtn.disabled = true;
+      aiPendingPatch = null;
+      return;
+    }
+    if (!result.changes.length) {
+      aiProposalStatus.textContent = "Understood, but that's already the current look -- nothing to change.";
+      aiPreviewBtn.disabled = true;
+      aiPendingPatch = null;
+      return;
+    }
+    const lines = result.changes.map((c) => `${AI_FIELD_LABELS[c.key]}: ${formatAiValue(c.key, c.from)} → ${formatAiValue(c.key, c.to)}`);
+    aiProposalStatus.textContent = `Proposal for "${command}":\n${lines.join("\n")}`;
+    aiPendingPatch = result.patch;
+    aiPreviewBtn.disabled = false;
+  }
+
+  function aiPreview() {
+    if (!aiPendingPatch) return;
+    aiUndoSnapshot = aiCaptureState();
+    const applied = aiApplySettings(aiPendingPatch);
+    aiUndoBtn.disabled = Object.keys(applied).length === 0;
+    aiActionStatus.textContent = Object.keys(applied).length
+      ? "Applied. Use Undo to revert just this change."
+      : "Nothing valid to apply from that proposal.";
+  }
+
+  function aiUndo() {
+    if (!aiUndoSnapshot) return;
+    aiApplySettings(aiUndoSnapshot);
+    aiUndoSnapshot = null;
+    aiUndoBtn.disabled = true;
+    aiActionStatus.textContent = "Reverted to how it looked before that change.";
+  }
+
+  // Saves the CURRENT live look as a template via the exact same
+  // `profiles` storage/UI the manual Templates feature above uses, so it
+  // shows up in that same Saved-colours -> Templates list -- "integrate
+  // with existing profile/template infrastructure instead of creating
+  // redundant storage." Calibration is explicitly excluded, not just
+  // omitted: points is always empty, and the calibration-mapping fields
+  // (cvdType/cvdStrength/blend/spread) are reset to their shipped
+  // defaults rather than carrying over whatever the live camera happens
+  // to be calibrated to right now.
+  function aiSaveTemplate() {
+    const name = aiTemplateNameInput.value.trim();
+    if (!name) {
+      aiActionStatus.textContent = "Enter a name for the template first.";
+      return;
+    }
+    const defaults = fullDefaultsSnapshot();
+    const settings = {
+      ...currentSettingsSnapshot(),
+      cvdType: defaults.cvdType,
+      cvdStrength: defaults.cvdStrength,
+      blend: defaults.blend,
+      spread: defaults.spread
+    };
+    const existing = profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.points = [];
+      existing.settings = settings;
+    } else {
+      profiles.push({
+        id: "prof_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        name,
+        points: [],
+        settings
+      });
+    }
+    saveProfiles();
+    renderProfileSelect();
+    profileSelect.value = existing ? existing.id : profiles[profiles.length - 1].id;
+    aiTemplateNameInput.value = "";
+    aiActionStatus.textContent = `${existing ? "Updated" : "Saved"} template "${name}" (appearance only -- no calibration).`;
+  }
+
+  aiInterpretBtn.addEventListener("click", () => {
+    const command = aiCommandInput.value.trim();
+    if (!command) { aiProposalStatus.textContent = "Type an instruction first."; return; }
+    const state = aiCaptureState();
+    const result = aiInterpretLocally(command, state);
+    renderAiProposal(result, command);
+    if (result.understood && result.changes.length) aiPreview();
+  });
+  aiPreviewBtn.addEventListener("click", aiPreview);
+  aiUndoBtn.addEventListener("click", aiUndo);
+  aiSaveTemplateBtn.addEventListener("click", aiSaveTemplate);
 
   // ---- Choose-colour panel ----
 
