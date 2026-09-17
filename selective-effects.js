@@ -193,10 +193,24 @@
     }
   }
 
+  // Guards against overlapping send() calls -- MediaPipe processes each
+  // frame asynchronously, and on a slower device a single frame can take
+  // longer than SEGMENTATION_INTERVAL_MS to finish. Firing another send()
+  // before that happens backs up its internal pipeline, which then keeps
+  // grinding through a growing backlog of stale frames instead of ever
+  // catching up to the live camera -- looking exactly like "the mask
+  // doesn't update when I move," since it's really just lagging further
+  // and further behind. Waiting for each call to actually resolve (or
+  // fail) before the next is allowed keeps it always working from
+  // whatever the truly current frame is once it's ready.
+  let segmentationBusy = false;
   function segmentationTick() {
-    if (!segmentation || region === "everyone") return;
+    if (!segmentation || region === "everyone" || segmentationBusy) return;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
-    segmentation.send({ image: video }).catch(() => {});
+    segmentationBusy = true;
+    segmentation.send({ image: video })
+      .catch(() => {})
+      .finally(() => { segmentationBusy = false; });
   }
 
   // ---- Main render loop ----
@@ -346,6 +360,9 @@
     ensureOffscreenCanvases,
     resizeCanvases,
     getVideoDevices: () => videoDevices,
-    getEdgeStrength: () => edgeStrength
+    getEdgeStrength: () => edgeStrength,
+    segmentationTick,
+    setSegmentation: (obj) => { segmentation = obj; },
+    setRegion: (r) => { region = r; }
   };
 })();
