@@ -121,6 +121,19 @@
   </section>
 
   <section class="dmx-section">
+    <h2>Audio tint</h2>
+    <p class="hint">Colour Vision Extreme's Audio colour tint, ported over: live microphone bass/mid/treble energy nudges hue toward whichever band is loudest (violet/cyan/pink, the same default mapping), but scoped here to only the currently selected/isolated region above -- the rest of the frame is untouched. Needs an actual selection to do anything: with "Everyone" picked there's no isolated region to tint, so this stays a visible no-op until you pick Person/Background/Sky/Wall/AI-isolate.</p>
+    <div class="dmx-inline-controls">
+      <button id="seAudioTintBtn" class="hud-btn" aria-pressed="false" title="Uses the microphone -- separate permission prompt from the camera. Only affects pixels inside the currently selected/isolated region, feathered at the mask edge the same soft way the effect itself already blends in.">Audio tint (on selected object): Off</button>
+      <label id="seAudioTintStrengthWrap" class="hud-slider hide" title="How strongly the live audio hue pulls the selected region's colour, from a subtle nudge to a full wash. Same default (40%) as Colour Vision Extreme.">
+        Tint strength: <span id="seAudioTintStrengthLabel">40%</span>
+        <input id="seAudioTintStrengthSlider" type="range" min="0" max="100" value="40">
+      </label>
+    </div>
+    <p class="hint" id="seAudioTintStatus"></p>
+  </section>
+
+  <section class="dmx-section">
     <h2>Scene</h2>
     <div class="dmx-inline-controls">
       <button id="seDescribeBtn" class="hud-btn" type="button" title="Runs the same local object detector against a fixed list of common everyday object/scene words and reports which ones it found -- a real result from a real model, not a made-up description, but a list of matched labels, not a flowing sentence.">Describe what the camera sees</button>
@@ -142,6 +155,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=11"></script>
+<script src="selective-effects.js?v=12"></script>
 </body>
 </html>

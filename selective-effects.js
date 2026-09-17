@@ -70,6 +70,11 @@
   const seRegionSelect = document.getElementById("seRegionSelect");
   const seMaskUnsupportedHint = document.getElementById("seMaskUnsupportedHint");
   const seMaskDebug = document.getElementById("seMaskDebug");
+  const seAudioTintBtn = document.getElementById("seAudioTintBtn");
+  const seAudioTintStrengthWrap = document.getElementById("seAudioTintStrengthWrap");
+  const seAudioTintStrengthSlider = document.getElementById("seAudioTintStrengthSlider");
+  const seAudioTintStrengthLabel = document.getElementById("seAudioTintStrengthLabel");
+  const seAudioTintStatus = document.getElementById("seAudioTintStatus");
 
   const video = document.getElementById("seVideo");
   const outputCanvas = document.getElementById("seOutputCanvas");
@@ -139,10 +144,134 @@
   let videoDevices = [];
   let switchingCamera = false;
 
+  // ---- Audio tint, ported from Colour Vision Extreme's own Audio colour
+  // tint -- the "core" version: just Strength + the 3 default bands, their
+  // hue/gain/Hz ranges fixed at CVE's own shipped defaults rather than
+  // individually tunable (CVE's own sat/light push, smoothing, resolution,
+  // update rate, and 3 extra fully-open bands are real settings too, just
+  // not reproduced here). Unlike CVE (whole-frame mood pass), this only
+  // nudges hue inside the currently selected/isolated region -- see the
+  // audio-tint step inside renderTick()'s masked-compositing loop.
+  const AUDIO_TINT_BANDS = [
+    { hue: 262, gain: 1.0, fromHz: 20, toHz: 150 },    // violet -- bass/kick
+    { hue: 189, gain: 1.0, fromHz: 150, toHz: 2000 },  // cyan -- mids
+    { hue: 330, gain: 0.85, fromHz: 2000, toHz: 9000 } // pink -- treble
+  ];
+  let audioTintEnabled = false;
+  let audioTintStrength = Number(seAudioTintStrengthSlider.value) / 100;
+  let audioTintStream = null;
+  let audioTintCtx = null;
+  let audioTintAnalyser = null;
+  let audioTintFreqData = null;
+  let audioTintHue = 0;
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const hasAudioTintSupport = !!AudioContextCtor;
+  if (!hasAudioTintSupport) seAudioTintBtn.classList.add("hide");
+
   function hexToRgb(hex) {
     const m = hex.replace("#", "");
     return [parseInt(m.substring(0, 2), 16), parseInt(m.substring(2, 4), 16), parseInt(m.substring(4, 6), 16)];
   }
+
+  // Standard RGB<->HSL round-trip, 0..1 in and out throughout (matches
+  // colour-math.js's own rgb2hsl/hsl2rgb convention elsewhere in this
+  // suite) -- callers here convert to/from this page's usual 0..255 bytes.
+  function rgb2hsl01(r, g, b) {
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let h = 0, s = 0;
+    const d = max - min;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  }
+  function hsl2rgb01(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r1 = 0, g1 = 0, b1 = 0;
+    if (h < 60) { r1 = c; g1 = x; b1 = 0; }
+    else if (h < 120) { r1 = x; g1 = c; b1 = 0; }
+    else if (h < 180) { r1 = 0; g1 = c; b1 = x; }
+    else if (h < 240) { r1 = 0; g1 = x; b1 = c; }
+    else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
+    else { r1 = c; g1 = 0; b1 = x; }
+    return [r1 + m, g1 + m, b1 + m];
+  }
+
+  // Same weighted-average-by-energy formula as CVE's own
+  // computeAudioTintHue(): each band's share of the blended hue is its
+  // live frequency-range energy times its gain, normalized across bands.
+  function computeAudioTintHue() {
+    if (!audioTintAnalyser || !audioTintCtx || !audioTintFreqData) return;
+    const nyquist = audioTintCtx.sampleRate / 2;
+    audioTintAnalyser.getByteFrequencyData(audioTintFreqData);
+    const n = audioTintFreqData.length;
+    let weightedHue = 0, totalEnergy = 0;
+    for (const band of AUDIO_TINT_BANDS) {
+      const from = Math.min(1, band.fromHz / nyquist);
+      const to = Math.min(1, band.toHz / nyquist);
+      const start = Math.floor(from * n);
+      const end = Math.max(start + 1, Math.floor(to * n));
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += audioTintFreqData[i];
+      const rawEnergy = sum / (end - start) / 255;
+      const energy = rawEnergy * band.gain;
+      weightedHue += band.hue * energy;
+      totalEnergy += energy;
+    }
+    if (totalEnergy > 0) audioTintHue = weightedHue / totalEnergy;
+  }
+
+  async function startAudioTint() {
+    if (audioTintStream) return;
+    try {
+      audioTintStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioTintCtx = new AudioContextCtor();
+      const source = audioTintCtx.createMediaStreamSource(audioTintStream);
+      audioTintAnalyser = audioTintCtx.createAnalyser();
+      audioTintAnalyser.fftSize = 1024; // matches CVE's own default
+      audioTintAnalyser.smoothingTimeConstant = 0.7; // matches CVE's own default
+      source.connect(audioTintAnalyser);
+      audioTintFreqData = new Uint8Array(audioTintAnalyser.frequencyBinCount);
+      seAudioTintStatus.textContent = "";
+    } catch (e) {
+      seAudioTintStatus.textContent = "Couldn't get microphone access: " + (e.message || e.name || "unknown error");
+      audioTintEnabled = false;
+      updateAudioTintUi();
+    }
+  }
+
+  function stopAudioTint() {
+    if (audioTintStream) { audioTintStream.getTracks().forEach((t) => t.stop()); audioTintStream = null; }
+    if (audioTintCtx) { audioTintCtx.close().catch(() => {}); audioTintCtx = null; }
+    audioTintAnalyser = null;
+    audioTintFreqData = null;
+  }
+
+  function updateAudioTintUi() {
+    seAudioTintBtn.textContent = `Audio tint (on selected object): ${audioTintEnabled ? "On" : "Off"}`;
+    seAudioTintBtn.setAttribute("aria-pressed", String(audioTintEnabled));
+    seAudioTintStrengthWrap.classList.toggle("hide", !audioTintEnabled);
+  }
+
+  async function toggleAudioTint() {
+    audioTintEnabled = !audioTintEnabled;
+    updateAudioTintUi();
+    if (audioTintEnabled) await startAudioTint();
+    else stopAudioTint();
+  }
+  seAudioTintBtn.addEventListener("click", toggleAudioTint);
+  seAudioTintStrengthSlider.addEventListener("input", () => {
+    audioTintStrength = Number(seAudioTintStrengthSlider.value) / 100;
+    seAudioTintStrengthLabel.textContent = `${seAudioTintStrengthSlider.value}%`;
+  });
 
   function ensureOffscreenCanvases() {
     if (naturalCanvas) return;
@@ -629,6 +758,8 @@
     // model's own soft (not hard-thresholded) probability value, the
     // same 2D-canvas equivalent of the WebGL mix() this same idea would
     // use in a shader.
+    const audioTintActive = audioTintEnabled && !!audioTintAnalyser;
+    if (audioTintActive) computeAudioTintHue();
     const out = outputCtx.createImageData(renderW, renderH);
     const outD = out.data;
     const nat = naturalData.data;
@@ -637,9 +768,28 @@
     for (let i = 0; i < outD.length; i += 4) {
       const personProb = sharpenMaskValue(mask[i] / 255);
       const useEffect = region === "background" ? 1 - personProb : personProb;
-      outD[i] = nat[i] * (1 - useEffect) + eff[i] * useEffect;
-      outD[i + 1] = nat[i + 1] * (1 - useEffect) + eff[i + 1] * useEffect;
-      outD[i + 2] = nat[i + 2] * (1 - useEffect) + eff[i + 2] * useEffect;
+      let r = nat[i] * (1 - useEffect) + eff[i] * useEffect;
+      let g = nat[i + 1] * (1 - useEffect) + eff[i + 1] * useEffect;
+      let b = nat[i + 2] * (1 - useEffect) + eff[i + 2] * useEffect;
+      // Audio tint: a final hue nudge, scoped to how much of THIS pixel
+      // is the selected/isolated region (personProb, the raw class
+      // probability) -- not useEffect, which flips for "background"
+      // mode -- so it's always "tint the named thing," person/sky/wall/
+      // object alike, regardless of whether that's the effect-carrying
+      // or the natural-carrying side of the current region. Skipped
+      // below a small threshold so most of the frame (well outside the
+      // mask) never pays for the HSL round-trip at all.
+      if (audioTintActive && personProb > 0.01) {
+        const tintAmount = personProb * audioTintStrength;
+        const [h, s, l] = rgb2hsl01(r / 255, g / 255, b / 255);
+        const hueDiff = ((audioTintHue - h + 540) % 360) - 180;
+        const newH = (h + hueDiff * tintAmount + 360) % 360;
+        const [nr, ng, nb] = hsl2rgb01(newH, s, l);
+        r = nr * 255; g = ng * 255; b = nb * 255;
+      }
+      outD[i] = r;
+      outD[i + 1] = g;
+      outD[i + 2] = b;
       outD[i + 3] = 255;
     }
     outputCtx.putImageData(out, 0, 0);
@@ -852,6 +1002,17 @@
     computeOutlineEffect,
     setEffect: (e) => { effect = e; },
     getEffect: () => effect,
+    rgb2hsl01,
+    hsl2rgb01,
+    computeAudioTintHue,
+    getAudioTintHue: () => audioTintHue,
+    getAudioTintBands: () => AUDIO_TINT_BANDS.map((b) => ({ ...b })),
+    setAudioTintEnabled: (v) => { audioTintEnabled = v; },
+    getAudioTintEnabled: () => audioTintEnabled,
+    setAudioTintStrength: (v) => { audioTintStrength = v; },
+    setAudioTintAnalyser: (obj) => { audioTintAnalyser = obj; },
+    setAudioTintCtx: (obj) => { audioTintCtx = obj; },
+    setAudioTintFreqData: (arr) => { audioTintFreqData = arr; },
     setOutlineSettings: (s) => {
       if (s.thickness !== undefined) outlineThickness = s.thickness;
       if (s.blend !== undefined) outlineBlend = s.blend;
