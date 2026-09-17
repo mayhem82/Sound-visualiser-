@@ -213,11 +213,29 @@
   // and further behind. Waiting for each call to actually resolve (or
   // fail) before the next is allowed keeps it always working from
   // whatever the truly current frame is once it's ready.
+  //
+  // That guard alone isn't enough, though: in real-world use (not this
+  // simple busy-flag test) a send() call can apparently just never settle
+  // at all -- neither resolving nor rejecting -- under real device load,
+  // which is a known rough edge of driving this model with a plain timer
+  // instead of MediaPipe's own frame-scheduling helper. Once that happens
+  // once, segmentationBusy would stay stuck true forever and no further
+  // mask would ever be requested again -- the mask freezes at wherever it
+  // last was (visible as a person-shaped hole of natural video trailing
+  // at the old position as you actually move). The watchdog below forces
+  // the guard back open after a generous timeout so one stuck call can't
+  // permanently kill mask updates for the rest of the session.
+  const SEGMENTATION_WATCHDOG_MS = 1500;
   let segmentationBusy = false;
+  let segmentationBusySince = 0;
   function personSegmentationTick() {
+    if (segmentationBusy && Date.now() - segmentationBusySince > SEGMENTATION_WATCHDOG_MS) {
+      segmentationBusy = false;
+    }
     if (!segmentation || segmentationBusy) return;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     segmentationBusy = true;
+    segmentationBusySince = Date.now();
     segmentation.send({ image: video })
       .catch(() => {})
       .finally(() => { segmentationBusy = false; });
@@ -284,12 +302,18 @@
 
   // Same overlap guard as the person model, above -- DeepLab is a much
   // heavier network, so a single call taking longer than one tick is the
-  // normal case here, not the exception.
+  // normal case here, not the exception. Same watchdog too, for the same
+  // "a call that never settles must not freeze the mask forever" reason.
   let sceneSegmentationBusy = false;
+  let sceneSegmentationBusySince = 0;
   function sceneSegmentationTick() {
+    if (sceneSegmentationBusy && Date.now() - sceneSegmentationBusySince > SEGMENTATION_WATCHDOG_MS) {
+      sceneSegmentationBusy = false;
+    }
     if (!sceneSegmentation || sceneSegmentationBusy) return;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     sceneSegmentationBusy = true;
+    sceneSegmentationBusySince = Date.now();
     sceneSegmentation.segment(video)
       .then((result) => applyClassMaskToLatest(classMaskFromResult(result, region)))
       .catch(() => {})
