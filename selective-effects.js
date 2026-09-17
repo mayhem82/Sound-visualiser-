@@ -19,7 +19,7 @@
   // work, not attempted here.
 
   const RENDER_WIDTH = 480;         // working resolution -- this is plain JS pixel processing, not WebGL, so kept modest
-  const SEGMENTATION_INTERVAL_MS = 200; // how often a fresh mask is requested -- segmentation is the expensive part
+  const SEGMENTATION_INTERVAL_MS = 200; // how often a fresh mask is requested -- both models share this tick, but each has its own overlap guard (see personSegmentationTick/sceneSegmentationTick), so the much heavier scene model naturally throttles itself to however long a real segment() call takes rather than actually firing every 200ms
   const RENDER_INTERVAL_MS = 100;   // ~10fps -- real per-pixel JS work on every tick, not free
 
   const overlay = document.getElementById("overlay");
@@ -31,6 +31,9 @@
   const seStatus = document.getElementById("seStatus");
   const modelPill = document.getElementById("modelPill");
   const modelPillText = document.getElementById("modelPillText");
+  const scenePill = document.getElementById("scenePill");
+  const scenePillText = document.getElementById("scenePillText");
+  const sePhotoBtn = document.getElementById("sePhotoBtn");
 
   const cameraSelectWrap = document.getElementById("cameraSelectWrap");
   const cameraSelect = document.getElementById("cameraSelect");
@@ -62,9 +65,10 @@
   }
 
   let renderW = RENDER_WIDTH, renderH = RENDER_WIDTH;
-  let naturalCanvas, naturalCtx, effectCanvas, effectCtx, maskCanvas, maskCtx;
-  let latestMaskData = null; // Uint8ClampedArray at render resolution -- red channel is person probability, 0..255
-  let segmentation = null;
+  let naturalCanvas, naturalCtx, effectCanvas, effectCtx, maskCanvas, maskCtx, sceneMaskSourceCanvas;
+  let latestMaskData = null; // Uint8ClampedArray at render resolution -- red channel is the current region's class probability, 0..255
+  let segmentation = null;      // MediaPipe Selfie Segmentation -- powers "Person only"/"Background only"
+  let sceneSegmentation = null; // DeepLab (ADE20K) -- powers "Sky only"/"Wall only"
   let segmentationTimer = null;
   let renderTimer = null;
 
@@ -151,11 +155,17 @@
     return out;
   }
 
-  // ---- Segmentation (MediaPipe Selfie Segmentation, loaded lazily) ----
-  // Only fetched once the user actually picks a region that needs a real
-  // mask -- "Segmentation should preferentially execute locally" and
-  // "occurs only when requested," not on every page load regardless of
-  // whether it's used.
+  // ---- Segmentation (two real models, both loaded lazily) ----
+  // Only fetched once the user actually picks a region that needs it --
+  // "Segmentation should preferentially execute locally" and "occurs only
+  // when requested," not on every page load regardless of whether it's
+  // used. "Person only"/"Background only" use MediaPipe Selfie
+  // Segmentation (person-vs-everything-else). "Sky only"/"Wall only" use
+  // a second, separate model -- DeepLab trained on ADE20K -- a general
+  // scene semantic segmenter that labels a frame into everyday classes
+  // (sky, wall, floor, tree, ...), since a person-detector has no concept
+  // of those at all. Each model is independent: only the one the current
+  // region actually needs gets fetched and ticked.
 
   function loadScriptOnce(src) {
     return new Promise((resolve, reject) => {
@@ -169,9 +179,9 @@
     });
   }
 
-  async function ensureSegmentation() {
+  async function ensurePersonSegmentation() {
     if (segmentation) return;
-    modelPillText.textContent = "Segmentation model: loading…";
+    modelPillText.textContent = "Person model: loading…";
     try {
       await loadScriptOnce("https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js");
       if (typeof window.SelfieSegmentation !== "function") throw new Error("SelfieSegmentation unavailable after script load");
@@ -185,11 +195,11 @@
         latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
       });
       modelPill.className = "dmx-pill connected";
-      modelPillText.textContent = "Segmentation model: ready";
+      modelPillText.textContent = "Person model: ready";
     } catch (e) {
       modelPill.className = "dmx-pill error";
-      modelPillText.textContent = "Segmentation model: failed to load";
-      seMaskUnsupportedHint.textContent = "Couldn't load the segmentation model (needs an internet connection the first time) -- \"Everyone\" still works with no mask needed, but Background-only/Person-only have nothing to select with.";
+      modelPillText.textContent = "Person model: failed to load";
+      seMaskUnsupportedHint.textContent = "Couldn't load the person model (needs an internet connection the first time) -- \"Everyone\" still works with no mask needed, but Background-only/Person-only have nothing to select with.";
     }
   }
 
@@ -204,13 +214,91 @@
   // fail) before the next is allowed keeps it always working from
   // whatever the truly current frame is once it's ready.
   let segmentationBusy = false;
-  function segmentationTick() {
-    if (!segmentation || region === "everyone" || segmentationBusy) return;
+  function personSegmentationTick() {
+    if (!segmentation || segmentationBusy) return;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     segmentationBusy = true;
     segmentation.send({ image: video })
       .catch(() => {})
       .finally(() => { segmentationBusy = false; });
+  }
+
+  async function ensureSceneSegmentation() {
+    if (sceneSegmentation) return;
+    scenePillText.textContent = "Scene model: loading…";
+    try {
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js");
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab/dist/deeplab.min.js");
+      if (!window.deeplab || typeof window.deeplab.load !== "function") throw new Error("deeplab unavailable after script load");
+      // quantizationBytes: 2 is this model's smaller/faster download tier --
+      // still a real semantic-segmentation network, just a lighter one.
+      sceneSegmentation = await window.deeplab.load({ base: "ade20k", quantizationBytes: 2 });
+      scenePill.className = "dmx-pill connected";
+      scenePillText.textContent = "Scene model: ready";
+    } catch (e) {
+      scenePill.className = "dmx-pill error";
+      scenePillText.textContent = "Scene model: failed to load";
+      seMaskUnsupportedHint.textContent = "Couldn't load the scene model (needs an internet connection the first time) -- \"Sky only\"/\"Wall only\" have nothing to select with until it loads.";
+    }
+  }
+
+  // DeepLab's result is a flat, per-pixel colour-coded label image (each
+  // class gets a fixed RGB colour from its legend) rather than a single
+  // probability channel. To get the same "binary mask, then let
+  // sharpenMaskValue/upscaling do the antialiasing" shape the rest of
+  // this page already relies on, this just picks out the one class the
+  // user asked for and turns it into a plain 0/255 mask at the model's
+  // own (smaller) output resolution -- the caller upscales it the same
+  // way the person model's mask already gets upscaled.
+  function classMaskFromResult(result, className) {
+    if (!result || !result.legend || !result.segmentationMap) return null;
+    const { legend, width, height, segmentationMap } = result;
+    let target = legend[className];
+    if (!target) {
+      // ADE20K legend keys are sometimes "name;synonym;synonym" --
+      // fall back to matching just the first name if an exact key miss.
+      const key = Object.keys(legend).find((k) => k.toLowerCase().split(";")[0] === className);
+      target = key ? legend[key] : null;
+    }
+    if (!target) return null;
+    const [tr, tg, tb] = target;
+    const out = new Uint8ClampedArray(width * height * 4);
+    for (let p = 0, i = 0; p < width * height; p++, i += 4) {
+      const v = (segmentationMap[i] === tr && segmentationMap[i + 1] === tg && segmentationMap[i + 2] === tb) ? 255 : 0;
+      out[i] = v; out[i + 1] = v; out[i + 2] = v; out[i + 3] = 255;
+    }
+    return { data: out, width, height };
+  }
+
+  function applyClassMaskToLatest(classMask) {
+    if (!classMask || !maskCtx) return;
+    if (!sceneMaskSourceCanvas) sceneMaskSourceCanvas = document.createElement("canvas");
+    sceneMaskSourceCanvas.width = classMask.width;
+    sceneMaskSourceCanvas.height = classMask.height;
+    sceneMaskSourceCanvas.getContext("2d").putImageData(
+      new ImageData(classMask.data, classMask.width, classMask.height), 0, 0
+    );
+    maskCtx.drawImage(sceneMaskSourceCanvas, 0, 0, renderW, renderH);
+    latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
+  }
+
+  // Same overlap guard as the person model, above -- DeepLab is a much
+  // heavier network, so a single call taking longer than one tick is the
+  // normal case here, not the exception.
+  let sceneSegmentationBusy = false;
+  function sceneSegmentationTick() {
+    if (!sceneSegmentation || sceneSegmentationBusy) return;
+    if (video.readyState < video.HAVE_CURRENT_DATA) return;
+    sceneSegmentationBusy = true;
+    sceneSegmentation.segment(video)
+      .then((result) => applyClassMaskToLatest(classMaskFromResult(result, region)))
+      .catch(() => {})
+      .finally(() => { sceneSegmentationBusy = false; });
+  }
+
+  function segmentationTick() {
+    if (region === "person" || region === "background") personSegmentationTick();
+    else if (region === "sky" || region === "wall") sceneSegmentationTick();
   }
 
   // The segmentation model's own mask is typically produced at a lower
@@ -283,7 +371,13 @@
   seDuotoneHiInput.addEventListener("input", () => { duotoneHi = hexToRgb(seDuotoneHiInput.value); });
   seRegionSelect.addEventListener("change", () => {
     region = seRegionSelect.value;
-    if (region !== "everyone") ensureSegmentation();
+    // A mask left over from the previous region belongs to a different
+    // class entirely (e.g. "person" shaped, picked while switching to
+    // "sky") -- drop it rather than briefly compositing with the wrong
+    // region's mask until the newly-selected model's first result lands.
+    latestMaskData = null;
+    if (region === "person" || region === "background") ensurePersonSegmentation();
+    else if (region === "sky" || region === "wall") ensureSceneSegmentation();
   });
 
   // Only cartoon's controls are relevant at load (cartoon is the default).
@@ -345,6 +439,38 @@
 
   cameraSelect.addEventListener("change", () => switchToDevice(cameraSelect.value));
 
+  // ---- Photo capture -- downloads exactly what's on screen (the
+  // composited output canvas: effect + mask already baked in), the same
+  // "capture the actual displayed canvas, not a re-render" approach
+  // colorvision.js's own takePhoto() uses. This page's canvas is plain
+  // 2D (no WebGL preserveDrawingBuffer concern), so toBlob() just works.
+  function timestampForFilename() {
+    return new Date().toISOString().replace(/[:.]/g, "-");
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function takeSelectivePhoto() {
+    outputCanvas.toBlob((blob) => {
+      if (!blob) {
+        seStatus.textContent = "Couldn't capture a photo -- try again.";
+        return;
+      }
+      downloadBlob(blob, `selective-effects-photo-${timestampForFilename()}.png`);
+    }, "image/png");
+  }
+
+  sePhotoBtn.addEventListener("click", takeSelectivePhoto);
+
   startBtn.addEventListener("click", async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
@@ -372,7 +498,9 @@
     computeCartoonEffect,
     computeDuotoneEffect,
     sharpenMaskValue,
+    classMaskFromResult,
     setLatestMaskData: (data) => { latestMaskData = data; },
+    getLatestMaskData: () => latestMaskData,
     getRenderSize: () => ({ w: renderW, h: renderH }),
     renderTick,
     ensureOffscreenCanvases,
@@ -381,6 +509,9 @@
     getEdgeStrength: () => edgeStrength,
     segmentationTick,
     setSegmentation: (obj) => { segmentation = obj; },
-    setRegion: (r) => { region = r; }
+    setSceneSegmentation: (obj) => { sceneSegmentation = obj; },
+    setRegion: (r) => { region = r; },
+    getRegion: () => region,
+    takeSelectivePhoto
   };
 })();

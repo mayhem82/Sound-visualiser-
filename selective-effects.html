@@ -31,12 +31,13 @@
 
 <main id="seMain" class="hide">
   <div class="dmx-top-status">
-    <span id="modelPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="modelPillText">Segmentation model: not loaded</span></span>
+    <span id="modelPill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="modelPillText">Person model: not loaded</span></span>
+    <span id="scenePill" class="dmx-pill"><span class="dmx-pill-dot"></span><span id="scenePillText">Scene model: not loaded</span></span>
     <p id="seStatus" class="status"></p>
   </div>
 
   <section class="dmx-section" id="seCaveatBanner">
-    <p><strong>The only feature in this whole suite with an external dependency.</strong> Every other page here is dependency-free; this one loads a real pretrained person-segmentation model (MediaPipe Selfie Segmentation, a few MB) from a public CDN the first time you start it each session -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: the model runs entirely locally (WebAssembly), the same as every other feature's local-only promise. The mask is a real but approximate person-detector, not a guaranteed cutout -- poor lighting, unusual poses, more than one person, or being partly out of frame can all confuse it. It only tells "person-shaped foreground" from "everything else"; it can't yet target one specific tapped/selected object, and it re-detects fresh every cycle rather than tracking a specific person's identity across frames -- both are real future work, not this page's job yet. Segmentation also runs on a throttled interval, not every rendered frame, to stay affordable, so the mask edge can lag slightly behind fast motion.</p>
+    <p><strong>The only feature in this whole suite with external dependencies.</strong> Every other page here is dependency-free; this one loads real pretrained segmentation models from a public CDN the first time each is needed -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: both models run entirely locally (WebAssembly/WebGL), the same as every other feature's local-only promise. "Person only"/"Background only" use a person-detector (MediaPipe Selfie Segmentation) -- a real but approximate mask, not a guaranteed cutout; poor lighting, unusual poses, more than one person, or being partly out of frame can all confuse it. "Sky only"/"Wall only" use a second, heavier general scene model (DeepLab, trained on ADE20K) that labels a frame into everyday classes like sky/wall/floor/tree -- it's a real semantic segmenter, not a lookup table, but its class boundaries are coarser than the person model's and it runs on a slower interval to stay affordable, so it lags further behind motion. Neither model can yet target one specific tapped/selected object, and both re-detect fresh every cycle rather than tracking identity across frames -- real future work, not this page's job yet.</p>
   </section>
 
   <section class="dmx-section">
@@ -86,10 +87,19 @@
           <option value="everyone">Everyone (no mask)</option>
           <option value="background">Background only (keep person natural)</option>
           <option value="person">Person only (keep background natural)</option>
+          <option value="sky">Sky only (isolate sky)</option>
+          <option value="wall">Wall only (isolate wall)</option>
         </select>
       </label>
     </div>
     <p class="hint" id="seMaskUnsupportedHint"></p>
+  </section>
+
+  <section class="dmx-section">
+    <h2>Capture</h2>
+    <div class="dmx-inline-controls">
+      <button id="sePhotoBtn" class="hud-btn" title="Downloads the current composited frame (whatever's on screen right now, effect and mask included) as a PNG.">Take photo</button>
+    </div>
   </section>
 
   <canvas id="seOutputCanvas"></canvas>
@@ -99,6 +109,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=4"></script>
+<script src="selective-effects.js?v=5"></script>
 </body>
 </html>
