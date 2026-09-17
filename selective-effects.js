@@ -56,6 +56,17 @@
   const seDuotoneLoInput = document.getElementById("seDuotoneLoInput");
   const seDuotoneHiWrap = document.getElementById("seDuotoneHiWrap");
   const seDuotoneHiInput = document.getElementById("seDuotoneHiInput");
+  const seOutlineThicknessWrap = document.getElementById("seOutlineThicknessWrap");
+  const seOutlineThicknessSlider = document.getElementById("seOutlineThicknessSlider");
+  const seOutlineThicknessLabel = document.getElementById("seOutlineThicknessLabel");
+  const seOutlineBlendWrap = document.getElementById("seOutlineBlendWrap");
+  const seOutlineBlendSlider = document.getElementById("seOutlineBlendSlider");
+  const seOutlineBlendLabel = document.getElementById("seOutlineBlendLabel");
+  const seOutlineOpacityWrap = document.getElementById("seOutlineOpacityWrap");
+  const seOutlineOpacitySlider = document.getElementById("seOutlineOpacitySlider");
+  const seOutlineOpacityLabel = document.getElementById("seOutlineOpacityLabel");
+  const seOutlineColorWrap = document.getElementById("seOutlineColorWrap");
+  const seOutlineColorInput = document.getElementById("seOutlineColorInput");
   const seRegionSelect = document.getElementById("seRegionSelect");
   const seMaskUnsupportedHint = document.getElementById("seMaskUnsupportedHint");
   const seMaskDebug = document.getElementById("seMaskDebug");
@@ -100,6 +111,13 @@
   let edgeStrength = 1; // 1.0 = 100% = the original fixed sensitivity
   let duotoneLo = hexToRgb(seDuotoneLoInput.value);
   let duotoneHi = hexToRgb(seDuotoneHiInput.value);
+  // Outlines mode, ported from Colour Vision Extreme with the same
+  // defaults/ranges as its own thickness/blend/opacity/colour sliders --
+  // see computeOutlineEffect() for the shared Sobel-edge algorithm.
+  let outlineThickness = Number(seOutlineThicknessSlider.value);
+  let outlineBlend = Number(seOutlineBlendSlider.value) / 100;
+  let outlineOpacity = Number(seOutlineOpacitySlider.value) / 100;
+  let outlineColor = hexToRgb(seOutlineColorInput.value);
   let region = "everyone";
   let aiObjectQuery = ""; // the phrase last submitted via "AI: isolate a described object"
 
@@ -189,6 +207,49 @@
       outD[i + 1] = duotoneLo[1] + (duotoneHi[1] - duotoneLo[1]) * l;
       outD[i + 2] = duotoneLo[2] + (duotoneHi[2] - duotoneLo[2]) * l;
       outD[i + 3] = 255;
+    }
+    return out;
+  }
+
+  // Outlines mode, ported from Colour Vision Extreme's own WebGL shader
+  // (cvEdgeStrength/uOutlineEnabled) as plain 2D-canvas pixel math, same
+  // "port the idea, not the renderer" approach the rest of this page's
+  // effect engine already takes. Same algorithm: a Sobel edge-strength
+  // estimate on luminance (0.299/0.587/0.114 weights, matching CVE's own
+  // cvLuminance -- not this page's other Rec.709 weights used elsewhere),
+  // sampled at neighbour offsets `thickness` pixels away, scaled by
+  // opacity, then that edge-coloured result is mixed with the original
+  // image by `blend` (0 = untouched original, 1 = pure black-background
+  // coloured line art) -- identical maths to CVE's
+  // `finalColor = mix(finalColor, outlineColor, uOutlineBlend)`.
+  function computeOutlineEffect(srcData) {
+    const w = renderW, h = renderH;
+    const src = srcData.data;
+    const out = effectCtx.createImageData(w, h);
+    const outD = out.data;
+    const lum = new Float32Array(w * h);
+    for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+      lum[p] = (0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2]) / 255;
+    }
+    const t = Math.max(1, Math.round(outlineThickness));
+    const [ocR, ocG, ocB] = outlineColor;
+    for (let y = 0; y < h; y++) {
+      const ym = Math.max(0, y - t), yp = Math.min(h - 1, y + t);
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const xm = Math.max(0, x - t), xp = Math.min(w - 1, x + t);
+        const tl = lum[ym * w + xm], tc = lum[ym * w + x], tr = lum[ym * w + xp];
+        const ml = lum[y * w + xm], mr = lum[y * w + xp];
+        const bl = lum[yp * w + xm], bc = lum[yp * w + x], br = lum[yp * w + xp];
+        const gx = -tl - 2 * ml - bl + tr + 2 * mr + br;
+        const gy = -tl - 2 * tc - tr + bl + 2 * bc + br;
+        const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy)) * outlineOpacity;
+        const outR = ocR * edge, outG = ocG * edge, outB = ocB * edge;
+        outD[i] = src[i] * (1 - outlineBlend) + outR * outlineBlend;
+        outD[i + 1] = src[i + 1] * (1 - outlineBlend) + outG * outlineBlend;
+        outD[i + 2] = src[i + 2] * (1 - outlineBlend) + outB * outlineBlend;
+        outD[i + 3] = 255;
+      }
     }
     return out;
   }
@@ -553,7 +614,9 @@
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     naturalCtx.drawImage(video, 0, 0, renderW, renderH);
     const naturalData = naturalCtx.getImageData(0, 0, renderW, renderH);
-    const effectData = effect === "cartoon" ? computeCartoonEffect(naturalData) : computeDuotoneEffect(naturalData);
+    const effectData = effect === "cartoon" ? computeCartoonEffect(naturalData)
+      : effect === "duotone" ? computeDuotoneEffect(naturalData)
+      : computeOutlineEffect(naturalData);
 
     if (region === "everyone" || !latestMaskData) {
       outputCtx.putImageData(effectData, 0, 0);
@@ -587,6 +650,10 @@
     sePosterizeWrap.classList.toggle("hide", effect !== "cartoon");
     seDuotoneLoWrap.classList.toggle("hide", effect !== "duotone");
     seDuotoneHiWrap.classList.toggle("hide", effect !== "duotone");
+    seOutlineThicknessWrap.classList.toggle("hide", effect !== "outline");
+    seOutlineBlendWrap.classList.toggle("hide", effect !== "outline");
+    seOutlineOpacityWrap.classList.toggle("hide", effect !== "outline");
+    seOutlineColorWrap.classList.toggle("hide", effect !== "outline");
   });
   sePosterizeSlider.addEventListener("input", () => {
     posterizeLevels = Number(sePosterizeSlider.value);
@@ -598,6 +665,19 @@
   });
   seDuotoneLoInput.addEventListener("input", () => { duotoneLo = hexToRgb(seDuotoneLoInput.value); });
   seDuotoneHiInput.addEventListener("input", () => { duotoneHi = hexToRgb(seDuotoneHiInput.value); });
+  seOutlineThicknessSlider.addEventListener("input", () => {
+    outlineThickness = Number(seOutlineThicknessSlider.value);
+    seOutlineThicknessLabel.textContent = `${outlineThickness}px`;
+  });
+  seOutlineBlendSlider.addEventListener("input", () => {
+    outlineBlend = Number(seOutlineBlendSlider.value) / 100;
+    seOutlineBlendLabel.textContent = `${seOutlineBlendSlider.value}%`;
+  });
+  seOutlineOpacitySlider.addEventListener("input", () => {
+    outlineOpacity = Number(seOutlineOpacitySlider.value) / 100;
+    seOutlineOpacityLabel.textContent = `${seOutlineOpacitySlider.value}%`;
+  });
+  seOutlineColorInput.addEventListener("input", () => { outlineColor = hexToRgb(seOutlineColorInput.value); });
   seRegionSelect.addEventListener("change", () => {
     region = seRegionSelect.value;
     // A mask left over from the previous region belongs to a different
@@ -769,6 +849,15 @@
   window.__selectiveEffectsTestables = {
     computeCartoonEffect,
     computeDuotoneEffect,
+    computeOutlineEffect,
+    setEffect: (e) => { effect = e; },
+    getEffect: () => effect,
+    setOutlineSettings: (s) => {
+      if (s.thickness !== undefined) outlineThickness = s.thickness;
+      if (s.blend !== undefined) outlineBlend = s.blend;
+      if (s.opacity !== undefined) outlineOpacity = s.opacity;
+      if (s.color !== undefined) outlineColor = s.color;
+    },
     sharpenMaskValue,
     classMaskFromResult,
     setLatestMaskData: (data) => { latestMaskData = data; },

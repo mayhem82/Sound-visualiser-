@@ -53,11 +53,12 @@
   <section class="dmx-section">
     <h2>Effect</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="Cartoon: posterizes colour into flat bands with dark ink lines on strong edges. Monochrome: maps brightness onto a two-colour gradient (a duotone), same idea as Colour Vision Extreme's own duotone.">
+      <label class="hud-slider" title="Cartoon: posterizes colour into flat bands with dark ink lines on strong edges. Monochrome: maps brightness onto a two-colour gradient (a duotone), same idea as Colour Vision Extreme's own duotone. Outlines: the same Outlines mode from Colour Vision Extreme, ported over with its own thickness/blend/opacity/colour settings -- a coloured edge-line overlay, not the cartoon ink line above.">
         Look:
         <select id="seEffectSelect">
           <option value="cartoon">Cartoon (posterize + edges)</option>
           <option value="duotone">Monochrome (duotone)</option>
+          <option value="outline">Outlines (edge lines)</option>
         </select>
       </label>
       <label id="sePosterizeWrap" class="hud-slider" title="How many flat colour levels per channel -- fewer is bolder/more graphic.">
@@ -75,6 +76,22 @@
       <label id="seDuotoneHiWrap" class="hud-btn choose-picker-btn hide" title="Highlight colour for the monochrome duotone.">
         Highlight
         <input id="seDuotoneHiInput" type="color" value="#f2f2f2">
+      </label>
+      <label id="seOutlineThicknessWrap" class="hud-slider hide" title="How far apart the edge-detection samples are, in pixels -- higher picks up softer/wider edges as a thicker line. Same setting as Colour Vision Extreme's Outline thickness.">
+        Outline thickness: <span id="seOutlineThicknessLabel">2px</span>
+        <input id="seOutlineThicknessSlider" type="range" min="1" max="10" step="0.5" value="2">
+      </label>
+      <label id="seOutlineBlendWrap" class="hud-slider hide" title="0% is the normal image, unchanged. 100% replaces it entirely with just the coloured edge lines on black -- a pure line-art look.">
+        Outline blend: <span id="seOutlineBlendLabel">100%</span>
+        <input id="seOutlineBlendSlider" type="range" min="0" max="100" value="100">
+      </label>
+      <label id="seOutlineOpacityWrap" class="hud-slider hide" title="How strong/visible the outline lines themselves are.">
+        Outline opacity: <span id="seOutlineOpacityLabel">100%</span>
+        <input id="seOutlineOpacitySlider" type="range" min="0" max="100" value="100">
+      </label>
+      <label id="seOutlineColorWrap" class="hud-btn choose-picker-btn hide" title="Colour used for outline edge lines.">
+        Outline colour
+        <input id="seOutlineColorInput" type="color" value="#ffffff">
       </label>
     </div>
   </section>
@@ -125,6 +142,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=10"></script>
+<script src="selective-effects.js?v=11"></script>
 </body>
 </html>
