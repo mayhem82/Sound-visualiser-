@@ -370,6 +370,26 @@
     Duotone highlights
     <input id="cartoonThemeHiInput" type="color" value="#f2f2f2" aria-label="Cartoon duotone highlight colour">
   </label>
+
+  <div class="profiles-section" id="aiControlSection">
+    <h3 id="aiControlTitle">AI Control</h3>
+    <p class="hint">Describe the look you want in plain language -- this only ever changes the Cartoon, Outline, and Duotone controls above. It never touches your saved colours or personal colour calibration.</p>
+    <div class="profiles-row">
+      <input id="aiCommandInput" type="text" placeholder="e.g. Make this a bold monochrome cartoon" maxlength="200">
+      <button id="aiInterpretBtn" class="hud-btn reticle-btn-secondary">Interpret / Set Look</button>
+    </div>
+    <p id="aiProposalStatus" class="hint ai-proposal" role="status" aria-live="polite"></p>
+    <div class="profiles-row">
+      <button id="aiPreviewBtn" class="hud-btn reticle-btn-secondary" disabled>Preview</button>
+      <button id="aiUndoBtn" class="hud-btn reticle-btn-secondary" disabled>Undo</button>
+    </div>
+    <div class="profiles-row">
+      <input id="aiTemplateNameInput" type="text" placeholder="Template name" maxlength="40">
+      <button id="aiSaveTemplateBtn" class="hud-btn reticle-btn-secondary">Save as template</button>
+    </div>
+    <p id="aiActionStatus" class="hint" role="status" aria-live="polite"></p>
+  </div>
+
   <button id="calibrateBtn" class="hud-btn">Calibrate a colour</button>
   <button id="pointsBtn" class="hud-btn">Saved colours (<span id="pointsCount">0</span>)</button>
   <button id="pauseBtn" class="hud-btn" aria-pressed="false">Pause</button>
