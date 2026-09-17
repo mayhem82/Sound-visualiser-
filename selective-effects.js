@@ -32,10 +32,15 @@
   const modelPill = document.getElementById("modelPill");
   const modelPillText = document.getElementById("modelPillText");
 
+  const cameraSelectWrap = document.getElementById("cameraSelectWrap");
+  const cameraSelect = document.getElementById("cameraSelect");
+
   const seEffectSelect = document.getElementById("seEffectSelect");
   const sePosterizeWrap = document.getElementById("sePosterizeWrap");
   const sePosterizeSlider = document.getElementById("sePosterizeSlider");
   const sePosterizeLabel = document.getElementById("sePosterizeLabel");
+  const seEdgeStrengthSlider = document.getElementById("seEdgeStrengthSlider");
+  const seEdgeStrengthLabel = document.getElementById("seEdgeStrengthLabel");
   const seDuotoneLoWrap = document.getElementById("seDuotoneLoWrap");
   const seDuotoneLoInput = document.getElementById("seDuotoneLoInput");
   const seDuotoneHiWrap = document.getElementById("seDuotoneHiWrap");
@@ -65,9 +70,14 @@
 
   let effect = "cartoon";
   let posterizeLevels = 5;
+  let edgeStrength = 1; // 1.0 = 100% = the original fixed sensitivity
   let duotoneLo = hexToRgb(seDuotoneLoInput.value);
   let duotoneHi = hexToRgb(seDuotoneHiInput.value);
   let region = "everyone";
+
+  let currentStream = null;
+  let videoDevices = [];
+  let switchingCamera = false;
 
   function hexToRgb(hex) {
     const m = hex.replace("#", "");
@@ -118,7 +128,7 @@
         let gx = 0, gy = 0;
         if (x > 0 && x < w - 1) gx = lum[p + 1] - lum[p - 1];
         if (y > 0 && y < h - 1) gy = lum[p + w] - lum[p - w];
-        const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy) / 60);
+        const edge = Math.min(1, (Math.sqrt(gx * gx + gy * gy) * edgeStrength) / 60);
         r *= 1 - edge; g *= 1 - edge; b *= 1 - edge;
         outD[i] = r; outD[i + 1] = g; outD[i + 2] = b; outD[i + 3] = 255;
       }
@@ -234,6 +244,10 @@
     posterizeLevels = Number(sePosterizeSlider.value);
     sePosterizeLabel.textContent = String(posterizeLevels);
   });
+  seEdgeStrengthSlider.addEventListener("input", () => {
+    edgeStrength = Number(seEdgeStrengthSlider.value) / 100;
+    seEdgeStrengthLabel.textContent = `${seEdgeStrengthSlider.value}%`;
+  });
   seDuotoneLoInput.addEventListener("input", () => { duotoneLo = hexToRgb(seDuotoneLoInput.value); });
   seDuotoneHiInput.addEventListener("input", () => { duotoneHi = hexToRgb(seDuotoneHiInput.value); });
   seRegionSelect.addEventListener("change", () => {
@@ -245,16 +259,72 @@
   seDuotoneLoWrap.classList.add("hide");
   seDuotoneHiWrap.classList.add("hide");
 
+  // ---- Camera selection -- every camera the browser can see (a phone's
+  // own lenses, or a USB webcam/capture card), not just a single
+  // hardcoded back-facing request. Mirrors colorvision.js's own
+  // deviceId-addressed switching (shares the enumeration/active-device
+  // lookup half via camera-lifecycle.js; the switching/fallback logic
+  // itself is kept per-page, same as every other page in this suite --
+  // see that shared file's own header comment for why).
+  async function refreshVideoDevices() {
+    try {
+      const resolved = await listVideoInputsWithActive(currentStream);
+      videoDevices = resolved.videoDevices;
+      const activeId = resolved.activeId;
+      cameraSelectWrap.classList.toggle("hide", videoDevices.length <= 1);
+      cameraSelect.innerHTML = "";
+      videoDevices.forEach((d, i) => {
+        const option = document.createElement("option");
+        option.value = d.deviceId;
+        option.textContent = d.label || `Camera ${i + 1}`;
+        cameraSelect.appendChild(option);
+      });
+      if (activeId) cameraSelect.value = activeId;
+    } catch (e) {
+      cameraSelectWrap.classList.add("hide");
+    }
+  }
+
+  async function switchToDevice(deviceId) {
+    if (switchingCamera) return;
+    switchingCamera = true;
+    if (currentStream) currentStream.getTracks().forEach((t) => t.stop());
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+      currentStream = stream;
+      await attachVideoElement(video, stream);
+      resizeCanvases();
+      seStatus.textContent = "";
+      await refreshVideoDevices();
+    } catch (e) {
+      seStatus.textContent = "Couldn't switch camera: " + (e.message || e.name || "unknown error");
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        currentStream = fallback;
+        await attachVideoElement(video, fallback);
+        resizeCanvases();
+        await refreshVideoDevices();
+      } catch (e2) {
+        seStatus.textContent = "Camera lost -- reload the page to reconnect.";
+      }
+    } finally {
+      switchingCamera = false;
+    }
+  }
+
+  cameraSelect.addEventListener("change", () => switchToDevice(cameraSelect.value));
+
   startBtn.addEventListener("click", async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      video.srcObject = stream;
-      await video.play();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      currentStream = stream;
+      await attachVideoElement(video, stream);
       ensureOffscreenCanvases();
       resizeCanvases();
       overlay.classList.add("hide");
       seMain.classList.remove("hide");
       if (window.WakeLockHelper) window.WakeLockHelper.enable();
+      await refreshVideoDevices();
       renderTimer = setInterval(renderTick, RENDER_INTERVAL_MS);
       segmentationTimer = setInterval(segmentationTick, SEGMENTATION_INTERVAL_MS);
     } catch (e) {
@@ -274,6 +344,8 @@
     getRenderSize: () => ({ w: renderW, h: renderH }),
     renderTick,
     ensureOffscreenCanvases,
-    resizeCanvases
+    resizeCanvases,
+    getVideoDevices: () => videoDevices,
+    getEdgeStrength: () => edgeStrength
   };
 })();

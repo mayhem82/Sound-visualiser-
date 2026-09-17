@@ -40,6 +40,15 @@
   </section>
 
   <section class="dmx-section">
+    <h2>Camera</h2>
+    <div class="dmx-inline-controls">
+      <label id="cameraSelectWrap" class="hud-slider hide" title="Every camera the browser can see -- a phone's own lenses, or a USB webcam / HDMI-to-USB capture card feeding this device -- appear here the same way, labelled straight from the OS/driver.">
+        Camera: <select id="cameraSelect"></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="dmx-section">
     <h2>Effect</h2>
     <div class="dmx-inline-controls">
       <label class="hud-slider" title="Cartoon: posterizes colour into flat bands with dark ink lines on strong edges. Monochrome: maps brightness onto a two-colour gradient (a duotone), same idea as Colour Vision Extreme's own duotone.">
@@ -52,6 +61,10 @@
       <label id="sePosterizeWrap" class="hud-slider" title="How many flat colour levels per channel -- fewer is bolder/more graphic.">
         Levels: <span id="sePosterizeLabel">5</span>
         <input id="sePosterizeSlider" type="range" min="2" max="10" step="1" value="5">
+      </label>
+      <label id="seEdgeStrengthWrap" class="hud-slider" title="How easily the cartoon ink line triggers, and how dark it goes -- higher picks up softer edges and inks them harder.">
+        Line strength: <span id="seEdgeStrengthLabel">100%</span>
+        <input id="seEdgeStrengthSlider" type="range" min="0" max="200" step="5" value="100">
       </label>
       <label id="seDuotoneLoWrap" class="hud-btn choose-picker-btn hide" title="Shadow colour for the monochrome duotone.">
         Shadow
@@ -85,6 +98,7 @@
 </main>
 
 <video id="seVideo" playsinline muted class="hide"></video>
+<script src="camera-lifecycle.js"></script>
 <script src="selective-effects.js"></script>
 </body>
 </html>
