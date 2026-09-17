@@ -93,6 +93,7 @@
       </label>
     </div>
     <p class="hint" id="seMaskUnsupportedHint"></p>
+    <p class="hint" id="seMaskDebug" title="How this page can tell whether the mask is actually being refreshed: how long ago it last landed, and how many of the segmentation calls made actually produced one. If this stays stuck at a growing 'ago' figure while requests keep climbing, the model itself isn't returning usable results, not just running slowly."></p>
   </section>
 
   <section class="dmx-section">
@@ -109,6 +110,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=6"></script>
+<script src="selective-effects.js?v=7"></script>
 </body>
 </html>

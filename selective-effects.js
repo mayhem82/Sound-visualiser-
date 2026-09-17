@@ -50,6 +50,7 @@
   const seDuotoneHiInput = document.getElementById("seDuotoneHiInput");
   const seRegionSelect = document.getElementById("seRegionSelect");
   const seMaskUnsupportedHint = document.getElementById("seMaskUnsupportedHint");
+  const seMaskDebug = document.getElementById("seMaskDebug");
 
   const video = document.getElementById("seVideo");
   const outputCanvas = document.getElementById("seOutputCanvas");
@@ -71,6 +72,17 @@
   let sceneSegmentation = null; // DeepLab (ADE20K) -- powers "Sky only"/"Wall only"
   let segmentationTimer = null;
   let renderTimer = null;
+
+  // Diagnostic counters only -- not used by any rendering logic. Whether
+  // a stuck mask is "calls not being made" vs. "calls made but never
+  // producing a usable result" (e.g. the model itself silently skipping
+  // frames it decides are too close together) looks identical from the
+  // outside, and this sandbox can't run either model against a real
+  // moving camera to tell them apart. Surfacing both counts + how long
+  // ago a result actually landed turns "still broken" into something
+  // that can be root-caused from a screenshot instead of guessed at again.
+  let personSegRequests = 0, personSegResults = 0, personSegLastResultAt = 0;
+  let sceneSegRequests = 0, sceneSegResults = 0, sceneSegLastResultAt = 0;
 
   let effect = "cartoon";
   let posterizeLevels = 5;
@@ -193,6 +205,8 @@
         if (!results || !results.segmentationMask || !maskCtx) return;
         maskCtx.drawImage(results.segmentationMask, 0, 0, renderW, renderH);
         latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
+        personSegResults++;
+        personSegLastResultAt = Date.now();
       });
       modelPill.className = "dmx-pill connected";
       modelPillText.textContent = "Person model: ready";
@@ -236,6 +250,7 @@
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     segmentationBusy = true;
     segmentationBusySince = Date.now();
+    personSegRequests++;
     segmentation.send({ image: video })
       .catch(() => {})
       .finally(() => { segmentationBusy = false; });
@@ -298,6 +313,7 @@
     );
     maskCtx.drawImage(sceneMaskSourceCanvas, 0, 0, renderW, renderH);
     latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
+    sceneSegLastResultAt = Date.now();
   }
 
   // Same overlap guard as the person model, above -- DeepLab is a much
@@ -314,8 +330,9 @@
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     sceneSegmentationBusy = true;
     sceneSegmentationBusySince = Date.now();
+    sceneSegRequests++;
     sceneSegmentation.segment(video)
-      .then((result) => applyClassMaskToLatest(classMaskFromResult(result, region)))
+      .then((result) => { sceneSegResults++; applyClassMaskToLatest(classMaskFromResult(result, region)); })
       .catch(() => {})
       .finally(() => { sceneSegmentationBusy = false; });
   }
@@ -344,7 +361,26 @@
 
   // ---- Main render loop ----
 
+  // Plain-language readout of the counters above -- not diagnosing
+  // anything on its own, just making "is this actually stuck, and where"
+  // visible instead of invisible. Runs every render tick (~10fps) so it
+  // reads as roughly live.
+  function updateMaskDebugDisplay() {
+    const isPersonFamily = region === "person" || region === "background";
+    const isSceneFamily = region === "sky" || region === "wall";
+    if (!isPersonFamily && !isSceneFamily) {
+      seMaskDebug.textContent = "";
+      return;
+    }
+    const requests = isPersonFamily ? personSegRequests : sceneSegRequests;
+    const results = isPersonFamily ? personSegResults : sceneSegResults;
+    const lastAt = isPersonFamily ? personSegLastResultAt : sceneSegLastResultAt;
+    const ageText = lastAt ? `${((Date.now() - lastAt) / 1000).toFixed(1)}s ago` : "never yet";
+    seMaskDebug.textContent = `Mask debug: last updated ${ageText} · ${results}/${requests} requests produced a usable mask`;
+  }
+
   function renderTick() {
+    updateMaskDebugDisplay();
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
     naturalCtx.drawImage(video, 0, 0, renderW, renderH);
     const naturalData = naturalCtx.getImageData(0, 0, renderW, renderH);
@@ -536,6 +572,11 @@
     setSceneSegmentation: (obj) => { sceneSegmentation = obj; },
     setRegion: (r) => { region = r; },
     getRegion: () => region,
-    takeSelectivePhoto
+    takeSelectivePhoto,
+    getSegmentationDebugCounters: () => ({
+      personSegRequests, personSegResults, personSegLastResultAt,
+      sceneSegRequests, sceneSegResults, sceneSegLastResultAt
+    }),
+    updateMaskDebugDisplay
   };
 })();
