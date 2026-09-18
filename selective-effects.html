@@ -38,7 +38,7 @@
   </div>
 
   <section class="dmx-section" id="seCaveatBanner">
-    <p><strong>The only feature in this whole suite with external dependencies.</strong> Every other page here is dependency-free; this one loads real pretrained models from a public CDN the first time each is needed -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: all three models run entirely locally (WebAssembly/WebGL), the same as every other feature's local-only promise. "Person only"/"Background only" use a face detector (MediaPipe Face Detection, its close-range/selfie-tuned model) -- it isolates a box around a detected face, not a pixel-tight silhouette of the whole person, and it's pure detection (is there a face here, and roughly where) with no identity matching and no stored biometric data. Two earlier full-body segmentation attempts (MediaPipe Selfie Segmentation, both its tunings) genuinely struggled under harsh/backlit/wide-angle framing; a face is a far more constrained target and holds up better under exactly that kind of difficult lighting. "Sky only"/"Wall only" use a second, heavier general scene model (DeepLab, trained on ADE20K) that labels a frame into everyday classes like sky/wall/floor/tree -- a real semantic segmenter, not a lookup table, but coarser and slower than the face model. "AI: isolate a described object" and "Describe what the camera sees" use a third, heavier still model (OWL-ViT) that can locate open-ended short phrases you type rather than being limited to a fixed class list -- but it also draws a rectangle around its best match, not a tight silhouette, and "Describe" only ever checks a fixed list of common object words against the frame, it doesn't freely caption a scene in its own words. All three re-detect fresh every cycle rather than tracking identity across frames -- real future work, not this page's job yet.</p>
+    <p><strong>The only feature in this whole suite with external dependencies.</strong> Every other page here is dependency-free; this one loads real pretrained models from a public CDN the first time each is needed -- that one-time fetch needs internet, cached by your browser after. Your camera video itself never leaves the device either way: all three models run entirely locally (WebAssembly/WebGL), the same as every other feature's local-only promise. "Person only"/"Background only" use a face detector (MediaPipe Face Detection, its close-range/selfie-tuned model) -- it isolates an oval inscribed in the detected box (much closer to an actual face shape than the raw square/rectangle the model returns), not a pixel-tight silhouette of the whole person, and it's pure detection (is there a face here, and roughly where) with no identity matching and no stored biometric data. Two earlier full-body segmentation attempts (MediaPipe Selfie Segmentation, both its tunings) genuinely struggled under harsh/backlit/wide-angle framing; a face is a far more constrained target and holds up better under exactly that kind of difficult lighting. "Sky only"/"Wall only" use a second, heavier general scene model (DeepLab, trained on ADE20K) that labels a frame into everyday classes like sky/wall/floor/tree -- a real semantic segmenter, not a lookup table, but coarser and slower than the face model. "AI: isolate a described object" and "Describe what the camera sees" use a third, heavier still model (OWL-ViT) that can locate open-ended short phrases you type rather than being limited to a fixed class list -- but it also draws a rectangle around its best match, not a tight silhouette, and "Describe" only ever checks a fixed list of common object words against the frame, it doesn't freely caption a scene in its own words. All three re-detect fresh every cycle rather than tracking identity across frames -- real future work, not this page's job yet.</p>
   </section>
 
   <section class="dmx-section">
@@ -99,12 +99,12 @@
   <section class="dmx-section">
     <h2>Where</h2>
     <div class="dmx-inline-controls">
-      <label class="hud-slider" title="Everyone: the effect applies across the whole frame, same as if there were no mask at all -- a useful baseline to compare against. Background only: your detected face stays a natural, corrected-free view while everything else gets the effect. Person only: the reverse. Both use a face box, not a full-body silhouette -- see the caveat above.">
+      <label class="hud-slider" title="Everyone: the effect applies across the whole frame, same as if there were no mask at all -- a useful baseline to compare against. Background only: your detected face stays a natural, corrected-free view while everything else gets the effect. Person only: the reverse. Both use a face-shaped oval, not a full-body silhouette -- see the caveat above.">
         Apply to:
         <select id="seRegionSelect">
           <option value="everyone">Everyone (no mask)</option>
           <option value="background">Background only (keep face natural)</option>
-          <option value="person">Person only (face box, keep background natural)</option>
+          <option value="person">Person only (face oval, keep background natural)</option>
           <option value="sky">Sky only (isolate sky)</option>
           <option value="wall">Wall only (isolate wall)</option>
           <option value="ai-object">AI: isolate a described object</option>
@@ -157,6 +157,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=16"></script>
+<script src="selective-effects.js?v=17"></script>
 </body>
 </html>

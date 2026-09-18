@@ -458,13 +458,45 @@
     }, null);
   }
 
+  // A face is much closer to an oval than a rectangle -- filling the raw
+  // detected box square/rectangle straight (like boxToMask below, which
+  // is the right shape for an arbitrary object) leaves the four corners
+  // clearly background while still cropping into forehead/chin, an
+  // obviously-wrong shape for a face specifically. This fills an ellipse
+  // inscribed in the detected box instead -- same bounds MediaPipe
+  // actually detected, just an oval selection within them rather than
+  // the full rectangle.
+  function ellipseBoxToMask(box, w, h) {
+    if (!box) return null;
+    const cx = (box.xmin + box.xmax) / 2;
+    const cy = (box.ymin + box.ymax) / 2;
+    const rx = (box.xmax - box.xmin) / 2;
+    const ry = (box.ymax - box.ymin) / 2;
+    if (rx <= 0 || ry <= 0) return null;
+    const out = new Uint8ClampedArray(w * h * 4);
+    const xStart = Math.max(0, Math.floor(box.xmin));
+    const xEnd = Math.min(w, Math.ceil(box.xmax));
+    const yStart = Math.max(0, Math.floor(box.ymin));
+    const yEnd = Math.min(h, Math.ceil(box.ymax));
+    for (let y = yStart; y < yEnd; y++) {
+      const ny = (y + 0.5 - cy) / ry;
+      for (let x = xStart; x < xEnd; x++) {
+        const nx = (x + 0.5 - cx) / rx;
+        if (nx * nx + ny * ny > 1) continue;
+        const i = (y * w + x) * 4;
+        out[i] = 255; out[i + 1] = 255; out[i + 2] = 255; out[i + 3] = 255;
+      }
+    }
+    return { data: out, width: w, height: h };
+  }
+
   function faceBoundingBoxToMask(boundingBox, w, h) {
     if (!boundingBox) return null;
     const xmin = (boundingBox.xCenter - boundingBox.width / 2) * w;
     const xmax = (boundingBox.xCenter + boundingBox.width / 2) * w;
     const ymin = (boundingBox.yCenter - boundingBox.height / 2) * h;
     const ymax = (boundingBox.yCenter + boundingBox.height / 2) * h;
-    return boxToMask({ xmin, ymin, xmax, ymax }, w, h);
+    return ellipseBoxToMask({ xmin, ymin, xmax, ymax }, w, h);
   }
 
   async function ensurePersonSegmentation() {
@@ -1058,6 +1090,7 @@
     computeOutlineEffect,
     pickBestFaceDetection,
     faceBoundingBoxToMask,
+    ellipseBoxToMask,
     setEffect: (e) => { effect = e; },
     getEffect: () => effect,
     rgb2hsl01,
