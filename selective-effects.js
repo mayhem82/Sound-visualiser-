@@ -92,7 +92,7 @@
   let renderW = RENDER_WIDTH, renderH = RENDER_WIDTH;
   let naturalCanvas, naturalCtx, effectCanvas, effectCtx, maskCanvas, maskCtx, sceneMaskSourceCanvas;
   let latestMaskData = null; // Uint8ClampedArray at render resolution -- red channel is the current region's class probability, 0..255
-  let segmentation = null;      // MediaPipe Selfie Segmentation -- powers "Person only"/"Background only"
+  let segmentation = null;      // MediaPipe Face Detection -- powers "Person only"/"Background only"
   let sceneSegmentation = null; // DeepLab (ADE20K) -- powers "Sky only"/"Wall only"
   let objectDetector = null;    // OWL-ViT (zero-shot object detection) -- powers "AI: isolate a described object" and "Describe what the camera sees"
   let objectSnapshotCanvas = null;
@@ -422,43 +422,72 @@
     });
   }
 
+  // Two full-body segmentation models (MediaPipe Selfie Segmentation,
+  // tried at both its "general" and "landscape" tunings) both
+  // consistently misclassified a specific hard scene (harsh backlit
+  // outdoor lighting, wide-angle framing) the same way -- not a stuck-
+  // mask bug (the debug readout showed fresh results landing every
+  // cycle), a genuine accuracy failure of that model family on that
+  // scene. Swapped to MediaPipe Face Detection instead: a much smaller,
+  // more constrained target (a face, not a full-body silhouette against
+  // an arbitrary background) that real-world use has shown holds up far
+  // better under exactly this kind of difficult lighting/framing. The
+  // real trade-off, same honesty this page already applies to the
+  // AI-object detector: this gives a box around the detected face, not
+  // a pixel-tight person silhouette -- "Person only"/"Background only"
+  // isolate the face, not the whole body. No identity matching, no
+  // stored biometric data -- purely "is there a face here," the same
+  // as every other detector on this page.
+  function pickBestFaceDetection(detections) {
+    if (!Array.isArray(detections) || detections.length === 0) return null;
+    return detections.reduce((best, d) => {
+      const score = Array.isArray(d.score) ? (d.score[0] || 0) : (d.score || 0);
+      const bestScore = best ? (Array.isArray(best.score) ? (best.score[0] || 0) : (best.score || 0)) : -1;
+      return score > bestScore ? d : best;
+    }, null);
+  }
+
+  function faceBoundingBoxToMask(boundingBox, w, h) {
+    if (!boundingBox) return null;
+    const xmin = (boundingBox.xCenter - boundingBox.width / 2) * w;
+    const xmax = (boundingBox.xCenter + boundingBox.width / 2) * w;
+    const ymin = (boundingBox.yCenter - boundingBox.height / 2) * h;
+    const ymax = (boundingBox.yCenter + boundingBox.height / 2) * h;
+    return boxToMask({ xmin, ymin, xmax, ymax }, w, h);
+  }
+
   async function ensurePersonSegmentation() {
     if (segmentation) return;
-    modelPillText.textContent = "Person model: loading…";
+    modelPillText.textContent = "Face model: loading…";
     try {
-      await loadScriptOnce("https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js");
-      if (typeof window.SelfieSegmentation !== "function") throw new Error("SelfieSegmentation unavailable after script load");
-      segmentation = new window.SelfieSegmentation({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js");
+      if (typeof window.FaceDetection !== "function") throw new Error("FaceDetection unavailable after script load");
+      segmentation = new window.FaceDetection({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
       });
-      // modelSelection 1 ("landscape") was tried as an experiment for a
-      // wide-angle/backlit shot the general model got badly wrong -- it
-      // made no difference (same misclassification), confirming that
-      // particular scene defeats this whole lightweight model family,
-      // not just one of its two tunings. Reverted to 0 ("general"),
-      // normally the more accurate of the two for portrait-ish framing,
-      // since 1 bought nothing there and would only cost quality on
-      // every other, normally-working shot.
-      segmentation.setOptions({ modelSelection: 0 });
+      // "short" is the close-range/selfie-tuned model (vs. "full" for
+      // several-metres-away framing) -- matches this page's typical
+      // handheld-phone-camera use far better.
+      segmentation.setOptions({ model: "short", minDetectionConfidence: 0.5 });
       segmentation.onResults((results) => {
-        if (!results || !results.segmentationMask || !maskCtx) return;
-        // The request that produced this result may have been fired
-        // while a person-family region was active, but the region can
-        // have moved on to something else entirely by the time it
-        // resolves -- discard it rather than paint a person mask into
-        // whatever's current now.
+        if (!results || !maskCtx) return;
+        // Same stale-result guard as every other model here: the region
+        // may have moved on to something else by the time this lands.
         if (!isPersonFamily(region)) return;
-        maskCtx.drawImage(results.segmentationMask, 0, 0, renderW, renderH);
-        latestMaskData = maskCtx.getImageData(0, 0, renderW, renderH).data;
+        const best = pickBestFaceDetection(results.detections);
+        if (!best) { latestMaskData = null; return; }
+        const faceMask = faceBoundingBoxToMask(best.boundingBox, renderW, renderH);
+        if (!faceMask) return;
+        latestMaskData = faceMask.data;
         personSegResults++;
         personSegLastResultAt = Date.now();
       });
       modelPill.className = "dmx-pill connected";
-      modelPillText.textContent = "Person model: ready";
+      modelPillText.textContent = "Face model: ready";
     } catch (e) {
       modelPill.className = "dmx-pill error";
-      modelPillText.textContent = "Person model: failed to load";
-      seMaskUnsupportedHint.textContent = "Couldn't load the person model (needs an internet connection the first time) -- \"Everyone\" still works with no mask needed, but Background-only/Person-only have nothing to select with.";
+      modelPillText.textContent = "Face model: failed to load";
+      seMaskUnsupportedHint.textContent = "Couldn't load the face model (needs an internet connection the first time) -- \"Everyone\" still works with no mask needed, but Background-only/Person-only have nothing to select with.";
     }
   }
 
@@ -1008,6 +1037,8 @@
     computeCartoonEffect,
     computeDuotoneEffect,
     computeOutlineEffect,
+    pickBestFaceDetection,
+    faceBoundingBoxToMask,
     setEffect: (e) => { effect = e; },
     getEffect: () => effect,
     rgb2hsl01,
