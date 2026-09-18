@@ -536,8 +536,3 @@ input[type="color"]:focus-visible,
     transition: none;
   }
 }
-
-/* AI Control proposal text -- one setting change per line. */
-.ai-proposal {
-  white-space: pre-line;
-}
