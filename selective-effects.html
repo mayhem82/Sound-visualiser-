@@ -110,9 +110,11 @@
           <option value="ai-object">AI: isolate a described object</option>
         </select>
       </label>
-      <label id="seAiObjectWrap" class="hud-slider hide" title="Runs a real local open-vocabulary object detector (OWL-ViT) against a short phrase you type -- e.g. 'red mug', 'laptop', 'blue chair' -- and isolates the best-matching box it finds, re-scanning every few seconds. It draws a box around what it finds, not a tight pixel cutout like the person/sky/wall masks, and it can only recognise things within its own training, so unusual phrasing or objects may be missed.">
-        Isolate: <input id="seAiObjectInput" type="text" placeholder="e.g. red mug, laptop" maxlength="60">
-        <button id="seAiObjectApplyBtn" class="hud-btn" type="button">Find</button>
+      <label id="seAiObjectWrap" class="hud-slider hide" title="Runs a real local open-vocabulary object detector (OWL-ViT) against whichever item you pick below and isolates the best-matching box it finds, re-scanning every few seconds. It draws a box around what it finds, not a tight pixel cutout like the person/sky/wall masks, and it can only recognise things within its own training, so it may miss an item that's unusual, obscured, or out of view.">
+        Isolate:
+        <select id="seAiObjectSelect">
+          <option value="">— Choose an object —</option>
+        </select>
       </label>
     </div>
     <p class="hint" id="seAiObjectStatus"></p>
@@ -155,6 +157,6 @@
 
 <video id="seVideo" playsinline muted class="hide"></video>
 <script src="camera-lifecycle.js"></script>
-<script src="selective-effects.js?v=15"></script>
+<script src="selective-effects.js?v=16"></script>
 </body>
 </html>

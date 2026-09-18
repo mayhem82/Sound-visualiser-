@@ -37,8 +37,7 @@
   const objectPillText = document.getElementById("objectPillText");
   const sePhotoBtn = document.getElementById("sePhotoBtn");
   const seAiObjectWrap = document.getElementById("seAiObjectWrap");
-  const seAiObjectInput = document.getElementById("seAiObjectInput");
-  const seAiObjectApplyBtn = document.getElementById("seAiObjectApplyBtn");
+  const seAiObjectSelect = document.getElementById("seAiObjectSelect");
   const seAiObjectStatus = document.getElementById("seAiObjectStatus");
   const seDescribeBtn = document.getElementById("seDescribeBtn");
   const seDescribeResult = document.getElementById("seDescribeResult");
@@ -139,6 +138,18 @@
     "bag", "shoe", "lamp", "clock", "mirror", "picture frame", "plate",
     "keyboard", "mouse", "remote control", "pillow", "curtain", "rug", "dog", "cat"
   ];
+
+  // "AI: isolate a described object" picks from this same vocabulary
+  // rather than free text -- the detector can only score/locate a label
+  // it's actually given, so a word outside this list was always going
+  // to fail silently or confusingly; a fixed list makes every option
+  // one that's actually plausible to find, sorted for easy scanning.
+  DEFAULT_SCENE_VOCAB.slice().sort().forEach((word) => {
+    const option = document.createElement("option");
+    option.value = word;
+    option.textContent = word;
+    seAiObjectSelect.appendChild(option);
+  });
 
   let currentStream = null;
   let videoDevices = [];
@@ -878,16 +889,24 @@
     else if (region === "ai-object") ensureObjectDetector();
   });
 
-  seAiObjectApplyBtn.addEventListener("click", async () => {
-    const q = seAiObjectInput.value.trim();
+  seAiObjectSelect.addEventListener("change", async () => {
+    const q = seAiObjectSelect.value;
     if (!q) {
-      seAiObjectStatus.textContent = "Type something to isolate first.";
+      aiObjectQuery = "";
+      latestMaskData = null;
+      seAiObjectStatus.textContent = "";
       return;
     }
     aiObjectQuery = q;
     latestMaskData = null;
     seAiObjectStatus.textContent = `Looking for "${q}"…`;
     await ensureObjectDetector();
+    // The selection may have changed (including back to blank) while
+    // that load attempt was in flight -- a stale failure/success message
+    // landing after the fact would overwrite whatever the current
+    // selection already set, same stale-result guard as every model's
+    // segmentation callback elsewhere on this page.
+    if (aiObjectQuery !== q) return;
     if (!objectDetector) {
       seAiObjectStatus.textContent = "Object model isn't loaded -- see the pill above.";
     }
