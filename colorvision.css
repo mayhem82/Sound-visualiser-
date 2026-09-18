@@ -39,6 +39,64 @@ video#cameraFeed, canvas#sampleCanvas {
   display: none;
 }
 
+/* Dominant-colour swatches extracted live from the corrected view (#stage),
+   same sampled-not-decorative approach as the histogram above -- docked
+   bottom-right so it never collides with the bottom-left histogram or the
+   bottom-docked tune/points panels. */
+#palettePanel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2;
+  width: 220px;
+  padding: 10px;
+  background: rgba(15, 15, 25, 0.55);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+#palettePanel.hide {
+  display: none;
+}
+
+#paletteSwatches {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.palette-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.palette-swatch-color {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 1px solid rgba(242, 242, 247, 0.3);
+}
+
+.palette-swatch-hex {
+  font-size: 0.7em;
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+
+#paletteCopyStatus {
+  margin: 6px 0 0;
+  min-height: 1.2em;
+  text-align: center;
+}
+
 #shareCaptureBtn.hide {
   display: none;
 }

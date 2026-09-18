@@ -179,6 +179,10 @@
   const HISTOGRAM_ENABLED_KEY = "histogramEnabled_colorVision_v1";
   const HISTOGRAM_BUCKETS = 64;
   const HISTOGRAM_SAMPLE_SIZE = 128;
+  const PALETTE_ENABLED_KEY = "paletteEnabled_colorVision_v1";
+  const PALETTE_SAMPLE_SIZE = 96;
+  const PALETTE_SWATCH_COUNT = 6;
+  const PALETTE_QUANT_BITS = 4; // 16 levels/channel -> 4096 quantization buckets
   // In-memory JPEG stills only (no filesystem writes) -- a safety cap so an
   // unattended multi-hour capture at a short interval can't grow without
   // bound and crash the tab. ~3000 shots is already well past what most
@@ -395,6 +399,10 @@
   const correctAnimatedFileInput = document.getElementById("correctAnimatedFileInput");
   const correctAnimatedStatus = document.getElementById("correctAnimatedStatus");
   const histogramCanvas = document.getElementById("histogramCanvas");
+  const paletteBtn = document.getElementById("paletteBtn");
+  const palettePanel = document.getElementById("palettePanel");
+  const paletteSwatches = document.getElementById("paletteSwatches");
+  const paletteCopyStatus = document.getElementById("paletteCopyStatus");
   const cameraStatus = document.getElementById("cameraStatus");
   const recordingIndicator = document.getElementById("recordingIndicator");
   const recordingIndicatorTime = document.getElementById("recordingIndicatorTime");
@@ -711,6 +719,11 @@
     try { return localStorage.getItem(HISTOGRAM_ENABLED_KEY) === "1"; } catch (e) { return false; }
   })();
   let histogramTimer = null;
+  let paletteEnabled = (() => {
+    try { return localStorage.getItem(PALETTE_ENABLED_KEY) === "1"; } catch (e) { return false; }
+  })();
+  let paletteTimer = null;
+  let paletteCopyStatusTimer = null;
   let gl, program, uniforms, quadBuffer, videoTexture;
   // Lazily created only once a viewer actually connects — a second,
   // colour-correction-free feed of the same camera view (orientation
@@ -2841,6 +2854,7 @@
       renderLoop();
       refreshVideoDevices();
       if (histogramEnabled) startHistogramSampling();
+      if (paletteEnabled) startPaletteSampling();
       if (cameraOnlyModeCheckbox.checked) {
         await enterCameraOnlyMode();
       } else {
@@ -3693,6 +3707,111 @@
     updateHistogramUi();
     if (histogramEnabled && gl) startHistogramSampling();
     else stopHistogramSampling();
+  }
+
+  // ---- Dominant colour palette ----
+  // Same real-pixel-sampling approach as the histogram above (#stage is
+  // WebGL, so it's drawn into an offscreen 2D canvas first). Each sampled
+  // pixel is quantized to a coarse grid (PALETTE_QUANT_BITS bits/channel)
+  // and counted; the most frequent buckets are the dominant colours, each
+  // reported as the true average colour of the pixels that landed in it
+  // (not the quantized bucket colour itself, which would band visibly).
+
+  const paletteSampleCanvas = document.createElement("canvas");
+  paletteSampleCanvas.width = PALETTE_SAMPLE_SIZE;
+  paletteSampleCanvas.height = PALETTE_SAMPLE_SIZE;
+  const paletteSampleCtx = paletteSampleCanvas.getContext("2d", { willReadFrequently: true });
+  const PALETTE_QUANT_SHIFT = 8 - PALETTE_QUANT_BITS;
+
+  function extractPalette(data) {
+    const buckets = new Map(); // quant key -> {count, rSum, gSum, bSum}
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const key = ((r >> PALETTE_QUANT_SHIFT) << (PALETTE_QUANT_BITS * 2)) |
+                  ((g >> PALETTE_QUANT_SHIFT) << PALETTE_QUANT_BITS) |
+                  (b >> PALETTE_QUANT_SHIFT);
+      let bucket = buckets.get(key);
+      if (!bucket) { bucket = { count: 0, rSum: 0, gSum: 0, bSum: 0 }; buckets.set(key, bucket); }
+      bucket.count++;
+      bucket.rSum += r; bucket.gSum += g; bucket.bSum += b;
+    }
+    const totalPixels = data.length / 4;
+    return [...buckets.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, PALETTE_SWATCH_COUNT)
+      .map((bucket) => ({
+        r: Math.round(bucket.rSum / bucket.count),
+        g: Math.round(bucket.gSum / bucket.count),
+        b: Math.round(bucket.bSum / bucket.count),
+        share: bucket.count / totalPixels
+      }));
+  }
+
+  function rgbToHex(r, g, b) {
+    return "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("");
+  }
+
+  function drawPaletteSwatches(swatches) {
+    paletteSwatches.innerHTML = "";
+    for (const { r, g, b, share } of swatches) {
+      const hex = rgbToHex(r, g, b);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "palette-swatch";
+      btn.title = `${hex} -- ${(share * 100).toFixed(0)}% of frame. Tap to copy.`;
+      const swatch = document.createElement("span");
+      swatch.className = "palette-swatch-color";
+      swatch.style.background = `rgb(${r}, ${g}, ${b})`;
+      const label = document.createElement("span");
+      label.className = "palette-swatch-hex";
+      label.textContent = hex;
+      btn.append(swatch, label);
+      btn.addEventListener("click", () => copyPaletteHex(hex));
+      paletteSwatches.appendChild(btn);
+    }
+  }
+
+  async function copyPaletteHex(hex) {
+    try {
+      await navigator.clipboard.writeText(hex);
+      paletteCopyStatus.textContent = `Copied ${hex}`;
+    } catch (e) {
+      paletteCopyStatus.textContent = hex;
+    }
+    clearTimeout(paletteCopyStatusTimer);
+    paletteCopyStatusTimer = setTimeout(() => { paletteCopyStatus.textContent = ""; }, 2000);
+  }
+
+  function sampleAndDrawPalette() {
+    if (!gl) return;
+    paletteSampleCtx.drawImage(stage, 0, 0, PALETTE_SAMPLE_SIZE, PALETTE_SAMPLE_SIZE);
+    const data = paletteSampleCtx.getImageData(0, 0, PALETTE_SAMPLE_SIZE, PALETTE_SAMPLE_SIZE).data;
+    drawPaletteSwatches(extractPalette(data));
+  }
+
+  function startPaletteSampling() {
+    clearInterval(paletteTimer);
+    sampleAndDrawPalette();
+    paletteTimer = setInterval(sampleAndDrawPalette, 500);
+  }
+
+  function stopPaletteSampling() {
+    clearInterval(paletteTimer);
+    paletteTimer = null;
+  }
+
+  function updatePaletteUi() {
+    paletteBtn.classList.toggle("active", paletteEnabled);
+    paletteBtn.setAttribute("aria-pressed", String(paletteEnabled));
+    palettePanel.classList.toggle("hide", !paletteEnabled);
+  }
+
+  function togglePalette() {
+    paletteEnabled = !paletteEnabled;
+    try { localStorage.setItem(PALETTE_ENABLED_KEY, paletteEnabled ? "1" : "0"); } catch (e) {}
+    updatePaletteUi();
+    if (paletteEnabled && gl) startPaletteSampling();
+    else stopPaletteSampling();
   }
 
   // ---- Floating capture bar ----
@@ -5937,6 +6056,8 @@
   floatingTimelapseBtn.addEventListener("click", toggleTimelapseCapture);
   updateHistogramUi();
   histogramBtn.addEventListener("click", toggleHistogram);
+  updatePaletteUi();
+  paletteBtn.addEventListener("click", togglePalette);
   floatingPhotoBtn.addEventListener("click", takePhoto);
   floatingRecordBtn.addEventListener("click", toggleRecording);
   setupDraggableCaptureBar();
